@@ -61,12 +61,13 @@ collision damage and subsystem damage. The main multiplayer loop is functional.
 - CrashDumpHandler (SetUnhandledExceptionFilter) logs full diagnostics on any crash
 
 ### Known Issues
-- First connection always times out (client must reconnect) — stock-dedi does NOT have this issue
 - `scoring dict fix rc=-1` - Python code for SCORE_MESSAGE send has an error
 - Server's own ship object (player 0) still sends flags=0x00 (harmless — host's dummy ship)
 - Double NewPlayerInGame: engine handler + our GameLoopTimerProc both fire
 - SCORE_CHANGE (0x36) not sent for weapon kills on stock dedi — may be a stock BC bug (collision kills work)
-- PythonEvent 0x010C (45% of combat PythonEvents) — RESOLVED: TGObjPtrEvent (weapon/phaser/tractor events). See [docs/protocol/tgobjptrevent-class.md](docs/protocol/tgobjptrevent-class.md)
+- Collision rate limiting disabled (ship+0xEC=0) — DeferredInitObject doesn't set enable flag, 269x excess collision events
+- Collision damage authority inverted — our server accepts client CollisionEffect(0x15) without server-side recomputation
+- No server-side distance validation on CollisionEffect — stock validates bounding sphere gap < 26 units
 
 ### Key Fixes Applied (in ddraw_main.c split files)
 1. **TGL FindEntry NULL fix** - code cave at 0x006D1E10, returns NULL when ECX is NULL
@@ -261,7 +262,7 @@ Then opcode 0x01 (single byte).
 - [docs/engine/event-system-architecture.md](docs/engine/event-system-architecture.md) - TGEventManager dispatch, handler tables, TGCallback/TGConditionHandler internals
 - [docs/engine/ui-class-hierarchy.md](docs/engine/ui-class-hierarchy.md) - UI inheritance tree, MainWindow type IDs, event constants, TGDialogWindow buttons
 - [docs/engine/function-map.md](docs/engine/function-map.md) - 18K-function organized map
-- [docs/engine/function-mapping-report.md](docs/engine/function-mapping-report.md) - ~7,500 functions named (41%), annotation script docs
+- [docs/engine/function-mapping-report.md](docs/engine/function-mapping-report.md) - ~15,134 functions named/excluded (83%), annotation script docs
 - [docs/engine/decompiled-functions.md](docs/engine/decompiled-functions.md) - Key function analysis
 
 ### Guides
@@ -305,7 +306,7 @@ Then opcode 0x01 (single byte).
 ## Ghidra Annotation Scripts
 Bulk annotation scripts in `tools/`. Run from Ghidra Script Manager with stbc.exe loaded.
 Run order: globals → nirtti → swig → python_capi → pymodules → vtables → swig_targets → discover_strings
-- `tools/ghidra_annotate_globals.py` - Labels 19 globals, 2,280 key RE'd functions (393 classes), 22 Python module tables (2,321 total)
+- `tools/ghidra_annotate_globals.py` - Labels 19 globals, 2,355 key RE'd functions (361 classes), 22 Python module tables (2,396 total)
 - `tools/ghidra_annotate_nirtti.py` - Labels 117 NiRTTI factory + 117 registration functions (234 total)
 - `tools/ghidra_annotate_swig.py` - Names 3,990 SWIG wrapper functions from PyMethodDef table
 - `tools/ghidra_annotate_python_capi.py` - Names 113 Python C API functions, 10 module inits, type objects, globals (137 total)
@@ -313,7 +314,7 @@ Run order: globals → nirtti → swig → python_capi → pymodules → vtables
 - `tools/ghidra_annotate_vtables.py` - Auto-discovers 97 vtables from NiRTTI factories: 1,090 virtuals + 96 ctors + 84 dtors (1,270 total)
 - `tools/ghidra_annotate_swig_targets.py` - Traces SWIG wrappers to C++ targets (4 named; 3,986 are inline field accessors)
 - `tools/ghidra_discover_strings.py` - Names 33 functions from debug strings + adds 515 comments (runs last)
-- See [docs/engine/function-mapping-report.md](docs/engine/function-mapping-report.md) for full coverage (~7,500 functions named, 41% of 18,247)
+- See [docs/engine/function-mapping-report.md](docs/engine/function-mapping-report.md) for full coverage (~15,134 functions named/excluded, 83% of 18,247)
 
 ## Knowledge Preservation
 

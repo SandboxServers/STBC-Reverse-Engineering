@@ -1270,7 +1270,7 @@ KEY_FUNCTIONS = {
     0x0056f910: ("EnergyWeapon__GetFireSoundBase", "EnergyWeapon: property+0x74 fire sound base name"),
     0x0056f920: ("EnergyWeapon__GetFireSoundBase_Alt", "EnergyWeapon: property+0x74 alternate path"),
     0x0056f930: ("EnergyWeapon__GetMaxDamage", "EnergyWeapon: property+0x64 max damage"),
-    0x0056f940: ("EnergyWeapon__GetMaxCharge", "EnergyWeapon: property+0x68 max charge capacity"),
+    0x0056f940: ("EnergyWeapon__GetMaxDamageDistance", "EnergyWeapon: property+0x7C max damage distance (SWIG-confirmed)"),
     0x0056fbd0: ("EnergyWeapon__SetPropertyAndInit", "EnergyWeapon: set property, init charge fields"),
     0x0056fd70: ("EnergyWeapon__UpdateChargeLevel", "EnergyWeapon: recalculate charge ratio +0xBC"),
     0x0056fdc0: ("EnergyWeapon__Update", "EnergyWeapon: per-tick update (charge ratio, parent Update)"),

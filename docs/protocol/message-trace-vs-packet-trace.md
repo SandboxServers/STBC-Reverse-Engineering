@@ -100,10 +100,10 @@ Opcode  Name                  msg_trace   pkt C->S   pkt S->C   Status
 0x08    StopFire                 161        161        163       MATCH (2 extra S->C = server-gen)
 0x0A    SubsysStatus               7          7         11       MATCH (4 extra S->C = server-gen)
 0x0D    PythonEvent2              12         12          0       MATCH (C->S only)
-0x11    Unknown_11                 2          2          2       MATCH (relayed)
-0x12    Unknown_12                 5          5          5       MATCH (relayed)
+0x11    RepairListPriority         2          2          2       MATCH (relayed, GenericEventForward)
+0x12    SetPhaserLevel             5          5          5       MATCH (relayed, GenericEventForward)
 0x13    HostMsg                    2          2          0       MATCH (C->S only)
-0x15    Unknown_15                 5          5          0       MATCH (C->S only)
+0x15    CollisionEffect            5          5          0       MATCH (C->S only)
 0x19    TorpedoFire               76         76         76       MATCH (relayed)
 0x1A    BeamFire                  68         68         68       MATCH (relayed)
 0x1B    TorpTypeChange             2          2          2       MATCH (relayed)
@@ -120,7 +120,7 @@ S->C only (not in message_trace):
 0x18    DeletePlayerAnim           -          -          1       S->C outbound only
 0x1D    ObjNotFound                -          -         12       S->C outbound only
 0x20    ChecksumReq               -          -         11       S->C outbound only
-0x28    Unknown_28                 -          -          3       S->C outbound only
+0x28    ChecksumComplete           -          -          3       S->C outbound only (signal: all checksum rounds done)
 0x35    GameState                  -          -          3       S->C outbound only
 0x37    PlayerRoster               -          -          1       S->C outbound only
 ```
@@ -132,8 +132,8 @@ S->C only (not in message_trace):
 | Opcode | Name | Format | Example |
 |--------|------|--------|---------|
 | **0x2C** | **ChatMessage** | `[0x2C][sender_slot:1][00 00 00][msgLen:2 LE][ASCII text]` | slot=3, "everything good for you?" |
-| **0x11** | Unknown | 21 bytes payload, relayed C->S -> S->C | Contains object ID patterns |
-| **0x12** | Unknown | 18 bytes payload, relayed C->S -> S->C | Contains object ID patterns |
+| **0x11** | **RepairListPriority** | 21 bytes payload, relayed C->S -> S->C | GenericEventForward group: TGObjPtrEvent (0x010C), repair priority reorder |
+| **0x12** | **SetPhaserLevel** | 18 bytes payload, relayed C->S -> S->C | GenericEventForward group: TGCharEvent (0x0105), phaser intensity byte |
 | **0x28** | Unknown | 6 bytes total (1 byte payload), S->C only | Sent immediately before Settings |
 | **0x13** | HostMsg | C->S only, not relayed | 2 occurrences |
 

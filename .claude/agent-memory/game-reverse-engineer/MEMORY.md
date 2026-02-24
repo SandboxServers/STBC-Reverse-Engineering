@@ -6,8 +6,10 @@
 - stbc.exe: 32-bit Windows, base 0x400000, ~5.9MB
 
 ## Key Architecture Discoveries (topic files)
+- [collision-rate-limiter.md](collision-rate-limiter.md) - COMPLETE: Ship__CheckCollisionRateLimit (0x005a22a0) per-pair timer, cooldown table, distance gates (2026-02-24)
 - [architecture.md](architecture.md) - Detailed architecture notes
 - [server-computation-model.md](server-computation-model.md) - **CRITICAL**: What server COMPUTES vs RELAYS (2026-02-23)
+- [object-recovery-protocol.md](object-recovery-protocol.md) - Opcodes 0x1D/0x1E/0x1F: ObjNotFound/RequestObj/EnterSet (2026-02-24)
 - [crash-analysis.md](crash-analysis.md) - InitNetwork crash chain
 - [ebp-corruption-crash.md](ebp-corruption-crash.md) - EBP/RunPyCode crash (SOLVED)
 - [transport-layer.md](transport-layer.md) - FULL transport layer: 7 factory types, wire formats, fragments

@@ -10,7 +10,7 @@ Run order matters — later scripts benefit from names applied by earlier ones.
 
 | # | Script | What It Does | Functions Named |
 |---|--------|-------------|---------------------|
-| 1 | `ghidra_annotate_globals.py` | Labels 19 globals, 2,280 key RE'd functions, 22 Python module tables | 2,321 |
+| 1 | `ghidra_annotate_globals.py` | Labels 19 globals, 2,355 key RE'd functions (361 classes), 22 Python module tables | 2,396 |
 | 2 | `ghidra_annotate_nirtti.py` | Labels 117 NiRTTI factory + 117 registration functions, guard flags | 234 |
 | 3 | `ghidra_annotate_swig.py` | Names 3,990 SWIG wrapper functions from PyMethodDef table | 3,990 |
 | 4 | `ghidra_annotate_vtables.py` | Auto-discovers vtables from 97 factories, names constructors + slots | 1,270 |
@@ -30,9 +30,9 @@ Scripts 1-3 and 7 provide foundational names that scripts 4-5 use for helper det
 | Category | Count | % of 18,247 |
 |----------|-------|-------------|
 | Auto-generated (Unwind/Catch handlers) | ~4,695 | 26% |
-| Named by annotation scripts | ~8,255 | 45% |
+| Named by annotation scripts | ~8,330 | 46% |
 | Named by Ghidra MCP sessions (Passes 1-8) | ~2,184 | 12% |
-| **Total named/excluded** | **~15,134** | **83%** |
+| **Total named/excluded** | **~15,209** | **83%** |
 | Remaining unnamed (game-specific) | ~1,113 | 6% |
 | Remaining unnamed (compiler/helper) | ~2,000 | 11% |
 

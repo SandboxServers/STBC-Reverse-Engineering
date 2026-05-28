@@ -91,7 +91,7 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 | 13 | tgobjptrevent-class.md | Mid: TGObjPtrEvent class layout + 11 producers | (engine: TGEvent vtable 0x00895FF4) | **partial (2026-05-28)** — 0 wire-format / 0 producer corrections; 3 corrections (C1 0x101 is TGEvent itself not "TGSubsystemEvent" / C2 vtable slot 0 is dtor not 0x00403310 + 17 slots not 12-14 / C3 SWIG wrapper addresses unverified in current Ghidra DB); class layout 0x2C bytes confirmed byte-by-byte; all 11 game event types verified at producer sites; dual-fire and host-only gates confirmed; see §6.13 |
 | 14 | pythonevent-wire-format.md | Leaf: opcode 0x06 + 4 event factories | tgobjptrevent-class, game-opcodes | **partial (2026-05-28)** — class hierarchy correction (0x101 = TGEvent itself, not "TGSubsystemEvent"); ObjectExploding IsA-chain refinement (3 IDs not 2); source-vs-dest WriteObjectRef encoding asymmetry; wire-format dimensions for all 4 classes byte-by-byte CONFIRMED; both producers (HostEventHandler 0x006A1150 + ObjectExplodingHandler 0x006A1240) byte-by-byte confirmed but were undefined in DB (still are — disassembled raw); MpgameHandlePythonEvent renamed at 0x0069F880; see §6.14 |
 | 15 | collision-effect-protocol.md | Leaf: opcode 0x15 + CollisionEvent class + validation chain | game-opcodes, stream-primitives | **verified (2026-05-28)** — first protocol family doc to clear `verified`; all 110+ claims byte-by-byte confirmed; ZERO material wire-format changes; 1 byte-level typo (handler-table 0x005afab0 -> 0x005AFAD0) + 1 wording clarification (PostEvent __thiscall via TGEventManager singleton at 0x0097F838); critical OpenBC finding confirmed (stock dedi has NO server-side recomputation of contact points or force); see §6.15 |
-| 16 | set-phaser-level-protocol.md | Leaf: opcode 0x12 + TGCharEvent | game-opcodes, tgobjptrevent-class | pending |
+| 16 | set-phaser-level-protocol.md | Leaf: opcode 0x12 + TGCharEvent | game-opcodes, tgobjptrevent-class | **verified (2026-05-28)** — second protocol-family doc to clear `verified`; 18-byte wire format byte-by-byte confirmed; ZERO material wire-format changes; 3 minor corrections (C1 hierarchy cascade — no TGSubsystemEvent, 0x101 IS TGEvent; C2 registration-string typography "MultiplayerGame :: SetPhaserLevelHandler" with spaces; C3 helper-fn rename FUN_006d6200 → TGFactory_DeserializeObject); 4 functions newly created (sender thunk, applier, TGCharEvent::Write/ReadFromStream) + 4 renamed + 4 plates; foundation cross-anchors (TGCharEvent 0x2C, IsA {0x105, 0x101, 0x02}, TGEvent base 16B) all hold; see §6.16 |
 | 17 | delete-player-ui-wire-format.md | Leaf: opcode 0x17 + factory 0x866 | game-opcodes, pythonevent-wire-format | pending |
 | 18 | objnotfound-requestobj-enterset-wire-format.md | Leaf: opcodes 0x1D/0x1E/0x1F triad | game-opcodes, objcreate-serialization | pending |
 | 19 | subsystem-integrity-hash.md | Leaf analysis: dead-code anti-cheat hash | stateupdate, per-ship-subsystem-wire-format | pending |
@@ -3579,6 +3579,151 @@ the protocol family.
 | ET_NEW_PLAYER_IN_GAME | 0x008000F1 | delete-player-ui-wire-format |
 | ET_BOOT_PLAYER | 0x008000F6 | subsystem-integrity-hash |
 | ET_TORP_TYPE_CHANGE | 0x008000FD | game-opcodes |
+
+---
+
+### 6.16 set-phaser-level-protocol.md — 2026-05-28 (game-archaeology-specialist)
+
+**Status:** validated -> **`verified`** (after 3 minor non-wire corrections).
+**Sixteenth protocol doc** under v5 — second protocol leaf (after #15
+collision-effect-protocol) to clear the `verified` bar. ZERO material
+wire-format corrections — the 18-byte SetPhaserLevel packet (1B opcode +
+4B factory + 4B eventType + 4B source-ref + 4B target-ref + 1B charValue)
+is byte-by-byte accurate.
+
+**Foundation cross-anchors all hold:**
+- TGCharEvent class layout (0x2C, +0x28 = char) per mid #13 — `FUN_00574C20`
+  ctor verified setting vtable=0x008932DC and writing `(byte)0` to +0x28
+- TGCharEvent IsA chain {0x105, 0x101, 0x02} per mid #13 — verified at
+  `FUN_00574C50` (B8 05 01 / B8 01 01 / CMP 0x02 — three exact branches)
+- 18-byte wire format per leaf #14 — verified via TGCharEvent::WriteToStream
+  (`0x006D6940`, CREATED this session) calling base `FUN_006D6130` (16B)
+  then `WriteByte` of `event+0x28` (1B)
+- Generic event-forward `FUN_0069FDA0` — verified jump-table slot for
+  opcode 0x12 at `0x0069F3C7`: `PUSH 0; PUSH ESI; MOV ECX,EDI; CALL FUN_0069FDA0`
+  (PUSH 0 = no event-type override, as doc states)
+- Universal SWIG triple-string pattern — verified at 0x008E54D0/DC/EC
+  (`"TGCharEvent"` / `"_p_TGCharEvent"` / `"TGCharEventPtr"`)
+- Relay-audit-20260224 cross-anchor: 0x12 = 5 C→S / 5 S→C / 1:1 — verifies
+  doc's "bidirectional, relayed by host" classification
+
+**Four functions CREATED in Ghidra (all were undefined-in-DB, callback-registered):**
+- `0x006A1970` MultiplayerGame::SetPhaserLevelHandler — 34-byte body
+  (`8B 54 24 04 8B 42 0C 85 C0 74 14 ...`); xref `0x0069F19D` from
+  `FUN_0069EFE0` registration (DATA-only)
+- `0x00574180` PhaserSystem::SetPhaserLevelHandler — 23-byte body
+  (`8B 44 24 04 50 0F BE 50 28 89 91 F0 00 00 00 E8 4C 4F 16 00 C2 04 00`);
+  xref `0x00573E21` from `FUN_00573DE0` registration (DATA-only)
+- `0x006D6940` TGCharEvent::WriteToStream — 32-byte body, vtable+0x34 slot
+- `0x006D6960` TGCharEvent::ReadFromStream — 31-byte body, vtable+0x38 slot
+
+Same pattern as leaves #13/#14/#15: SWIG vtable callbacks and handler-table-
+registered functions are systematically undefined because their xrefs are
+DATA-only from registration sites; auto-analysis never enters them.
+
+**Four functions RENAMED this session:**
+- `0x00574200` → `PhaserSystem__SetPowerLevel`
+- `0x006A17C0` → `MultiplayerGame__SendEventMessage`
+- `0x00574C20` → `TGCharEvent__Ctor`
+- `0x00574C50` → `TGCharEvent__IsA`
+
+**Four plate comments added** with `[v5-validated 2026-05-28]` tags on all
+four created functions, documenting the gate logic, vtable slot mapping,
+wire-format size, and asymmetry between sender and receiver behavior.
+
+**Three minor non-wire corrections:**
+
+**C1 — Hierarchy cascade (cosmetic, doc-level inheritance display).**
+Doc lines 116-121 still depict the FABRICATED `TGSubsystemEvent (0x101)`
+intermediate class. Per mid #13 + leaf #14 cascade: there is NO string
+`"TGSubsystemEvent"` in the binary (confirmed 0 hits this session). 0x101
+is **TGEvent itself**, not a separate subclass. The "factory 0x02 size 0x28"
+line is also wrong — TGEvent's factory ID is 0x101 (it's emitted by
+`FUN_006D5CE0` at vtable+0x04 of TGEvent). 0x02 is TGObject's class ID
+(separate IsA-chain ancestor). Doc's IsA chain at line 142-145 correctly
+includes `0x02` because TGCharEvent does inherit through TGObject (the
+NiObject→TGObject→TGEvent line). Recommended doc rewrite:
+
+```
+NiObject
+  └── TGObject (class ID 0x02)
+        └── TGEvent (factory 0x101, ~size 0x28)
+              ├── TGCharEvent (factory 0x105, size 0x2C)
+              └── TGObjPtrEvent (factory 0x10C, size 0x2C)
+```
+
+**C2 — Registration string formatting (minor wording).**
+Doc line 320 has `"MultiplayerGame::__SetPhaserLevelHandler"` (double-underscore).
+The actual binary string at `0x00959F1C` is `"MultiplayerGame :: SetPhaserLevelHandler"`
+(colon-space-colon WITH spaces, single colon-colon). The Ghidra symbol name
+`s_MultiplayerGame____SetPhaserLeve_00959f1c` shows `____` as the encoded
+`" :: "` (Ghidra label-mangling for spaces and colons). Doc line 311's
+`"PhaserSystem::SetPhaserLevelHandler"` is **exact** in the binary at `0x008E5440`
+(no spaces, double-colon). Recommend doc update lines 311, 319 to use the
+exact binary string forms.
+
+**C3 — `FUN_006d6200` naming (minor).**
+Doc lines 244, 343 reference `FUN_006d6200` as `ReadObjectFromStream`. The
+Ghidra DB has it renamed `TGFactory_DeserializeObject`. Same function (reads
+class ID via vtable+0x60, constructs via `TGFactoryCreate`, calls vtable+0x38
+ReadFromStream on the new object). Recommend doc match DB name.
+
+**Non-corrections (verified, no change needed):**
+- 18-byte wire format byte-by-byte correct
+- PP_LOW=0 / PP_MEDIUM=1 / PP_HIGH=2 mapping consistent with 3-way switch
+  in `PhaserSystem::SetPowerLevel` (params 0/1/2 each have own JE branch)
+- Vtable @ 0x008932DC — all 16 slots correct (verified bytewise)
+- "NoMe" group string at 0x008E5528 (`4E 6F 4D 65 00`) — correct
+- "Forward" group string at 0x008D94A0 (`46 6F 72 77 61 72 64 00`) — correct
+- Sender 8-step flow matches `SetPowerLevel` disassembly exactly
+- Receiver flow in `FUN_0069FDA0` matches doc lines 229-251
+
+**Verified asymmetry between sender and receiver:**
+- Sender (`PhaserSystem::SetPowerLevel` 0x00574200): creates event, sets
+  charValue, posts to event manager (triggers `MultiplayerGame::SetPhaserLevelHandler`
+  thunk to send over wire), THEN cascades level to all child weapon
+  subsystems via `vtable+0x90`, THEN stores level in `+0xF0`.
+- Receiver (`PhaserSystem::SetPhaserLevelHandler` 0x00574180): sign-extends
+  `event+0x28` to int, stores into `+0xF0`, releases event. Does **NOT**
+  cascade to child weapons.
+
+The remote weapon intensity propagation happens through a separate mechanism
+(likely `PhaserSystem::Update` reading `+0xF0` per tick, or StateUpdate
+weapon serialization). Doc lines 264-268 correctly flag this asymmetry.
+
+**Cross-anchor: event ID 0x008000E0 has exactly 3 xrefs:**
+- `0x00573E81` in `FUN_00573E40` — PhaserSystem handler-table registration
+- `0x0069E9C3` in `MultiplayerGame_Ctor` — MP-bridge handler registration
+- `0x00574247` in `FUN_00574200` — `PhaserSystem::SetPowerLevel` emit site
+
+All three matches the doc's claimed registration/emission sites exactly.
+
+**Open Q (LOW priority, frequency stat):** Doc claims "~33 per 15-minute
+stock session"; relay-audit-20260224 shows 10 events in 21 minutes (5+5)
+on a different session. The number varies by playstyle; not a binary fact.
+
+**Function completeness (post-session):**
+- `0x00574200` `PhaserSystem__SetPowerLevel`: 1.23 → still undocumented
+  (plate comment would lift to ~15)
+- `0x006A17C0` `MultiplayerGame__SendEventMessage`: 0.0 → still undocumented
+- `0x0069FDA0` generic event-forward: 0.0 → flagged by foundation; doc
+  references but does not claim ownership
+
+The doc itself is **clean and accurate** for wire-format / behavior. The
+three corrections are surface-level (hierarchy diagram, registration string
+typography, helper function naming) — none change the bytes on the wire,
+none change the gate logic, none change the relay semantics.
+
+**Header inputs for documentation-writer:**
+- validated: 2026-05-28
+- methodology: FUNCTION_DOC_WORKFLOW_V5
+- binary fingerprint: STBC.exe, image base 0x00400000, size 0x619638 (6.39 MB)
+- status: `verified`
+- companions: `tgobjptrevent-class.md`, `pythonevent-wire-format.md`,
+  `wire-format-spec.md`, `game-opcodes.md`, `tgmessage-routing.md`,
+  `event-system-architecture.md`, `weapon-firing-mechanics.md`,
+  `v5-validation-status.md`
+- supersedes: prior set-phaser-level-protocol.md
 
 ---
 

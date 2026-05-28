@@ -76,7 +76,7 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 
 | # | Doc | Layer | Pre-existing depends on | Current status |
 |---|-----|-------|--------------------------|----------------|
-| 1 | wire-format-spec.md | Foundation / hub: opcode index + handler addresses + subsystem catalog | (engine: MpgameHandleMessage, vtable anchors) | pending |
+| 1 | wire-format-spec.md | Foundation / hub: opcode index + handler addresses + subsystem catalog | (engine: MpgameHandleMessage, vtable anchors) | **partial (2026-05-28)** — body restructure pending; see §6.1 |
 | 2 | stream-primitives.md | Foundation: TGBufferStream read/write + CF16 + CompressedVector3/4 | (engine: TGBufferStream vtable 0x008958D0) | pending |
 | 3 | transport-layer.md | Foundation: UDP framing + 7 transport types + TGMessage vtable + fragments | wire-format-spec, stream-primitives | pending |
 | 4 | game-opcodes.md | Mid: opcodes 0x00-0x2A handler addresses + per-opcode formats | wire-format-spec, transport-layer | pending |
@@ -613,7 +613,80 @@ Protocol docs cite-by-reference rather than re-anchoring.
 
 ## 6. Validation log
 
-(Per-doc validation entries will be appended here as the family campaign proceeds.)
+### 6.1 wire-format-spec.md — 2026-05-28 (game-archaeology-specialist)
+
+**Status:** validated -> `partial` (pending two corrections + frontmatter).
+**Methodology:** Per-doc workflow Phases 1-3 with `program: STBC.exe` on every MCP call.
+**Functions touched (completeness):**
+
+| Function | Addr | effective_score | Used to verify |
+|----------|------|-----------------|----------------|
+| MpgameHandleMessage | 0x0069f2a0 | 69.84 | dispatcher + jump-table claim |
+| FUN_006a1b10 (ChecksumCompleteHandler) | 0x006a1b10 | 0.00 | Settings packet wire format |
+| FUN_005b5eb0 (ComputeSubsystemHash) | 0x005b5eb0 | 0.00 | 12-slot hash table + ship+0x2BC identity |
+| FUN_005b5030 (Ship_LinkSubsystemToParent) | 0x005b5030 | 6.26 | weapon-type -> ship-slot mapping (ground truth) |
+| FUN_005b17f0 (StateUpdate sender) | 0x005b17f0 | 0.00 | anti-cheat hash dead-code gate |
+
+**Confirmed claims (high confidence):**
+- 3 dispatchers (MultiplayerGame 0x0069F2A0, NetFile 0x006A3CD0, MultiplayerWindow 0x00504C10) — bodies exist + sizes match.
+- 41-entry jump table at 0x0069F534, opcode-2 indexed — bytes verified, all 16 dispatched handlers exist, all 41 decoded paths confirmed via plate + `decompile_function`.
+- 6 NetFile handlers (0x20/21/22/23/25/27) — all exist.
+- 3 MultiplayerWindow handlers (0x00, 0x01, 0x16) — all exist.
+- 29 event-handler registration rows (FUN_0069EFE0): 5 exist as Ghidra functions; 24 are LAB_ labels but identity proved by `decompile_function(0x0069efe0)` returning 29 `FUN_006da130(&LAB_xxxxxxxx, s_MultiplayerGame____<Name>Handler)` calls — string-name match confirms each addr->name binding.
+- Anti-cheat hash DEAD-CODE-IN-MP claim — verified via FUN_005b17f0 line `bVar17 = (DAT_0097fa8a == '\0')` and `if (bVar17) WriteBit(1); ComputeSubsystemHash(...); else WriteBit(0)`.
+- Subsystem catalog vtable->class mappings (lines 152-167) — vtables 0x00893794 (PulseWeapon) + 0x008936F0 (TractorBeam) confirmed by `get_xrefs_to` -> constructor bodies that install them at offset 0.
+- Settings packet (opcode 0x00) globals — DAT_008e5f59, DAT_0097faa2 confirmed via `get_xrefs_to` (WRITE from MP setup paths, READ from FUN_006a1b10).
+- Cross-doc references (stateupdate.md / collision-effect-protocol.md / pythonevent-wire-format.md) — spot-checked, each linked doc covers what the hub claims.
+
+**Corrected claims:**
+
+1. **Settings packet wire format.** Doc shows `[byte:0x008e5f59] [byte:0x0097faa2]` (and `[byte:checksumFlag]`); binary uses `WriteBit` (FUN_006cf770) for all three. Decompile of FUN_006a1b10 (Settings sender):
+   ```
+   WriteByte(0x00)                       opcode
+   WriteFloat(*(DAT_009a09d0 + 0x90))    gameTime
+   WriteBit(DAT_008e5f59)                bit-packed setting 1
+   WriteBit(DAT_0097faa2)                bit-packed setting 2
+   WriteByte(playerSlot)                 closes/breaks bit group
+   WriteShort(strlen(mapName))
+   WriteBytes(mapName, strlen)
+   WriteBit(checksumFlag)                bit-packed (new group)
+   if (checksumFlag) FUN_006f3f30(...)
+   ```
+   The doc's `[byte:...]` representation should become `[bit:...]` with a note about the bit-packing wrapper (FUN_006cf770 vs FUN_006cf730).
+
+2. **Ship+0x2BC and ship+0x2D4 named-slot identities** (resolves cross-doc disagreement #4). The "Named Slot Layout" table:
+   - **Wrong**: `+2BC (unused) NULL Always NULL` → **Correct**: `Pulse Weapon System (PulseWeaponSystem parent)`
+   - **Wrong**: `+2D4 Pulse 0x00893794` → **Correct**: `Tractor (TractorBeamSystem parent at 0x008936F0)`
+   - Ground truth: `decompile_function(0x005b5030)` switches on weapon-class-ID 0x802A subclasses:
+     - 0x802C (PhaserBank) → reads `ship+0x2B8` (Phaser parent)
+     - 0x802D (PulseWeapon) → reads `ship+0x2BC` (Pulse parent — note: 700 decimal in decompile = 0x2BC)
+     - 0x802E (TractorBeamProjector) → reads `ship+0x2D4` (Tractor parent)
+     - 0x802F (TorpedoTube) → reads `ship+0x2B4` (Torpedo parent)
+   - **subsystem-integrity-hash.md is the correct doc** — its slot 11 "Pulse +0x40/+0x2BC" matches the binary; the hub doc's Named Slot Layout had the Pulse/Tractor slot identities swapped.
+
+**Retired (dedup with sibling — resolves cross-doc disagreement #5):**
+- The "Anti-Cheat Hash Field Offsets" table (lines 188-208) should be retired in favor of subsystem-integrity-hash.md's identical table. Wire-format-spec.md keeps a one-line summary linking to subsystem-integrity-hash.md as canonical.
+
+**Body restructure suggested:**
+- Tag verified anchor rows with `[v5-validated 2026-05-28]`.
+- Move "Validated by JMP detour trace 2026-02-10" body provenance into v5 YAML frontmatter under `cross_source` tag.
+- Update Settings Packet section: replace `[byte:DAT_008e5f59]` syntax with `[bit:DAT_008e5f59]` and explain the bit-pack wrapper.
+- Update Named Slot Layout: swap +0x2BC and +0x2D4 row contents per the FUN_005b5030 switch.
+- Retire the Anti-Cheat Hash Field Offsets table → 1-line "See subsystem-integrity-hash.md for the full hash-order table".
+
+**Companion follow-ups:**
+- subsystem-integrity-hash.md row 11 (already correct) — flag as the canonical authority once v5-validated in its own pass.
+- stream-primitives.md — drift #1 from protocol-snapshot already covers the WriteBit / WriteByte distinction; that's where the bit-packing wrapper class needs full docs.
+- CLAUDE.md "TopWindow ptr at 0x0097e238" — out-of-scope for this row (hub doc does not cite that global), but pending for ui/engine drift sweep.
+
+**Open questions left for downstream rows:**
+- ship+0x2DC = "unused NULL Always NULL" in the doc — not verified this pass. `FUN_005b5030` only handles 4 weapon classes (0x802C/D/E/F); could be another mis-identification. Worth checking when per-ship-subsystem-wire-format.md validates.
+- **Factory ID 0x866** (used by opcode 0x17 DeletePlayerUI) is not in the engine factory catalog (0x02 / 0x101 / 0x105 / 0x10C / 0x8124 / 0x8129). Flagged in §4 #13; resolution belongs to the delete-player-ui-wire-format.md row. Hub doc continues to cite 0x866 with a NOTE pointing readers to the open question.
+- **9 of 13 Named Slot Layout rows remain un-ground-truthed.** Only 4 of the 13 slot rows (+0x2B4/+0x2B8/+0x2BC/+0x2D4 — the weapon parents) are anchored by the FUN_005b5030 switch decompile. The remaining 9 rows (Powered, Repair, Power, Cloak, LifeSupport, SensorArray, WarpDrive, +0x2DC unused, ShipRef) inherit from the older JMP detour trace and have not been re-anchored to vtable installer xrefs this pass. Picking these up is a per-ship-subsystem-wire-format.md (row #12) task — the per-ship doc traces every slot to its vtable installer for each species.
+
+**Files touched:** docs/protocol/wire-format-spec.md (re-rendered with v5 frontmatter, NOTE block, body corrections, retired hash table, cross-link section), docs/protocol/v5-validation-status.md (this row updated; §2 row #1 status flipped to partial).
+
+
 
 ---
 

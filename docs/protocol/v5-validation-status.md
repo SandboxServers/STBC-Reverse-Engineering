@@ -94,7 +94,7 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 | 16 | set-phaser-level-protocol.md | Leaf: opcode 0x12 + TGCharEvent | game-opcodes, tgobjptrevent-class | **verified (2026-05-28)** — second protocol-family doc to clear `verified`; 18-byte wire format byte-by-byte confirmed; ZERO material wire-format changes; 3 minor corrections (C1 hierarchy cascade — no TGSubsystemEvent, 0x101 IS TGEvent; C2 registration-string typography "MultiplayerGame :: SetPhaserLevelHandler" with spaces; C3 helper-fn rename FUN_006d6200 → TGFactory_DeserializeObject); 4 functions newly created (sender thunk, applier, TGCharEvent::Write/ReadFromStream) + 4 renamed + 4 plates; foundation cross-anchors (TGCharEvent 0x2C, IsA {0x105, 0x101, 0x02}, TGEvent base 16B) all hold; see §6.16 |
 | 17 | delete-player-ui-wire-format.md | Leaf: opcode 0x17 + factory 0x866 | game-opcodes, pythonevent-wire-format | **partial (2026-05-28)** — 3 corrections + 4 clarifications + MAJOR architectural finding (two-registry architecture closes wire-format-spec OQ #2); receiver/transport/authority all v5-validated; 0x866 located in TGFactory registry (DAT_0099a578) which is separate from NiRTTI; FUN_006a0ca0 corrected to opcode 0x18 sender (not 0x17); dst_obj_id semantic corrected (network singleton handle, not ship/player); see §6.17 |
 | 18 | objnotfound-requestobj-enterset-wire-format.md | Leaf: opcodes 0x1D/0x1E/0x1F triad | game-opcodes, objcreate-serialization | **partial (2026-05-28)** — 3 material wire/value corrections (C1 setName is length-prefixed not null-terminated; C2 DAT_008d8ab8 is `"warp"` tunnel sentinel not `default space combat set`; C3 DAT_008e5c18 is FLT_MAX undamaged sentinel not low-HP threshold — strictly stricter gate) + 2 address-mapping corrections (C4 GetPlayerSlotFromObjID is at 0x006a19a0 not 0x005a2030; C5 0x006a7770 is MakeObjIDFromPlayerSlot the INVERSE and not called by triad) + 2 clarifications (Clar1 triad uses raw stream primitives only — bypasses TGFactory_DeserializeObject — these are command/RPC messages not event objects; Clar2 IsLocalPlayerShip is host-mode-aware so opcode 0x03 is selected for every team-bearing ship on a dedicated server); foundation cross-anchors all hold (dispatcher 0x0069F2A0, jump table 0x0069F534, TGNetwork singleton, "NoMe" group, "UNKNOWN" allocator); 5 functions renamed + 2 created in Ghidra + 5 plates; closes §4 #1 (FUN_005a2030 = ShipReadSpecies — binary sides with objcreate-serialization.md); closes §4 #15 (breadcrumb added); see §6.18 |
-| 19 | subsystem-integrity-hash.md | Leaf analysis: dead-code anti-cheat hash | stateupdate, per-ship-subsystem-wire-format | pending |
+| 19 | subsystem-integrity-hash.md | Leaf analysis: dead-code anti-cheat hash | stateupdate, per-ship-subsystem-wire-format | **partial (2026-05-28)** — ONE material correction (C1: 6 of 12 slot subsystem-identity labels were stale pre-correction names, now cascaded from foundation #1; doc line 129 negative claim "Repair does not appear in the hash" was wrong on TWO counts and is corrected — RepairSubsystem IS hashed at slot 7) + 4 clarifications (Clar-1 receiver event-type at event+0x10 as immediate; Clar-2 torpedo int->float cast precision; Clar-3 &ET_BOOT_PLAYER and 0x008000F6 are the same address constant; Clar-4 sender SAR is signed but wire-identical to unsigned shift); hash function reads CORRECT offsets — only the human-readable identity column was wrong; all 6 boolean sentinel magic constants byte-exact; sender/receiver/wire encoding/kick path byte-by-byte confirmed; container aliasing pattern documented; 5 functions renamed + 1 created (MultiplayerWindow_BootPlayerHandler at 0x00506170) + 4 plates; see §6.19 |
 | 20 | cf16-precision-analysis.md | Leaf analysis: CF16 encoder/decoder + precision tables | stream-primitives | pending |
 | 21 | cf16-explosion-encoding.md | Leaf analysis: opcode 0x29 + mod weapon ID round-trip | cf16-precision-analysis, game-opcodes | pending |
 | 22 | message-trace-vs-packet-trace.md | Leaf analysis: cross-trace opcode reconciliation | game-opcodes, stateupdate, tgmessage-routing | pending |
@@ -570,8 +570,8 @@ binary as authority.
 | 1 | `FUN_005a2030` semantics: "ReadSpeciesByte" (reads species into ship+0xEC) vs "GetPlayerSlotFromObjID" | objcreate-serialization.md (key-functions table) vs objnotfound-requestobj-enterset-wire-format.md (function-addresses table) | **CLOSED (2026-05-28, leaf #18):** binary truth — `0x005a2030` IS `ShipReadSpecies` (a 2-vtable-call ship-setup function that reads a species value into ship+0xEC). The actual `GetPlayerSlotFromObjID` is at `0x006a19a0` (formula matches the body decompile). objnotfound-requestobj-enterset-wire-format.md table corrected this pass; objcreate-serialization.md was correct. See objnotfound-requestobj-enterset-wire-format.md "Critical Correction: Function Address Map" section (C4). |
 | 2 | TGBufferStream write primitives count | stream-primitives.md = 7 writes; python-messages.md = 8 writes (adds WriteBool / WriteLong / WriteCString) | python-messages.md (more complete); merge into stream-primitives.md |
 | 3 | TGMessage layout, fields +0x2C/+0x30/+0x34 | transport-layer.md table 1 vs table 2 within same file ("retry_strategy" vs "num_retries", "base_delay" vs "backoff_time", "delay_factor" vs "backoff_factor") | Ghidra decompile of TGMessage constructor FUN_006b82a0 |
-| 4 | Ship+0x2BC slot identity | wire-format-spec.md slot map says "(unused) NULL always"; subsystem-integrity-hash.md slot 11 says "Pulse Weapon System hashing at +0x40 / +0x2BC" | Ghidra decompile of ComputeSubsystemHash 0x005b5eb0 |
-| 5 | Subsystem hash table duplication | wire-format-spec.md has its own 12-row hash order table; subsystem-integrity-hash.md is the dedicated doc | Make subsystem-integrity-hash.md canonical; wire-format-spec hub keeps a 1-line summary + link |
+| 4 | Ship+0x2BC slot identity | wire-format-spec.md slot map says "(unused) NULL always"; subsystem-integrity-hash.md slot 11 says "Pulse Weapon System hashing at +0x40 / +0x2BC" | **CLOSED (2026-05-28, leaf #19):** binary truth — ship+0x2BC is **PulseWeaponSystem parent** (`HashWeaponSystem` slot 11). Wire-format-spec.md was already corrected in foundation pass §6.1 (the hub's slot map had Pulse/Tractor swapped at +0x2BC/+0x2D4); subsystem-integrity-hash.md's slot 11 reading was correct on +0x40/+0x2BC -> Pulse. Confirmed via decompile of `ComputeSubsystemIntegrityHash` (0x005b5eb0) + ground-truth from `Ship_LinkSubsystemToParent` (0x005b5030) switching on 0x802D -> ship+0x2BC. See subsystem-integrity-hash.md §C1 (corrected slot table). |
+| 5 | Subsystem hash table duplication | wire-format-spec.md has its own 12-row hash order table; subsystem-integrity-hash.md is the dedicated doc | **CLOSED (2026-05-28, leaf #19):** subsystem-integrity-hash.md is canonical; foundation §6.1 retired the hub's duplicated Anti-Cheat Hash Field Offsets table in favor of a 1-line link to this leaf. The leaf's slot table is now v5-validated against the corrected ship-slot identities (foundation #1 C1 cascade applied as leaf C1). |
 | 6 | Per-collision PythonEvent count | pythonevent-wire-format.md says "12-14 messages: 1 ObjectExploding + 11 ADD_TO_REPAIR_LIST + 2 delayed" but worked example shows "14: 1 ObjectExploding + 13 ADD_TO_REPAIR_LIST" | Re-derive from trace |
 | 7 | TGEvent base vtable slot count | pythonevent-wire-format.md = 18 slots (0-17); engine family vtable doc baseline = 14 slots; collision-effect-protocol.md TGEvent vtable = 16 slots (ends at +0x40) | Ghidra vtable boundary check at 0x00895FF4 |
 | 8 | CF16 doc overlap | cf16-precision-analysis.md and cf16-explosion-encoding.md duplicate algorithm + constants + scale table + mod round-trip analysis | Merge: precision-analysis = algorithm/constants; explosion-encoding = wire-format + mod ID only |
@@ -4150,6 +4150,178 @@ truth; §8 spot-check #8 marked CLOSED with FLT_MAX value; this §6.18 entry add
   `cf16-explosion-encoding.md`, `delete-player-ui-wire-format.md`, `v5-validation-status.md`,
   `docs/engine/rtti-class-catalog.md`
 - supersedes: prior 2026-02-21 objnotfound-requestobj-enterset-wire-format.md
+
+### 6.19 subsystem-integrity-hash.md — 2026-05-28 (game-archaeology-specialist)
+
+**Status:** validated -> `partial` (after 1 material correction + 4 clarifications). **Nineteenth
+protocol doc** under v5 — fifth protocol leaf (after #15 collision-effect-protocol,
+#16 set-phaser-level-protocol, #17 delete-player-ui, #18 objnotfound-requestobj-enterset).
+Does NOT clear `verified` because C1 is a load-bearing cascade from foundation #1 (six
+slot-identity labels in the canonical 12-row hash table required rewriting) and the body's
+line 129 negative claim ("Repair does not appear in the hash") was wrong on TWO counts —
+RepairSubsystem IS hashed at slot 7 (ship+0x2D8). The hash function reads CORRECT offsets;
+only the human-readable identity column was stale. All other claims (functions, sender/receiver
+gates, wire encoding, kick path, 6 boolean sentinel magic constants, container aliasing
+pattern) are byte-by-byte confirmed.
+
+**Methodology:** Phase 1-5 per v5 workflow. `program: STBC.exe` on every MCP call. Doc anchors
+against foundation doc #1 (wire-format-spec.md C1 — corrected ship-slot Named Slot Layout,
+v5-validated 2026-05-28), mid #8 (stateupdate.md — sender `bVar19 = !isMultiplayer` gate identity),
+mid #11 (stateupdate-subsystem-wire-format.md — ship+0x2C0..+0x2DC linked-list order), and
+the engine cross-anchors for IsMultiplayer (0x0097FA8A) + TGEventManager singleton (0x0097F838).
+
+**Functions touched:**
+
+| Function | Addr | effective_score | Plate? |
+|----------|------|-----------------|--------|
+| ComputeSubsystemIntegrityHash | 0x005B5EB0 | 38.3 | yes |
+| HashBaseSubsystem | 0x005B6170 | 25.4 | yes |
+| HashWeaponSystem | 0x005B6330 | 25.7 | yes |
+| HashIndividualWeapon | 0x005B6560 | medium | no (OQ-2 — per-type dispatch not byte-checked) |
+| HashFoldFloat | 0x005B6C10 | 40.9 | yes |
+| Ship__WriteStateUpdate (sender) | 0x005B17F0 | high | anchored |
+| Ship__ReadStateUpdate (receiver) | 0x005B21C0 | high | anchored |
+| ShipSubsystemContainer_Ctor | 0x005B5D00 | high | anchored (vtable 0x008944c8) |
+| MultiplayerWindow_BootPlayerHandler | 0x00506170 | 33.0 | yes (CREATED this pass — 0x44-byte msg, reason=4 at 0x005061CD) |
+
+**Wire-format / mechanism CONFIRMATION (byte-by-byte, no changes to hash algorithm):**
+
+| Section | Claim | Verified via |
+|---------|-------|--------------|
+| Sender gate | bVar19 = !isMultiplayer set at 0x005B1906; tested at 0x005B1D96; has_hash=1 + WriteShort only on SP branch; has_hash=0 on MP branch | Disasm 0x005B1D96..0x005B1DC5 |
+| Wire encoding | `(hash >> 16) ^ (hash & 0xFFFF)` 16-bit XOR fold | Disasm 0x005B1DB6 (SAR EDX,0x10), 0x005B1DB9 (XOR EAX,EDX), 0x005B1DBC (CALL WriteShort 0x006CF7F0) |
+| Receiver gate | isMultiplayer == 1 -> ComputeSubsystemIntegrityHash + compare; on mismatch post ET_BOOT_PLAYER | Decompile gate `if ((DAT_0097fa8a != '\\0') && (uComputedHash = FUN_005b5eb0(), ...))` |
+| Event allocation | TGAlloc 0x2C bytes (FUN_00717b70) -> FUN_00718010 -> FUN_006BB840 (TGEvent ctor) -> FUN_006D62B0 (SetSrcDest) -> FUN_006DA2A0 (PostEvent) | Disasm 0x005B22FF..0x005B232C |
+| Event type write | MOV [EDI+0x10], 0x008000F6 — immediate 32-bit constant (NOT a pointer dereference) | Disasm 0x005B2311 |
+| Kick path | ET_BOOT_PLAYER (0x008000F6) -> MultiplayerWindow_BootPlayerHandler (0x00506170) -> TGBootPlayerMessage reason=4 | Disasm 0x005061A0 (PUSH 0x44), 0x005061CD (MOV [ESI+0x40], 0x4); cross-confirmed via 04_ui_windows.c line 2027 |
+| 6 sentinel magic constants | All hex bit-patterns byte-exact: 0x42800083 / 0x42993333 / 0x42C53333 / 0x42C80000 / 0x4164CCCD / 0x43E40CCD / 0x41DA6666 / 0x4180CCCD / 0x3ECCCCCD / 0x42C63333 / 0x42026666 / 0x43F38CCD | Decompile of HashBaseSubsystem + HashWeaponSystem |
+| Container aliasing | ship+0x27C sub-object ctor zero-fills param_1[1..0x18] = ship+0x280..+0x2DC; offsets +0x34..+0x60 alias ship+0x2B0..+0x2DC | Decompile of FUN_005B5D00 |
+
+**One material correction:**
+
+**C1 — Slot subsystem-identity column (6 of 12 rows mislabeled).** The pre-v5 doc's 12-row
+slot table had six stale labels that pre-dated foundation #1's 2026-05-28 ship-slot table
+correction. The hash function reads the **correct container offsets** (and those offsets
+alias the **correct ship offsets** via the container ctor's zero-fill range), but the
+human-readable subsystem name column carried legacy names. Corrections:
+
+- Slot 1 (+0x48 / ship+0x2C4): was "Power Reactor" -> is **HullSubsystem** (0x8138)
+- Slot 3 (+0x34 / ship+0x2B0): was "Powered Master" -> is **PowerSubsystem (reactor/EPS)** (0x813E) [rename only — same physical subsystem, legacy name]
+- Slot 4 (+0x4C / ship+0x2C8): was "Cloak Device" -> is **SensorSubsystem** (0x8139)
+- Slot 6 (+0x54 / ship+0x2D0): was "Sensor Array" -> is **WarpEngineSubsystem** (0x813B)
+- Slot 7 (+0x5C / ship+0x2D8): was "Warp Drive" -> is **RepairSubsystem** (0x813F)
+- Slot 8 (+0x60 / ship+0x2DC): was "Crew / Unknown-A" -> is **CloakDevice** (0x813A)
+
+**Critical downstream fix — line 129 negative claim was wrong on TWO counts.** Pre-v5 body
+read "The Repair subsystem (ship+0x2C0 in the main container table) does NOT appear in the
+hash." Binary truth: (a) ShieldGenerator is at ship+0x2C0 (not Repair, never was) and
+(b) RepairSubsystem IS at ship+0x2D8 (slot 7) and **does** appear in the hash via
+`HashBaseSubsystem` + 1-float `prop+0x4C` extra. Corrected statement now reads: "All 12 named
+subsystem slots (Power, Shield, Hull, Sensor, Impulse, Warp, Repair, Cloak, Torpedo, Phaser,
+Pulse, Tractor) DO appear in the hash via the container alias at ship+0x27C."
+
+**Severity:** the C1 cascade does NOT change wire format or hash algorithm — only labels.
+But the line 129 negative claim is load-bearing for OpenBC implementation (a clean-room
+implementer reading the pre-v5 doc would have skipped RepairSubsystem from their hash —
+producing mismatches on any session that triggered the SP code path). Severity MEDIUM-HIGH
+for OpenBC correctness; HIGH for documentation accuracy.
+
+**Four clarifications:**
+
+**Clar-1 — Receiver event-type write is at event+0x10 as a 32-bit immediate.** Pre-v5
+pseudocode wrote `event->eventType = 0x8000F6;` without specifying byte offset. Binary truth:
+`MOV dword ptr [EDI + 0x10], 0x008000F6` at 0x005B2311. Pseudocode updated to show the offset
+explicitly.
+
+**Clar-2 — Torpedo int product fold cast precision.** Pre-v5 pseudocode:
+`HashFoldFloat((float)(torpType->field_0x08 * torpType->field_0x00), &hash);` (int multiply
+then float cast). Binary truth: `(float)local_4[2] * (float)*local_4` — each int is cast to
+float SEPARATELY then multiplied as floats. For small int values typical of torpedo metadata
+the result is the same, but on overflow the float-multiply path differs in precision. Pseudocode
+updated to binary-faithful form.
+
+**Clar-3 — `&ET_BOOT_PLAYER` and `0x008000F6` are the same address constant.** Ghidra decompile
+shows `*(undefined **)(iHashBit + 0x10) = &ET_BOOT_PLAYER;` (symbolic-pointer write). Actual
+instruction is `MOV dword ptr [EDI + 0x10], 0x008000F6` (immediate constant). Both are
+bytewise identical because **the address of the ET_BOOT_PLAYER symbol IS the event-type ID** —
+the address itself is the unique event-type key, not a pointer to a value at that address.
+Doc pseudocode using `0x008000F6` directly is more accurate to the bytes.
+
+**Clar-4 — Sender uses signed SAR; wire-identical to unsigned shift.** Binary uses
+`SAR EDX, 0x10` (signed shift right). The doc's `(hash >> 16)` reading as unsigned is
+wire-identical because `WriteShort` truncates to the low 16 bits, and the XOR result's low
+16 bits are unaffected by sign extension into the high 16. Pedantic note for re-implementers
+using a signed `int32` hash type.
+
+**Cross-doc anchor reuse:**
+
+- **From foundation doc #1 (wire-format-spec.md C1):** corrected Named Slot Layout at
+  ship+0x2B0..+0x2DC — cascade is the source of leaf C1.
+- **From mid #8 (stateupdate.md):** `bVar19 = !isMultiplayer` gate identity — confirmed
+  consistent.
+- **From mid #11 (stateupdate-subsystem-wire-format.md):** subsystem linked-list order — no
+  conflict with the hash table here (different mechanism; same ship-offset table is shared).
+- **From leaf #18 (objnotfound-requestobj-enterset-wire-format.md):** command-message
+  bypasses-TGFactory pattern — the receiver's `PostEvent` chain here follows the same shape
+  (raw TGEvent allocation, not TGFactory_DeserializeObject). Cross-linked in body.
+- **From engine doc #1 (CLAUDE.md Key Globals):** IsMultiplayer (0x0097FA8A), TGEventManager
+  singleton (0x0097F838), MultiplayerWindow singleton (0x009878CC) — all confirmed.
+
+**Cross-doc impacts (no in-this-pass modifications; batched at family close):**
+
+- `wire-format-spec.md` — closes §4 #4 and §4 #5 (both already half-closed by foundation
+  pass — this leaf provides the canonical 12-row hash table that the hub now links to instead
+  of duplicating).
+- `stateupdate.md` — already cites bVar19 identity; no change.
+- `stateupdate-subsystem-wire-format.md` — no change (subsystem-list mechanism is separate
+  from the integrity hash).
+- `per-ship-subsystem-wire-format.md` — uses the same corrected slot identities (foundation
+  cross-anchor already applied).
+- `objnotfound-requestobj-enterset-wire-format.md` (leaf #18) — sibling cross-link added in
+  body (command-message bypasses-TGFactory pattern shared).
+
+**Open questions:**
+
+- **OQ-1** — `FUN_0055e220` is called at slot 8 (ship+0x2DC = CloakDevice). What state does
+  this side-effect getter read? Hypothesis: cloak `Refresh` / `UpdateState`. Decompile pending.
+- **OQ-2** — `HashIndividualWeapon` 5-way type dispatch (0x802B / 0x802C / 0x802D / 0x802E /
+  0x802F) per-type property-offset reads not byte-checked this pass. Function renamed but
+  no plate yet.
+- **OQ-3** — `FUN_00560fc0` (Impulse 4-float extra helper at slot 5) decompile to confirm
+  Impulse / Warp engine-pair asymmetry (Warp at slot 6 has no helper).
+- **OQ-4** — `reference/decompiled/05_game_mission.c` line numbers (~56151, ~56253, etc.)
+  not re-verified against the 2026-05-28 import. Update or drop the line-number table.
+
+**Verification methods used:**
+
+- `decompile_function` on FUN_005B5EB0, FUN_005B6170, FUN_005B6330, FUN_005B6560, FUN_005B6C10,
+  FUN_005B5D00, FUN_005B17F0, FUN_005B21C0
+- `disassemble_bytes` for 0x005B1D96..0x005B1DC5 (sender gate + SAR/XOR/WriteShort) and
+  0x005B22FF..0x005B232C (receiver kick path) and 0x005061A0..0x005061CD (boot-player handler
+  size + reason)
+- `create_function` at 0x00506170 (was undefined in Ghidra DB)
+- `read_memory` for ET_BOOT_PLAYER (0x008000F6) confirmation as address constant
+- `get_xrefs_to` on FUN_005B5EB0 (single xref from sender + receiver gate sites confirmed)
+
+**Files touched:** `docs/protocol/subsystem-integrity-hash.md` (re-rendered with breadcrumb
+header preserved, v5 frontmatter added, NOTE block with 1 correction + 4 clarifications,
+dedicated C1 section with corrected slot table + line 129 fix, Clar-2 inline at torpedo
+int-product fold, Clar-1 + Clar-3 in receiver section, Clar-4 in sender section, new container
+aliasing pattern subsection, new kick path section, refreshed Function Addresses table with
+Data anchors sub-table, Open Questions, Related Documents); `docs/protocol/v5-validation-status.md`
+(§2 row #19 status flipped from `pending` to `partial`; §4 #4 marked CLOSED with binary truth;
+§4 #5 marked CLOSED (canonical authority confirmed); this §6.19 entry added).
+
+**Header inputs for documentation-writer:**
+
+- validated: 2026-05-28
+- methodology: FUNCTION_DOC_WORKFLOW_V5
+- binary fingerprint: stbc.exe, image base 0x00400000, size 6182400 bytes
+- status: `partial`
+- companions: `wire-format-spec.md`, `stateupdate.md`, `stateupdate-subsystem-wire-format.md`,
+  `per-ship-subsystem-wire-format.md`, `objnotfound-requestobj-enterset-wire-format.md`,
+  `v5-validation-status.md`, `docs/engine/rtti-class-catalog.md`
+- supersedes: prior 2026-02-15 subsystem-integrity-hash.md
 
 ---
 

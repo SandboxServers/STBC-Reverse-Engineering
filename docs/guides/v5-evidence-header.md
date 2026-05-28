@@ -118,6 +118,7 @@ After the first complete pass with no `low` rows, the doc becomes `status: verif
 
 ## See also
 
+- [v5-doc-validation-workflow.md](v5-doc-validation-workflow.md) — orchestrator playbook for the per-doc validation campaign
 - `ghidra-mcp/docs/prompts/FUNCTION_DOC_WORKFLOW_V5.md` — per-function workflow upstream of doc-level validation
 - [reading-decompiled-code.md](reading-decompiled-code.md) — how to read what the agents cite
 - [lessons-learned.md](lessons-learned.md) — debugging techniques that surface evidence

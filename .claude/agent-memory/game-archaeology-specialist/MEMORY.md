@@ -1,9 +1,7 @@
 # Game Archaeology Specialist — Memory
 
-Field journal for binary archaeology on stbc.exe. The 2002 binary is finite; every dig builds the shared map.
+Field journal for binary archaeology on stbc.exe. The binary is finite; every dig builds the shared map.
 
 ## Index
 
-Entries appear here as the campaign progresses. New entries link to topic files in this directory; this index stays under 200 lines.
-
-(empty — see `.claude/agent-memory/game-reverse-engineer/MEMORY.md` for the existing RE field journal; cross-reference it before opening new entries here)
+- [Engine Snapshot 2026-05-28](engine-snapshot-20260528.md) — v5 campaign ground truth: binary fingerprint, naming coverage (25.7%, not 83%), annotation scripts never applied to current import, top 3 drift findings

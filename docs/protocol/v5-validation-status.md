@@ -88,7 +88,7 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 | 10 | objcreate-serialization.md | Mid: full ObjCreate chain + species map | object-replication, stream-primitives | **partial (2026-05-28)** — 3 material corrections (C1 velocity = CV4 3-dir + 4-mag, not f32-speed + 3-pad; C2 playerSlots base = +0x74 not +0x84; C3 vtable[+0x118] only does species+Python, body+subsystems is vtable[+0x11C]); orientation quaternion confirmed; species map byte-exact vs scripts; 11 functions renamed; see §6.10 |
 | 11 | stateupdate-subsystem-wire-format.md | Mid: subsystem linked list + 3 WriteState formats | stateupdate | **partial (2026-05-28)** — 2 material corrections (C1 ship+0x2C4 was HullSubsystem not PowerSubsystem + add missing 0x2C0/0x2C8; C2 EndMarker attribution corrected from 0x006CDAE0 to 0x006CF9B0); 10+ confirmed claims; 14 Ghidra renames + 1 created + 7 plates; see §6.11 |
 | 12 | per-ship-subsystem-wire-format.md | Mid: 16 stock ship subsystem catalogs | stateupdate-subsystem-wire-format | **partial (2026-05-28)** — 4 sampled ships byte-exact (Sovereign 49 / Bird of Prey 32 / Galor 31 / Akira 47); ZERO material wire-format corrections; 3 refinements (R1 cycle-byte math is per-tick exact / per-cycle approximate due to bit packing; R2 "top-level" is post-link count; R3 silently-dropped templates like Probe Launcher / Shuttle Bay / Decoy Launcher); 11 remaining ships + Enterprise@37 at medium confidence via pattern extrapolation; foundation cross-anchor (mid #11 ship+0x2B0..+0x2DC slot table) re-confirmed; see §6.12 |
-| 13 | tgobjptrevent-class.md | Mid: TGObjPtrEvent class layout + 11 producers | (engine: TGEvent vtable 0x00895FF4) | pending |
+| 13 | tgobjptrevent-class.md | Mid: TGObjPtrEvent class layout + 11 producers | (engine: TGEvent vtable 0x00895FF4) | **partial (2026-05-28)** — 0 wire-format / 0 producer corrections; 3 corrections (C1 0x101 is TGEvent itself not "TGSubsystemEvent" / C2 vtable slot 0 is dtor not 0x00403310 + 17 slots not 12-14 / C3 SWIG wrapper addresses unverified in current Ghidra DB); class layout 0x2C bytes confirmed byte-by-byte; all 11 game event types verified at producer sites; dual-fire and host-only gates confirmed; see §6.13 |
 | 14 | pythonevent-wire-format.md | Leaf: opcode 0x06 + 4 event factories | tgobjptrevent-class, game-opcodes | pending |
 | 15 | collision-effect-protocol.md | Leaf: opcode 0x15 + CollisionEvent class + validation chain | game-opcodes, stream-primitives | pending |
 | 16 | set-phaser-level-protocol.md | Leaf: opcode 0x12 + TGCharEvent | game-opcodes, tgobjptrevent-class | pending |
@@ -2636,6 +2636,299 @@ promotes to `verified`. The sampling strategy passed all 4 axes
 on all 4 sampled ships, so extrapolation confidence is medium
 (adequate for the catalog's current operating role; not yet
 suitable for "verified" labelling under v5).
+
+---
+
+### 6.13 tgobjptrevent-class.md — 2026-05-28 (game-archaeology-specialist)
+
+**Status:** validated -> `partial` (1 fabricated-class correction
++ 1 vtable-slot-numbering correction + 1 third-string discovery +
+several name-only renames; ZERO wire-format corrections; ZERO
+producer-list corrections).
+
+**Methodology:** Per-doc workflow Phases 1-5 with `program: STBC.exe`
+on every MCP call. Ghidra database had NONE of the small vtable-slot
+functions defined (0x004032b0 / 0x004032c0 / 0x004032f0 / 0x00403300
+/ 0x00403310 — 6 byte bodies each — they were undefined regions);
+all were `create_function`-ed during this pass. Ctor 0x00403290 was
+already a function. WriteToStream 0x006d6dc0 and ReadFromStream
+0x006d6df0 were also undefined regions despite the doc citing them
+by address — both were `create_function`-ed.
+
+**Headline:** TGObjPtrEvent's class layout (`0x2C` bytes, +0x28 =
+int32 obj_ptr) is **byte-by-byte confirmed** via decompile of the
+ctor and TGEvent base ctor. Wire format (16 base bytes + 4 obj_ptr
+bytes = 20 payload, 21 over the wire) **confirmed** via WriteToStream
+decompile. All 11 distinct game event types **confirmed** via direct
+decompile of 11 producer functions (each emits the doc-claimed
+ET_xxxx event_type constant into +0x10 and the doc-claimed obj_ptr
+source into +0x28). Dual-fire pattern (Phaser + Tractor each emit
+TWO events per fire cycle) confirmed by direct inspection.
+Host-only gate on ET_STOP_FIRING_AT_TARGET_NOTIFY (`DAT_0097fa89 !=
+'\0'`) confirmed at BOTH producer sites (FUN_00574010 phaser,
+FUN_005825a0 tractor). 30 xrefs to the ctor confirmed exactly via
+`get_xrefs_to(0x00403290)` (matches the doc's "30 call sites" claim).
+5 vtable DATA xrefs confirmed exactly at the 5 addresses the doc
+lists (0x40329d ctor + 0x551a5b repair-priority + 0x57f185 tractor +
+0x5712fe phaser-stop + 0x5768c5 weapon-system).
+
+**Functions touched (completeness):**
+
+| Function | Addr | effective_score | Plate? |
+|----------|------|-----------------|--------|
+| TGObjPtrEvent_Ctor | 0x00403290 | 57.75 | yes |
+| TGObjPtrEvent_GetFactoryID | 0x004032b0 | n/a (3-instruction leaf) | — |
+| TGObjPtrEvent_IsA | 0x004032c0 | n/a (10-instruction leaf) | — |
+| TGObjPtrEvent_GetClassName | 0x004032f0 | n/a (string-return leaf) | — |
+| TGObjPtrEvent_GetSWIGName | 0x00403300 | n/a (string-return leaf) | — |
+| TGObjPtrEvent_GetSWIGPtrName | 0x00403310 | n/a (string-return leaf) | — |
+| TGObjPtrEvent_ScalarDeletingDtor | 0x00403320 | n/a | — |
+| TGObjPtrEvent_WriteToStream | 0x006d6dc0 | 73.92 | yes |
+| TGObjPtrEvent_ReadFromStream | 0x006d6df0 | n/a | yes |
+| TGObjPtrEvent_CopyFrom | 0x006d6da0 | n/a | — |
+| Game_SetPlayerLocal | 0x004066d0 | n/a | — |
+| Ship_SetTarget | 0x005ae210 | n/a | — |
+| ShipSubsystem_SetCondition | 0x0056c470 | n/a | — |
+| RepairSubsystem_RaisePriority | 0x005519e0 | n/a | — |
+| PhaserSystem_StopFiringAtTarget | 0x00574010 | n/a | — |
+| TractorBeamSystem_StopFiringAtTarget | 0x005825a0 | n/a | — |
+
+10 functions newly created (5 vtable-slot leaves + ScalarDeletingDtor +
+WriteToStream + ReadFromStream + TGCharEvent_IsA + size-0x34 dtor
+variant 0x00403500 was already present). 16 functions renamed
+(10 TGObjPtrEvent_*  + 6 producer functions). 3 v5 plate comments
+installed. `TGObjPtrEvent` struct (0x2C / 44 bytes / 12 fields)
+created and applied via prototypes.
+
+**Confirmed claims (high confidence):**
+
+- **Class layout 0x2C bytes** — sizeof verified by struct
+  application + ctor allocation pattern (`FUN_00717b70(0x2c) ->
+  FUN_00718010 -> FUN_00403290`) at every producer site.
+- **Field +0x28 = obj_ptr int32** — ctor zeros it (`param_1[10] = 0`);
+  every producer writes `*(undefined4 *)(iVar+0x28) = <obj_id>`.
+- **Vtable 0x0088869C** — direct memory inspection (16 slots through
+  +0x40 enumerated below); ctor writes it as `*param_1 = &PTR_FUN_0088869c`.
+- **Wire format 21 bytes total** — base TGEvent::WriteToStream writes
+  4×i32 (factory_id, event_type, source_obj_ref, dest_obj_ref) via
+  the stream's vtable[0x64] and vtable[0x84] slots; subclass appends
+  one more i32 via vtable[0x84]; opcode byte = 1.
+- **Source/Dest ID encoding** — NULL→0, sentinel `DAT_0095adfc`→
+  0xFFFFFFFF, else `*(uint32*)(obj+0x04)` — confirmed via TGEvent
+  base WriteToStream `FUN_006d6130` decompile.
+- **30 ctor xrefs** — exact match to doc claim. UNCONDITIONAL_CALL
+  xrefs enumerated; each maps to a producer function or LAB_ label
+  in the producer table.
+- **5 vtable DATA xrefs** — exact match to doc. `get_xrefs_to(0x0088869c)`
+  returns exactly the 5 listed addresses.
+- **TGCharEvent IsA chain** — confirmed as sibling pattern: TGCharEvent
+  IsA (FUN_00574c50, byte at +0x28 init via TGCharEvent ctor 0x00574c20)
+  returns true for 0x105, 0x101, 0x02 — same chain shape as
+  TGObjPtrEvent.
+- **All 11 producer event types** — each verified via direct
+  decompile (see "Producer verification" below).
+- **Dual-fire pattern** — Phaser FUN_00571f40 emits 0x00800081 +
+  0x0080007C back-to-back; Tractor FUN_0057f580 emits 0x0080007D
+  + 0x0080007C back-to-back; Torpedo FUN_0057c9e0 emits 0x0080007C
+  only (single).
+- **Host-only gate on 0x008000DC** — `if (DAT_0097fa89 != '\0' &&
+  this+0xa4 != 0 && this+0xa8 != 0)` at both FUN_00574010 and
+  FUN_005825a0.
+- **ET_TARGET_WAS_CHANGED stores previous target** — FUN_005ae210
+  reads current target (`iVar1 = FUN_005ae170()`) THEN creates event
+  with `*(iVar3+0x28) = *(iVar1+4)` — the OLD target's ID.
+- **String pointer RTTI scheme** — confirmed per
+  event-system-architecture.md companion. GetClassName returns
+  ASCIIZ "TGObjPtrEvent" at 0x008d8594; GetSWIGName returns
+  "_p_TGObjPtrEvent" at 0x008d85a4; THIRD function at vtable +0x2C
+  returns "TGObjPtrEventPtr" at 0x008d85b8 (see Correction C2).
+- **Timer 0x00050001 delivery** — FUN_007022f0 + FUN_007023e0
+  emit factory 0x10C with event_type 0x50001 (top half = 5,
+  bottom half = 1), destined for global queue `DAT_0099b010`.
+- **Repair priority manual-ctor pattern (FUN_005519e0)** — does NOT
+  call TGObjPtrEvent_Ctor; instead allocates 0x2C, calls TGEvent
+  base ctor FUN_006d5c00, then manually writes vtable at offset 0:
+  `*puVar2 = &PTR_FUN_0088869c` (matches the 0x551a5b vtable DATA
+  xref). This is why FUN_005519e0 appears in vtable DATA xrefs but
+  not in the 30 ctor CALL xrefs.
+
+**Corrected claims:**
+
+1. **C1 — "TGSubsystemEvent (factory 0x101)" is fabricated** (low-
+   impact). The doc names 0x101 as a class called "TGSubsystemEvent"
+   and writes the hierarchy `0x10C -> 0x101 -> 0x02`. The binary has
+   NO class with that name — string search for "TGSubsystemEvent"
+   returns 0 matches. The vtable 0x00895FF4 (which the TGEvent base
+   ctor `FUN_006d5c00` writes) emits factory_id 0x101 directly from
+   its GetFactoryID slot at 0x006d5ce0 (single hit on byte pattern
+   `B8 01 01 00 00 C3` = MOV EAX, 0x101 / RET). So **0x101 IS TGEvent**,
+   not a separate "TGSubsystemEvent" parent class. The IsA chain
+   `0x10C -> 0x101 -> 0x02` is correct in shape; just the middle-link
+   name is wrong. 0x02 likely represents the SWIG-base root type
+   (no RTTI emitter found for 0x02 in the same factory-id pattern;
+   search returned 7 generic-looking hits, none of which is a class
+   GetFactoryID). The TGCharEvent (0x105) IsA confirms: same
+   `0x105 -> 0x101 -> 0x02` shape — meaning 0x105 and 0x10C are
+   SIBLINGS directly under TGEvent (0x101). The doc's class-hierarchy
+   diagram needs to remove the TGSubsystemEvent layer and place both
+   TGCharEvent and TGObjPtrEvent directly under TGEvent (0x101).
+
+2. **C2 — Vtable slot numbering is off by one (or one extra slot
+   missed).** The doc lists slot 0 = scalar_deleting_dtor at
+   0x00403310. Direct memory inspection at 0x0088869C shows slot 0 =
+   0x00403320 (the real scalar_deleting_dtor for size 0x2C). The
+   address 0x00403310 the doc names "scalar_deleting_dtor" is actually
+   **a third RTTI string-return function** returning the ASCIIZ
+   "TGObjPtrEventPtr" at 0x008d85b8 (NEW finding — call it
+   GetSWIGPtrName). The full vtable slot list at 0x0088869C is:
+
+   ```
+   slot off addr        function
+    0   00  0x00403320  TGObjPtrEvent_ScalarDeletingDtor (size 0x2C)
+    1   04  0x004032b0  GetFactoryID -> 0x10C
+    2   08  0x004032c0  IsA -> {0x10C, 0x101, 0x02}
+    3   0C  0x006f1650  TGEvent inherited
+    4   10  0x006d6e20  WriteToStream variant (different stream class)
+    5   14  0x006d6e50  ReadFromStream variant
+    6   18  0x006d6050  TGEvent inherited
+    7   1C  0x006d60b0  TGEvent inherited
+    8   20  0x006f15c0  TGEventHandlerObject::InvokePythonHandler
+                        (universal — matches event-system mid #8)
+    9   24  0x004032f0  GetClassName -> "TGObjPtrEvent"
+   10   28  0x00403300  GetSWIGName -> "_p_TGObjPtrEvent"
+   11   2C  0x00403310  GetSWIGPtrName -> "TGObjPtrEventPtr" [NEW]
+   12   30  0x006d6da0  CopyFrom (base + obj_ptr)
+   13   34  0x006d6dc0  WriteToStream (network)
+   14   38  0x006d6df0  ReadFromStream (network)
+   15   3C  0x00403500  ScalarDeletingDtor (size 0x34 — subclass variant)
+   16   40  0x006ffa90  Handler invocation pattern (reads +0x20/+0x24/+0x28)
+   ```
+
+   The doc's "Slots 3-8, 11, 15-17 inherited from TGEvent base" line
+   misses that slots 11 and 15 are NOT inherited — slot 11 is the
+   new GetSWIGPtrName method and slot 15 is a separate size-0x34
+   scalar deleting destructor (subclass variant, matches the doc's
+   own "0x00403570 destructor variant (size 0x34 subclass?)" hint
+   in the Infrastructure section — confirmed). Total vtable is at
+   least 17 slots (through +0x40), not the "vtable [12, 13, 14]"
+   the doc body describes.
+
+3. **C3 — Phaser/Tractor xref counting is exact-but-confusable.**
+   The doc lists `0x005712FE` (PhaserStop) and `0x005768C5`
+   (WeaponSystem) as unanalyzed vtable-DATA-write sites. They ARE
+   unanalyzed — but they're INSIDE the bodies of fully-analyzed
+   functions (FUN_00571f40 Phaser::Fire and an unnamed weapon
+   function), as part of the dual-fire / weapon emission pattern.
+   The doc's table mixes "address is in unanalyzed region" with
+   "address is in a defined function but not at a function boundary".
+   For Phaser at 0x005712fe specifically: the vtable write happens
+   in **a code region that has no function defined** (between
+   PhaserSystem ctor area and FUN_00571f40); this is a SEPARATE
+   producer site that did not show up in our 30 ctor CALL xrefs
+   list (it's a vtable-write-only site, like FUN_005519e0). So the
+   doc's "Vtable DATA References" enumeration of 5 sites is accurate,
+   but the "C++ Producers in Unanalyzed Code Regions" table mistakes
+   address-inside-existing-functions for genuinely unanalyzed code.
+
+**Dropped claims:** None — all 11 game event types verified.
+
+**SWIG wrapper functions** (5 in the doc body): the addresses
+0x005C7F10 / 0x005C7F90 / 0x005C8000 / 0x005C8070 / 0x005C80E0 are
+**NOT defined as functions** in the Ghidra database (annotation
+scripts never applied to current import — see engine-snapshot-
+20260528.md). The string identifiers (`new_TGObjPtrEvent`,
+`TGObjPtrEvent_Cast`, `TGObjPtrEvent_Create`, `TGObjPtrEvent_GetObjPtr`,
+`TGObjPtrEvent_SetObjPtr`) are confirmed at 0x0092eab0..0x0092eaf4
+in the SWIG PyMethodDef name region, but the doc's specific
+function-address claims for these wrappers are **inherited from
+prior annotation runs** and not independently verifiable in the
+current Ghidra DB. The SWIG NAME strings exist; the function
+addresses are not anchored this pass. Recommend either (a) re-run
+`tools/ghidra_annotate_swig.py` to apply names + create the
+function entry points, or (b) demote the address-specific SWIG
+table to `confidence: medium` with a note. No corrections needed
+to the doc's behavioral claims about Python usage (those are
+cross-source from script analysis, not binary-anchored).
+
+**New factual sections recommended:**
+
+- **GetSWIGPtrName as a separate vtable slot** — the third RTTI
+  string-return method "TGObjPtrEventPtr" deserves a callout. Same
+  pattern exists for TGCharEvent (TGCharEventPtr at 0x008e54ec) and
+  ObjectExplodingEvent (ObjectExplodingEventPtr at 0x008da2a0).
+  This is SWIG's pointer-typeinfo string used for Python script
+  type negotiation distinct from the stream-RTTI "_p_TGObjPtrEvent".
+- **Class hierarchy correction** — replace "TGSubsystemEvent (0x101)"
+  layer with "TGEvent (0x101)" directly; TGCharEvent and TGObjPtrEvent
+  are siblings under TGEvent. The "0x02" parent class is the SWIG
+  base root, not a named C++ class in BC.
+- **Vtable layout expanded** — list all 17 known slots with their
+  function names + roles, distinguishing inherited-no-override
+  (Slots 3, 6, 7) from inherited-but-special-meaning (Slot 4-5
+  variant Write/Read for the "fixup-flag" stream class) from
+  TGObjPtrEvent-overridden slots.
+
+**Producer verification (cross-reference grid):**
+
+| Address | Decompiled fn name | event_type written to +0x10 | obj_ptr source | Doc claim |
+|---------|--------------------|----------------------------|----------------|-----------|
+| 0x004066f6 (in 0x004066d0) | Game_SetPlayerLocal | 0x0080000E | param_2+4 (new player) | ET_SET_PLAYER ✓ |
+| 0x005ae270 (in 0x005ae210) | Ship_SetTarget | 0x00800058 (DAT_00800058) | iVar1+4 (PREVIOUS target) | ET_TARGET_WAS_CHANGED ✓ stores previous |
+| 0x0056c4fa (in 0x0056c470) | ShipSubsystem_SetCondition | 0x0080006B (DAT_0080006B) | param_1+4 (this subsystem) | ET_SUBSYSTEM_HIT ✓ |
+| 0x551a5b (in 0x005519e0) | RepairSubsystem_RaisePriority | 0x00800076 (DAT_00800076) | param_1+4 (repair target) | ET_REPAIR_INCREASE_PRIORITY ✓ |
+| 0x00572074 (in 0x00571f40) | Phaser::Fire | 0x00800081 (DAT_00800081) | target_id via 0x006f0ee0 | ET_PHASER_STARTED_FIRING ✓ |
+| 0x005720df (in 0x00571f40) | Phaser::Fire | 0x0080007C (DAT_0080007c) | target_id via 0x006f0ee0 | ET_WEAPON_FIRED ✓ dual fire |
+| 0x0057caa2 (in 0x0057c9e0) | Torpedo::Fire | 0x0080007C (DAT_0080007c) | 0 (constant) | ET_WEAPON_FIRED ✓ single |
+| 0x0057f64b (in 0x0057f580) | Tractor::Fire | 0x0080007D (DAT_0080007d) | target_id via 0x006f0ee0 | ET_TRACTOR_BEAM_STARTED_FIRING ✓ |
+| 0x0057f6b3 (in 0x0057f580) | Tractor::Fire | 0x0080007C (DAT_0080007c) | target_id via 0x006f0ee0 | ET_WEAPON_FIRED ✓ dual fire |
+| 0x00568afd (in 0x00568ad0) | unnamed sensors | 0x00800088 (DAT_00800088) | iVar1+4 (identified ship) | ET_SENSORS_SHIP_IDENTIFIED ✓ |
+| 0x005678ec (in 0x005678b0) | unnamed sensors | 0x00800088 (DAT_00800088) | param_2+1 (identified ship) | ET_SENSORS_SHIP_IDENTIFIED ✓ |
+| 0x00580ce6 (in 0x00580910) | tractor dock | 0x00800085 (DAT_00800085) | piVar3[1] (docked ship) | ET_TRACTOR_TARGET_DOCKED ✓ |
+| 0x0057405e (in 0x00574010) | PhaserSystem_StopFiringAtTarget | 0x008000DC (DAT_008000dc) | param_2+4 (target) | ET_STOP_FIRING_AT_TARGET_NOTIFY ✓ HOST-ONLY |
+| 0x005825ee (in 0x005825a0) | TractorBeamSystem_StopFiringAtTarget | 0x008000DC (DAT_008000dc) | param_2+4 (target) | ET_STOP_FIRING_AT_TARGET_NOTIFY ✓ HOST-ONLY |
+| 0x0070232e (in 0x007022f0) | AI timer producer | 0x00050001 | param_1[1] (timer source) | Timer delivery ✓ |
+| 0x00702407 (in 0x007023e0) | AI timer producer | (assumed 0x00050001) | (similar) | Timer delivery ✓ (not re-decompiled) |
+
+The remaining ~14 xrefs are infrastructure (dtors at 0x004028dd,
+0x00403570) plus the LAB_-only sites the doc inventories in its
+"Unanalyzed Code Regions" table — those align with subsystem
+producer regions the doc names correctly.
+
+**Open questions left for downstream rows:**
+
+1. **Slot 4-5 "variant" Write/Read at 0x006d6e20 + 0x006d6e50** — these
+   are pre-conditional WriteToStream/ReadFromStream gated on a
+   different base-class type check (FUN_006d5ec0 / FUN_006d5ff0).
+   Doc never mentions them. Suspect: SAVE/LOAD (persistent storage)
+   vs NETWORK serialization split — slot 13/14 (network) writes
+   unconditionally; slots 4/5 check a save-stream-class flag first.
+   Requires investigation of FUN_006d5ec0 / FUN_006d5ff0 (likely
+   `TGStream::CanSerializeToWire` vs `TGStream::CanSerializeToSave`).
+2. **Vtable slot 16 (0x006ffa90)** — reads `this+0x20`, `this+0x24`,
+   `this+0x28`. The +0x20/+0x24 fields are labelled "reserved" in
+   the doc; this slot proves they ARE used (probably handler-invocation
+   metadata for Python script dispatch). Worth confirming with
+   pythonevent-wire-format.md row #14.
+3. **SWIG wrapper addresses 0x005C7F10..0x005C80E0** — not anchored
+   in the current Ghidra DB. Need annotation-script re-run OR demote
+   to medium confidence.
+4. **The 0x02 root SWIG type identity** — IsA returns true for 0x02
+   as the grandparent factory ID, but no GetFactoryID emitter for
+   factory 0x02 found. Likely a SWIG-base "object" type with no
+   real C++ class. Worth checking SWIG type-info table layout.
+5. **Repair priority manual-ctor pattern** — FUN_005519e0 hand-rolls
+   the vtable assignment instead of calling TGObjPtrEvent_Ctor.
+   This is a HOT path in MP repair flow. Worth verifying the
+   resulting object passes IsA(0x10C) — if so, the wire format is
+   identical; if not, downstream handlers could misclassify. Static
+   analysis suggests it IS identical (same vtable, same +0x28 init
+   pattern), but no emulation done.
+
+**Files touched:** `docs/protocol/v5-validation-status.md` (this
+row added; §2 row #13 status flipped to partial; §3.13 inventory
+will be refreshed when documentation-writer renders the corrected
+doc; §7.7 event-class anchor table for TGObjPtrEvent vtable expanded
+from 12 slots to 17 slots when restructure happens).
 
 ---
 

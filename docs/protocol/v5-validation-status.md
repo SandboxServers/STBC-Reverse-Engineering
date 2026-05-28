@@ -84,7 +84,7 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 | 6 | python-messages.md | Mid: opcodes 0x2C+ MAX_MESSAGE_TYPES + SendTGMessage path | wire-format-spec, stream-primitives | **partial (2026-05-28)** — 1 correction (WriteCString length-prefix width), 1 clarification (TGBufferStream::Serialize vs TGMessage::WriteToBuffer), 2 cross-source-tagged Python-handler claims; see §6.6 |
 | 7 | tgmessage-routing.md | Mid: relay-all + star topology + opaque payload | python-messages, transport-layer | **partial (2026-05-28)** — 3 material corrections (C1: FUN_006B63A0 is connect handler not type-0x00 relay; C2: `NoMe` created by C++ MultiplayerGame_Ctor not Python; C3: THREE routing mechanisms not two) + 2 minor (function name FUN_006B8530 = TGBufferStream_GetBufferAndSize; SendTGMessage pseudocode now covers targetID == -1); 15 anchors confirmed; 3 open questions including chat 1:2 mystery; see §6.7 |
 | 8 | stateupdate.md | Mid: opcode 0x1C dirty flags + 8 field formats + round-robin | game-opcodes, stream-primitives | **partial (2026-05-28)** — all 8 dirty-bit wire formats anchored byte-by-byte; ZERO material corrections; 5 clarifications (hash-flag-emit gate identity, wire-vs-validation conflation, weapon list shared with subsystems, CLIENT-side IsMultiplayer speculation should be dropped, PowerSubsystem WriteState created in Ghidra); see §6.8 |
-| 9 | object-replication.md | Mid: FUN_0069f620 thin index for ObjCreate | game-opcodes | pending |
+| 9 | object-replication.md | Mid: FUN_0069f620 thin index for ObjCreate | game-opcodes | **partial (2026-05-28)** — all 6 claims confirmed at high confidence; 2 wording refinements (R1 sender-side helper FUN_006A19A0; R2 vtable[+0x10C] sender / vtable[+0x118]+[+0x11C] receiver via FUN_005A1F50); MpgameHandleObjCreate renamed at 0x0069F620; see §6.9 |
 | 10 | objcreate-serialization.md | Mid: full ObjCreate chain + species map | object-replication, stream-primitives | pending |
 | 11 | stateupdate-subsystem-wire-format.md | Mid: subsystem linked list + 3 WriteState formats | stateupdate | pending |
 | 12 | per-ship-subsystem-wire-format.md | Mid: 16 stock ship subsystem catalogs | stateupdate-subsystem-wire-format | pending |
@@ -290,6 +290,7 @@ its per-doc rows are still pending.
   - Doc is so thin it could be folded into objcreate-serialization.md or game-opcodes.md. Currently both objcreate-serialization.md and this doc cover overlapping material; this one is the lighter index.
   - vtable slot 0x10C = WriteStream is a load-bearing claim that should anchor against the engine vtable maps.
 - **Difficulty:** trivial
+- **Validation status (2026-05-28):** `partial`. 6/6 claims confirmed; 2 wording refinements pending. See §6.9 for full report. Function renamed to `MpgameHandleObjCreate` in Ghidra (program: STBC.exe).
 
 ### 3.10 objcreate-serialization.md
 
@@ -1891,6 +1892,120 @@ and should keep referencing it.
 status flipped to partial). docs/protocol/stateupdate.md NOT modified this pass —
 the documentation-writer agent will re-render with the corrections + restructure
 listed above.
+
+---
+
+### 6.9 object-replication.md — 2026-05-28 (game-archaeology-specialist)
+
+**Verdict:** `partial`. Smallest doc in the family (~30 lines). All 6 load-bearing
+claims confirmed at the binary level. Two material wording REFINEMENTS (not
+corrections) needed; one is a sender-vs-receiver direction clarification, the other
+is a vtable-slot direction clarification. Doc body short enough that
+documentation-writer should re-render in full.
+
+**Subject:** `MpgameHandleObjCreate` at `0x0069F620` (renamed from `FUN_0069f620`).
+Shared receiver+host-relay for opcodes 0x02 (ObjCreate) and 0x03 (ObjCreateTeam).
+
+**Cross-anchors verified:**
+
+- `MpgameHandleMessage` at `0x0069F2A0` (foundation #4) — jump table thunks
+  at `0x0069F31E` (opcode 0x02, `PUSH 0`) and `0x0069F334` (opcode 0x03,
+  `PUSH 1`) re-decoded byte-for-byte. Same handler, only param_3 differs.
+- TGMessage envelope vtable `0x008958D0` (foundation #3) — `param_2` is a
+  `TGMessage *`; relay path uses `vtable+0x18` (Clone) before SendTGMessage.
+- SWIG `TGBufferStream` at `0x006CEFE0` / vtable `0x00895C58` (foundation #2)
+  — used inside `FUN_005A1F50` for the per-object payload (`OpenBuffer` →
+  `ReadInt` × 2 → vtable[0x118] Deserialize → vtable[0x11C] Fixup).
+- `wire-format-spec.md` (foundation #1) — 0x02/0x03 listed as S→C, confirmed.
+
+**Confirmed claims (6/6):**
+
+1. **Shared handler** — `FUN_0069F620` is reached only via the 0x02 thunk
+   (`PUSH 0`) and the 0x03 thunk (`PUSH 1`). No other xrefs to the function.
+2. **Wire format** (off 0 opcode, off 1 owner_slot, off 2 team_id if 0x03) —
+   confirmed against both the receiver decompile (`cVar3 = *(char *)(buf+1)`;
+   `local_10 = *(char *)(buf+2)` iff `bWithTeam`) and the two senders
+   (`NewPlayerInGameHandler` at `0x006A1E70` + `FUN_006A02A0` RequestObj
+   handler) which write `local_40c[0] = 2|3`, `local_40c[1] = owner_slot`,
+   `local_40c[2] = team`.
+3. **Team byte for 0x03** — present iff `param_3 != 0`. Receiver stores at
+   `piVar5[0xB9]` (int-index 0xB9 = byte offset 0x2E4); sender reads from
+   `controller+0x2E4`. Symmetric.
+4. **`FUN_005A1F50` deserialize path** — confirmed: opens SWIG TGBufferStream
+   on (buf+iVar7, len-iVar7), reads class species ID and object ID via
+   two `ReadInt`s, runs `FUN_00430730(0, classID)` as a class-category 0x8002
+   pre-check (REJECT if non-null), calls factory `FUN_006F13E0(cls, id)`,
+   then invokes object vtable+0x118 (Deserialize) and vtable+0x11C (Fixup).
+5. **Receiver behavior** — confirmed with detail: active-slot SWAP wraps
+   `FUN_005A1F50` (`DAT_0097fa84` saved/restored, `DAT_0097fa8c` swapped,
+   `DAT_0095b07d` toggled 0→1 around the call); host-side relay loop walks
+   16 PlayerSlots at offset +0x7C with stride 0x18, clones the message via
+   `vtable+0x18` and `SendTGMessage` to peers other than the sender and
+   ourselves; Network controller (88 bytes) is allocated via
+   `NiAlloc(0x58)` + `FUN_0047dab0(controller, "Network")` and attached via
+   `vtable+0x134`.
+6. **Authority S→C** — confirmed. Senders are both server-side codepaths
+   (NewPlayerInGameHandler on join; RequestObj response). Clients only
+   receive (and forward via the in-handler relay when acting as host).
+
+**Refinements (not binary corrections — wording fixes):**
+
+R1. **`FUN_006A19A0` is sender-side only.** Doc body says the byte-1
+   owner-slot is "mapped from object owner to player slot via FUN_006a19a0".
+   That mapping IS done by `FUN_006A19A0` — but on the SENDER side, before
+   transmit. The receiver decompile (this doc's subject) does NOT call
+   `FUN_006A19A0`; it reads the already-mapped byte directly from buf+1.
+   Recommend rewording to "Byte 1: owner_player_slot — sender computes via
+   `FUN_006A19A0(ship->owner_ptr)`; receiver reads the byte as-is."
+
+R2. **`vtable[0x10C]` is a sender slot.** Doc says
+   `object->vtable[0x10C](buffer + offset, maxlen - offset)` writes the
+   "object serialization data". That is the SENDER's vtable slot
+   (used by `FUN_006A02A0` + `NewPlayerInGameHandler`). The RECEIVER
+   `FUN_0069F620` does NOT call vtable[0x10C]; it calls
+   `FUN_005A1F50`, which uses vtable[0x118] (Deserialize) and
+   vtable[0x11C] (Fixup) on the freshly instantiated object. Recommend
+   splitting the wire-format description into "sender writes via
+   vtable+0x10C" and "receiver decodes via factory FUN_006F13E0 + vtable+0x118
+   + vtable+0x11C."
+
+**Cross-doc consistency:**
+
+- `game-opcodes.md` (mid #4) — 0x02 row says "FUN_0069F620 (arg2=0)" and
+  0x03 row says "(arg2=1)"; matches the byte-by-byte thunk re-decode here.
+- `objcreate-serialization.md` (mid #10) — the doc-under-review cross-links
+  to it for the full serialization chain. Validating that doc is the next
+  step in the campaign (mid #10).
+- `multiplayer-decompiled-functions.md` / `decompiled-functions.md` —
+  documented receiver at the right address, consistent with this validation.
+
+**Open questions (recorded for the next dig):**
+
+- Active-slot SWAP reentrancy: the `DAT_0095b07d=0` flag is set false
+  before `FUN_005A1F50` and true after — implies a guard. Unknown if
+  FUN_005A1F50 itself can recurse into more ObjCreate paths; if so the
+  outer save/restore could leak. Out of scope here; revisit during the
+  multiplayer-flow archaeology if it ever resurfaces in crash reports.
+- Why does the receiver skip controller attach when piVar5[1] equals
+  `*(int *)(this+0x80)` (own slot) in the host branch? Likely because the
+  host already has authority for its own objects. Confirm during
+  objcreate-serialization.md validation.
+- Per-class wire payloads (Ship vs Torpedo vs Beam vs Explosion) are
+  emitted by class-specific vtable+0x10C overrides — those belong to
+  the per-class wire-format docs, not here.
+
+**Annotations written to Ghidra (program: STBC.exe):**
+
+| Action | Target | Detail |
+|---|---|---|
+| rename_function | FUN_0069f620 → `MpgameHandleObjCreate` | warning re: "Mpgame" verb is benign (consistent with siblings) |
+| set_function_prototype | 0x0069F620 | `void __thiscall MpgameHandleObjCreate(MultiplayerGame *, TGMessage *, char bWithTeam)` |
+| set_plate_comment | 0x0069F620 | Algorithm, wire format, struct layout, control flow, magic numbers, invocation sites, complementary senders, cross-refs |
+
+**Files touched:** docs/protocol/v5-validation-status.md (this row added). The
+doc-under-review (`docs/protocol/object-replication.md`) NOT modified this pass
+— documentation-writer agent will apply R1 + R2 wording fixes and add the
+`[v5-validated 2026-05-28]` tag plus the v5 frontmatter header.
 
 ---
 

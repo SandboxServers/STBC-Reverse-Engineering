@@ -137,11 +137,11 @@ evidence:
     function: null
     confidence: high
     note: "Main per-instance event dispatch entry point; consumed by [docs/engine/event-system-architecture.md](event-system-architecture.md)."
-  - claim: "Sibling TG vtables outside Ship chain: TGBufferStream 0x008958D0 (per precision dig), TGDimmerController 0x0088b7ec (NiRTTI-registered)"
+  - claim: "Sibling TG vtables outside Ship chain: TGMessage 0x008958D0, TGBufferStream 0x00895C58, TGDimmerController 0x0088b7ec (NiRTTI-registered)"
     address: null
     function: null
     confidence: high
-    note: "TGBufferStream cross-anchored to docs/engine/netimmerse-vtables.md precision dig. TGDimmerController + TGFuzzyTriShape are the 2 NiRTTI-registered TG classes per docs/engine/nirtti-factory-catalog.md."
+    note: "TGMessage at vtable 0x008958D0 — identified 2026-05-28 via SWIG new_TGMessage allocator (corrects prior mis-identification as TGBufferStream from the precision dig). The actual SWIG TGBufferStream is the 0x30-byte buffer-cursor class at vtable 0x00895C58 (FUN_006CEFE0 ctor). TGDimmerController + TGFuzzyTriShape are the 2 NiRTTI-registered TG classes per docs/engine/nirtti-factory-catalog.md. See docs/protocol/stream-primitives.md § Two Stream Classes."
   - claim: "0x008963BC has ZERO xrefs — not a runtime class vtable"
     address: 0x008963BC
     function: null
@@ -482,10 +482,18 @@ Slots where Ship provides its own implementation (vs inheriting from parent):
 
 Other TG vtables exist outside the Ship inheritance chain. Cross-link for completeness:
 
-- **TGBufferStream** at `0x008958D0` — stream serialization base. `vtable[0]()` returns
-  `0x32` class tag (also the wire-format prefix used by the dispatcher). See
-  [docs/engine/netimmerse-vtables.md](netimmerse-vtables.md) for the precision-dig findings
-  on TGBufferStream's role in the streaming pipeline.
+- **TGMessage** at `0x008958D0` — wire-message envelope base class (size 0x40, ctor
+  FUN_006B82A0 → `TGMessage_Ctor`). `vtable[0]()` returns `0x32` class tag, emitted as the
+  first byte of every serialized blob (the dispatcher's stream-type gate). Derived
+  subclasses: TGConnectMessage, TGDisconnectMessage, TGAckMessage, TGBootPlayerMessage,
+  TGDoNothingMessage, TGNameChangeMessage. **Identified 2026-05-28 via SWIG `new_TGMessage`
+  allocator at 0x005E12E0** — corrects the prior precision-dig identity (which
+  mis-named this class as TGBufferStream).
+- **TGBufferStream** at `0x00895C58` — the actual SWIG-visible TGBufferStream is a
+  separate 0x30-byte buffer-cursor class (ctor FUN_006CEFE0). It does NOT live at vtable
+  0x008958D0 (that's TGMessage). See [docs/protocol/stream-primitives.md](../protocol/stream-primitives.md)
+  for the typed-primitive surface and [docs/protocol/stream-primitives.md § Two Stream Classes](../protocol/stream-primitives.md#two-stream-classes-stbcs-streaming-architecture) for the
+  handler pattern that uses both classes together.
 - **TGDimmerController** at `0x0088b7ec` — NiRTTI-registered. See
   [docs/engine/nirtti-factory-catalog.md](nirtti-factory-catalog.md).
 - **TGFuzzyTriShape** — second NiRTTI-registered TG class; factory entry in

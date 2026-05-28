@@ -77,7 +77,7 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 | # | Doc | Layer | Pre-existing depends on | Current status |
 |---|-----|-------|--------------------------|----------------|
 | 1 | wire-format-spec.md | Foundation / hub: opcode index + handler addresses + subsystem catalog | (engine: MpgameHandleMessage, vtable anchors) | **partial (2026-05-28)** — body restructure pending; see §6.1 |
-| 2 | stream-primitives.md | Foundation: TGBufferStream read/write + CF16 + CompressedVector3/4 | (engine: TGBufferStream vtable 0x008958D0) | pending |
+| 2 | stream-primitives.md | Foundation: TGBufferStream read/write + CF16 + CompressedVector3/4 | (engine: TGBufferStream vtable 0x008958D0) | **partial (2026-05-28)** — see §6.2; one CV3 correction + restructure for two-class disambiguation |
 | 3 | transport-layer.md | Foundation: UDP framing + 7 transport types + TGMessage vtable + fragments | wire-format-spec, stream-primitives | pending |
 | 4 | game-opcodes.md | Mid: opcodes 0x00-0x2A handler addresses + per-opcode formats | wire-format-spec, transport-layer | pending |
 | 5 | checksum-opcodes.md | Mid: opcodes 0x20-0x28 NetFile dispatcher | wire-format-spec, transport-layer | pending |
@@ -685,6 +685,112 @@ Protocol docs cite-by-reference rather than re-anchoring.
 - **9 of 13 Named Slot Layout rows remain un-ground-truthed.** Only 4 of the 13 slot rows (+0x2B4/+0x2B8/+0x2BC/+0x2D4 — the weapon parents) are anchored by the FUN_005b5030 switch decompile. The remaining 9 rows (Powered, Repair, Power, Cloak, LifeSupport, SensorArray, WarpDrive, +0x2DC unused, ShipRef) inherit from the older JMP detour trace and have not been re-anchored to vtable installer xrefs this pass. Picking these up is a per-ship-subsystem-wire-format.md (row #12) task — the per-ship doc traces every slot to its vtable installer for each species.
 
 **Files touched:** docs/protocol/wire-format-spec.md (re-rendered with v5 frontmatter, NOTE block, body corrections, retired hash table, cross-link section), docs/protocol/v5-validation-status.md (this row updated; §2 row #1 status flipped to partial).
+
+### 6.2 stream-primitives.md — 2026-05-28 (game-archaeology-specialist)
+
+**Status:** validated -> `partial` (pending one CV3-wire-format correction + body restructure for the two-class disambiguation).
+**Methodology:** Per-doc workflow Phases 1-3 with `program: STBC.exe` on every MCP call.
+
+**Headline:** the doc was CORRECT all along about TGBufferStream's identity, field layout, primitive addresses, and bit-pack format. The "two-class confusion" flagged in protocol-snapshot drift finding #1 is resolved in the OPPOSITE direction from what the snapshot suggested: the 0x30-byte class at 0x006CEFE0 / vtable 0x00895C58 IS the SWIG-visible TGBufferStream. My prior memory `tgbufferstream-vtable-20260528.md` mis-labeled the 0x40-byte class at 0x006B82A0 (vtable 0x008958D0) as TGBufferStream — that class is actually the OUTER wire-container (likely TGStreamedObject / TGSerialized), distinct from the SWIG primitive class.
+
+**Class-identity adjudication:**
+
+| Class | Ctor | Sizeof | Vtable | Role | Identity |
+|-------|------|--------|--------|------|----------|
+| A | 0x006CEFE0 | 0x30 | 0x00895C58 | Typed-primitive cursor over external buffer; SWIG-visible | **TGBufferStream** (SWIG verified via `new_TGBufferStream` at 0x005C22A0) |
+| B | 0x006B82A0 | 0x40 | 0x008958D0 | Wire-message envelope; owns buffer; vtable[0] returns 0x32 (class tag, first byte on wire) | **TGMessage** (SWIG verified via `new_TGMessage` at 0x005E12E0 — identified 2026-05-28; corrects prior "NOT TGBufferStream — open Q" note) |
+
+Class-A identity proven by SWIG `new_TGBufferStream` wrapper at 0x005C22A0 (function created this session): `PUSH 0x30; CALL alloc; MOV ECX,EAX; CALL 0x006CEFE0`. The 0x30-byte allocation and the FUN_006CEFE0 ctor target are decisive.
+
+Class-A field layout proven by every primitive decompile (uses +0x1C buf, +0x20 cap, +0x24 cursor, +0x28 bookmark, +0x2C bit-mask consistently).
+
+The handler pattern (CollisionEffectHandler at 0x006A2470 was the smoking gun):
+```
+pBuf = TGBufferStream_GetBufferAndSize(pStream_classB, &len)
+FUN_006CEFE0()                      // construct stack-local class A
+FUN_006CF180(pBuf+1, len-1)         // OpenBuffer on class A — skip opcode byte
+... use class-A primitives to extract typed payload ...
+FUN_006CF120()                      // destruct stack-local class A
+```
+So class A is the per-handler scratch cursor over class B's wire buffer.
+
+**Functions touched (completeness):**
+
+| Function | Addr | effective_score | Used to verify |
+|----------|------|-----------------|----------------|
+| TGBufferStream_swig_WriteBool_Bit (WriteBit) | 0x006CF770 | 68.1 | bit-pack format + state-machine semantics |
+| TGBufferStream_swig_ReadBool_Bit (ReadBit) | 0x006CF580 | n/a | bit-pack reader symmetry |
+| TGBufferStream_swig_Ctor | 0x006CEFE0 | 45.1 | class-A identity, vtable installer, field zeroing |
+| CompressedFloat16_Encode | 0x006D3A90 | 52.6 | CF16 encoder algorithm + 5 constants |
+| CompressedFloat16_Decode | 0x006D3B30 | 49.1 | CF16 decoder algorithm + 1/4095 multiplier |
+| CompressedVector3_ReadVirtual | 0x006D2EB0 | n/a | CV3 wire-format (3 bytes only, not 5) |
+| CompressedVector4_ReadVirtual | 0x006D2FD0 | n/a | CV4 wire-format (3 bytes + u16 OR float) |
+| FUN_006D2C60 (CV3 decompress callback) | 0x006D2C60 | n/a (created this session) | 3-byte direction unpack to floats |
+| FUN_005C22A0 (SWIG new_TGBufferStream) | 0x005C22A0 | n/a (created this session) | class-A 0x30 sizeof proof |
+
+**Confirmed claims (high confidence):**
+
+- All 14 primitive addresses match the doc exactly (WriteByte/Bit/Short/Int/Float/Bytes/GetPos + ReadByte/Bit/Short/Int/Float/Bytes + Read32v). Doc was 100% accurate.
+- Field layout +0x1C pBuffer / +0x20 uCapacity / +0x24 uCursor / +0x28 uBitBookmark / +0x2C bBitMask — CONFIRMED via decompile of WriteBit, WriteChar, OpenBuffer, ReadByte (each primitive consistently reads/writes these offsets).
+- Bit-pack wire layout `[count:3][bits:5]` — CONFIRMED.
+- Count stored as ACTUAL count (1..5), NOT count-1. (Doc was right; my prior reading was wrong.)
+- Bit mask in +0x2C walks 1, 2, 4, 8, 16 as a SINGLE walking bit; resets to 0 when count > 4 (i.e., after writing 5th bit) so next call allocates a new accumulator byte.
+- CF16 encoder algorithm: sign + 3-bit scale + 12-bit mantissa, log scale base 0.001 mult 10.0, mantissa = ftol((value-lo)/(hi-lo)*4095.0).
+- CF16 decoder algorithm: range = (hi-lo)*mantissa*(1/4095) + lo.
+- All 4 CF16 constants verified in .rdata: BASE=0.001 at DAT_00888B4C, MULT=10.0 at DAT_0088C548, ENC_SCALE=4095.0 at DAT_00895F50, DEC_SCALE=1/4095 at DAT_00895F54. (Plus DAT_00888B54 = small float used as sign-check epsilon.)
+- CV3 reader at 0x006D2EB0 calls vtable[0x50] 3 times then vtable[0xB8] to decompress — confirms vtable-virtual reader pattern shared across 3 different stream-reader vtables (0x00895CD0, 0x00895DD8, 0x00895ED0 per snapshot).
+- TGBufferStream vtable slot 20 (offset 0x50) IS ReadByte for class A (FUN_006CF540 — verified). Same slot also installs the doc's claim of "vtable+0x50 = ReadByte".
+- OpenBuffer at 0x006CF180 attaches an external buffer (sets +0x1C/+0x20, resets +0x24/+0x28/+0x2C). New function naming this pass: TGBufferStream_swig_OpenBuffer.
+
+**Corrected claims:**
+
+1. **CV3 wire format is 3 bytes (direction-only), NOT 5 bytes (`[dirX:u8][dirY:u8][dirZ:u8][magnitude:u16]`).**
+   - Doc line 124: "Wire format: `[dirX:u8][dirY:u8][dirZ:u8][magnitude:u16]` = **5 bytes total**"
+   - Reality: CV3_ReadVirtual (FUN_006D2EB0) only calls vtable[0x50] (ReadByte) 3 times, then vtable[0xB8] (FUN_006D2C60 = direction unpack to 3 floats). NO magnitude is read; NO uint16 appears in the read path.
+   - CV4 (FUN_006D2FD0) IS the type with the magnitude: 3 bytes + (u16 if param5 set, else f32). CV4_Write similarly.
+   - CV3_Write (FUN_006D2AD0) does produce a CF16 magnitude as a 4th output, but that's a UTILITY return — callers choose whether/how to write it. The wire CV3 read primitive consumes only 3 bytes.
+   - Possible explanation: doc author may have conflated CV3 with CV4, or assumed symmetry that doesn't exist in the binary. CV3 is direction-only on the wire.
+
+2. **Class identity note: the doc is right that TGBufferStream owns these primitives, but the doc is silent about the existence of the 0x40-byte wire-container class that ALSO has a vtable+Serialize/Clone surface and is what the dispatcher receives.** Recommend the doc add a "Class context" preamble explaining that TGBufferStream is the typed-cursor class, separate from the wire-container class that gets deserialized off the wire and that the dispatcher gates on `vtable[0]() == 0x32`.
+
+3. **Doc says "+0x2C bit-packing state (0 = no active bit group)" which is correct but cryptic.** The field is a SINGLE walking bit mask (1, 2, 4, 8, 16, or 0), not a count. Recommend renaming the offset description to "+0x2C bit-write mask (walking 1→2→4→8→16; 0 = need new accumulator byte)" for clarity.
+
+**Dropped claims:**
+
+None — every doc claim survived in some form.
+
+**Retired (no opportunities this pass):**
+
+The doc has minimal redundancy with siblings (CF16 details are in cf16-precision-analysis.md but cross-linked, not duplicated).
+
+**Body restructure suggested:**
+
+1. Add v5 YAML frontmatter (validated 2026-05-28, methodology FUNCTION_DOC_WORKFLOW_V5, status partial, companions).
+2. Add a "Class identity" preamble: TGBufferStream is the SWIG-visible 0x30-byte typed-cursor class; a separate 0x40-byte wire-container class also exists in the binary (cited as open question) and the two are sometimes conflated in older docs.
+3. Tag each table row with `[v5-validated 2026-05-28]` plus the new Ghidra name (`TGBufferStream_swig_WriteChar` etc.).
+4. Update CV3 wire format: 3 bytes only (direction); remove the `+u16 magnitude` claim. Add an explicit warning that CV3 and CV4 are NOT symmetric.
+5. Clarify bit-pack state field as a walking single-bit mask, not a count.
+6. Add cross-link to docs/protocol/wire-format-spec.md (which uses these primitives for opcode 0x00 Settings packet's 3 WriteBit calls) and to docs/protocol/transport-layer.md.
+
+**Companion follow-ups:**
+
+- ~~The 0x40-byte class at 0x006B82A0 / vtable 0x008958D0 needs its true identity recovered.~~ **RESOLVED 2026-05-28: TGMessage** (base class of TGMessage hierarchy). SWIG `new_TGMessage` wrapper at 0x005E12E0 allocates exactly 0x40 bytes and calls FUN_006B82A0 as ctor. 95 SWIG `TGMessage_*` method strings at 0x0092A098 cross-confirm. Derived classes (TGConnectMessage, TGAckMessage size 0x44, TGBootPlayerMessage size 0x44, TGDisconnectMessage, TGDoNothingMessage, TGNameChangeMessage) all call this base ctor. Ghidra DB renamed: FUN_006B82A0 → TGMessage_Ctor (v5 plate comment installed).
+- Cascade corrections applied in same commit: docs/engine/rtti-class-catalog.md (TGBufferStream row rewritten with 0x00895C58 vtable; TGMessage row rewritten with 0x008958D0 vtable), docs/engine/tg-hierarchy-vtables.md (Sibling TG vtables section updated with both classes), docs/engine/v5-validation-status.md (foundation #2 corrigenda added). docs/protocol/transport-layer.md still TBD — its own validation pass will pick up the TGMessage naming directly.
+- CV3 wire-format correction should propagate to docs/protocol/stateupdate.md if it cites CV3 for position fields, and to cf16-precision-analysis.md if it cites CV3 examples.
+- DAT_00888B54 (small-float sign-check epsilon) should be added to the protocol-snapshot CF16 constants section.
+
+**Open questions left for downstream rows:**
+
+- What is the inner status struct allocated by FUN_006D1FC0 (base ctor of class A)? It's 0x14 bytes. Status codes seen: 0xFFFFFFFB (write overflow), 0xFFFFFFFC (read overflow), 0xFFFFFFFD (already attached). Probably a Status/IOResult tracker. Deferred.
+- Why does CV3_Write produce a uint16 magnitude that the reader doesn't consume? Maybe there's a separate caller-driven write+read pattern. Deferred — does not affect the doc's correctness once the wire-format claim is corrected.
+- What are slots 1-19 of class-A vtable (0x00895C58)? Only slot 20 (ReadByte) verified directly this session; other slots inferred from SWIG bindings. Full vtable mapping deferred.
+- The 0x40-byte class's true identity (open Q for the entire protocol family).
+
+**Annotations applied this session:**
+
+16 functions renamed `TGBufferStream_swig_*` (Ctor, Dtor, OpenBuffer, WriteChar/Bit/Short/Int/Float/Bytes, ReadChar/Bit/Short/Int/Float/Bytes/IntVirtual, GetPos). 5 functions renamed `CompressedFloat16_Encode/Decode` and `CompressedVector3_Write/ReadVirtual + CompressedVector4_WriteVirtual/ReadVirtual`. All 16 also got typed __thiscall prototypes. 5 plate comments applied (WriteBit, ReadBit, Ctor, CF16 Encode, CF16 Decode). 2 functions newly CREATED via `mcp__ghidra__create_function`: SWIG new_TGBufferStream at 0x005C22A0 and CV3 decompress callback at 0x006D2C60.
+
+**Files touched:** docs/protocol/v5-validation-status.md (this row added; §2 row #2 status flipped to partial). docs/protocol/stream-primitives.md NOT modified this pass — the documentation-writer agent will re-render with the corrections+restructure listed above.
 
 
 

@@ -597,7 +597,7 @@ canonical anchors — those address citations were removed.
 | Class | Anchor | Description |
 |-------|--------|-------------|
 | TGStream | (internal C++ class — no SWIG binding) | Base stream |
-| TGBufferStream | (internal C++ class — no SWIG binding) vtable 0x008958D0 [v5-validated 2026-05-28] | Buffer-based stream |
+| TGBufferStream | SWIG-visible class. Bare string 0x0091277C (`_p_TGBufferStream`); vtable 0x00895C58; ctor FUN_006CEFE0; size 0x30 [v5-validated 2026-05-28; corrected from prior mis-identification] | Buffer-cursor stream over external buffer. Used by TGMessage handlers to extract typed payload. See `docs/protocol/stream-primitives.md`. |
 | TGProfilingInfo | (internal C++ class — no SWIG binding) | Performance profiling (pending vtable confirmation) |
 
 ### Network Messages (factory-anchored)
@@ -607,7 +607,7 @@ each has a factory ID in the 0x0100-0x010D range, no bare class-name string.
 
 | Class | Anchor | Description |
 |-------|--------|-------------|
-| TGMessage | (internal C++ class — no SWIG binding) factory base | Base network message |
+| TGMessage | SWIG-visible class. Bare string 0x00913685 (`_p_TGMessage`); vtable 0x008958D0; ctor FUN_006B82A0; size 0x40 [v5-validated 2026-05-28] | Base wire-message envelope. Slot 0 (GetTypeId) returns 0x32 — emitted as first byte of every serialized blob. Derived subclasses: TGConnectMessage, TGDisconnectMessage, TGAckMessage, TGBootPlayerMessage, TGDoNothingMessage, TGNameChangeMessage. See `docs/protocol/stream-primitives.md` § "Two Stream Classes". |
 | TGAckMessage | (internal C++ class) factory ID ~0x0100 | Acknowledgement message |
 | TGBootPlayerMessage | (internal C++ class) factory ID ~0x010D | Boot/kick player message |
 | TGConnectMessage | (internal C++ class) factory ID ~0x0101 | Connection message |

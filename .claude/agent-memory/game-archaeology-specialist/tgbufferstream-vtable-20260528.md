@@ -1,11 +1,23 @@
 ---
 name: tgbufferstream-vtable-20260528
-description: TGBufferStream vtable at 0x008958D0 recovered. vtable[0] returns 0x32 constant; struct grown 0x2C -> 0x40 with Serialize/GetSerializedSize field anchors. Dispatcher 0x32 claim promoted medium -> high.
+description: SUPERSEDED 2026-05-28 — this note's class identity was WRONG. Vtable 0x008958D0 is TGMessage (not TGBufferStream). The real TGBufferStream is at vtable 0x00895C58 (FUN_006CEFE0 ctor, 0x30 bytes). See [[stream-primitives-validation-20260528]] and [[wire-container-class-identification-20260528]] for the correction.
 metadata:
   type: project
 ---
 
-# TGBufferStream Vtable Recovery — 2026-05-28
+# ⚠️ SUPERSEDED — Class Identity Was Wrong
+
+**Corrigenda 2026-05-28 (afternoon):** The class this note documents at vtable `0x008958D0` is **TGMessage**, not TGBufferStream. The structural findings below (vtable slot semantics, 0x32 class tag, 0x40-byte struct size, Serialize wire format) are all CORRECT — they describe TGMessage. Only the class name was wrong.
+
+The real SWIG-visible TGBufferStream is a separate 0x30-byte buffer-cursor class at vtable `0x00895C58` (ctor `FUN_006CEFE0`). See [[stream-primitives-validation-20260528]] for the TGBufferStream surface and [[wire-container-class-identification-20260528]] for the TGMessage identification proof (SWIG `new_TGMessage` allocator at 0x005E12E0 + 95 cross-confirming SWIG method strings).
+
+The Ghidra DB has been updated: `FUN_006B82A0` is now `TGMessage_Ctor`. The remaining `TGBufferStream_*` named functions in 0x006B82A0..0x006B9C50 should be renamed to `TGMessage_*` in a future cleanup pass.
+
+The original (now-wrong-named) content follows for historical context:
+
+---
+
+# TGBufferStream Vtable Recovery — 2026-05-28 (ORIGINAL, NAME WRONG)
 
 Follow-up to [[struct-skeletons-20260528]]. Decompiled vtable[0] of TGBufferStream (0x006B9430) which was previously unknown / unmapped by Ghidra. Lit up the entire stream-class identity, grew struct from 0x2C to 0x40 bytes, and resolved Open Question 1 from the struct work (cursor field).
 

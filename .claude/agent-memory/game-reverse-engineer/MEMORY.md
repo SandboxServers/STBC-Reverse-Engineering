@@ -23,6 +23,7 @@
 - [function-map-validation-20260528.md](function-map-validation-20260528.md) - v5 validation: doc partition is exact (+0 in 18/20 cats, +1 in Cat 9 & 17); 18,249 in-body funcs (doc:18,247); Unwind=4692 EXACT
 - [rtti-catalog-validation-20260528.md](rtti-catalog-validation-20260528.md) - v5 validation: MSVC RTTI/NiRTTI hash table confirmed (117 regs EXACT); TG section has SYSTEMATIC ADDR ERR (cites mid-SWIG-ptr-string offsets)
 - [function-mapping-report-validation-20260528.md](function-mapping-report-validation-20260528.md) - v5: doc structurally stale; coverage 15,209/83% WRONG (truth 4,797/25.8%); Pass 1-8 renames absent; recommend Option A
+- [wire-container-class-identification-20260528.md](wire-container-class-identification-20260528.md) - WIRE-CONTAINER ID: 0x40-byte class FUN_006B82A0 / vtable 0x008958D0 is **TGMessage** (NOT TGBufferStream); SWIG new_TGMessage proof; 6+ derived subclasses (TGAck/TGBoot/etc.); slot[0]=0x32 is TGMessage base tag
 
 ## TGObjPtrEvent System (2026-02-21, COMPLETE)
 - See [docs/protocol/tgobjptrevent-class.md](../../docs/protocol/tgobjptrevent-class.md)

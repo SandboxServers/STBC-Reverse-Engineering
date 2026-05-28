@@ -79,7 +79,7 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 | 1 | wire-format-spec.md | Foundation / hub: opcode index + handler addresses + subsystem catalog | (engine: MpgameHandleMessage, vtable anchors) | **partial (2026-05-28)** — body restructure pending; see §6.1 |
 | 2 | stream-primitives.md | Foundation: TGBufferStream read/write + CF16 + CompressedVector3/4 | (engine: TGBufferStream vtable 0x008958D0) | **partial (2026-05-28)** — see §6.2; one CV3 correction + restructure for two-class disambiguation |
 | 3 | transport-layer.md | Foundation: UDP framing + 7 transport types + TGMessage vtable + fragments | wire-format-spec, stream-primitives | **partial (2026-05-28)** — 4 corrections, AlbyRules cipher anchored, TGMessage cascade absorbed; see §6.3 |
-| 4 | game-opcodes.md | Mid: opcodes 0x00-0x2A handler addresses + per-opcode formats | wire-format-spec, transport-layer | pending |
+| 4 | game-opcodes.md | Mid: opcodes 0x00-0x2A handler addresses + per-opcode formats | wire-format-spec, transport-layer | **partial (2026-05-28)** — opcode table fully anchored from dispatcher recovery; one column-header clarification + small wire-format anchorings; see §6.4 |
 | 5 | checksum-opcodes.md | Mid: opcodes 0x20-0x28 NetFile dispatcher | wire-format-spec, transport-layer | pending |
 | 6 | python-messages.md | Mid: opcodes 0x2C+ MAX_MESSAGE_TYPES + SendTGMessage path | wire-format-spec, stream-primitives | pending |
 | 7 | tgmessage-routing.md | Mid: relay-all + star topology + opaque payload | python-messages, transport-layer | pending |
@@ -944,6 +944,276 @@ top-of-doc NOTE block, body corrections, retired Appendix A, new Cipher Object s
 new Self-send Loop-back subsection, new Connection State Machine subsection, Cross-doc
 reconciliation table, Open Questions list). docs/protocol/v5-validation-status.md (this
 row added; §2 row #3 status flipped to partial).
+
+### 6.4 game-opcodes.md — 2026-05-28 (game-archaeology-specialist)
+
+**Status:** validated -> `partial` (1 column-header clarification + 4 cross-reference
+restructure suggestions; no binary corrections needed — the doc is exceptionally well
+anchored already).
+
+**Methodology:** Per-doc workflow Phases 1-3 with `program: STBC.exe` on every MCP call.
+Heavy cross-anchoring against the dispatcher-recovery work captured in the engine campaign
++ this archaeology specialist's `dispatcher-recovery-20260528.md` memory.
+
+**Headline:** game-opcodes.md was already at near-v5-quality before this pass. The 41-entry
+jump table is verified byte-by-byte; every handler address survives spot-check; every event
+ID PUSHed by the generic-event-forward thunks matches what the doc claims is on the wire;
+all 25 active opcodes route to the addresses the doc states. The single clarification
+needed is on a table column header that conflates **dispatcher PUSH overrides** with
+**wire-payload event codes** — both are correct, but the column "Recv Event Code" doesn't
+disclose which is which.
+
+**Functions touched (completeness):**
+
+| Function | Addr | effective_score | Used to verify |
+|----------|------|-----------------|----------------|
+| MpgameHandleMessage | 0x0069f2a0 | 69.84 | dispatcher + 41-entry jump table + per-opcode case bodies |
+| FUN_0069FDA0 (GenericEventForward) | 0x0069fda0 | n/a | event-code override semantics (param_2 != 0 ? override : keep stream value) |
+| FUN_006A01E0 (DestroyObjectHandler) | 0x006a01e0 | n/a | wire format opcode + i32v + owner-branch verified |
+| FUN_0069F880 (PythonEventHandler) | 0x0069f880 | n/a | TGEvent factory chain + ResolveRefs + posting |
+| CollisionEffectHandler | 0x006a2470 | n/a | event-code re-post 0x008000FC + distance-gap check |
+| FUN_006A0080 (ExplosionHandler) | 0x006a0080 | n/a | wire format opcode + i32v + CV4 + 2x CF16 (radius then damage) |
+| FUN_006A1360 (DeletePlayerUIHandler) | 0x006a1360 | n/a | TGEvent factory chain + FUN_006D62B0 with this |
+| FUN_0069FF50 (StateUpdateHandler) | 0x0069ff50 | n/a | exists (84-byte body); deep wire format deferred to stateupdate.md row #8 |
+
+No annotations were applied this pass — the dispatcher and all handler addresses already
+carried their final v5 names from the engine-campaign dispatcher recovery (memory:
+`.claude/agent-memory/game-archaeology-specialist/dispatcher-recovery-20260528.md`).
+
+**Confirmed claims (high confidence):**
+
+- **Dispatcher + jump table:** MultiplayerGame ReceiveMessageHandler at `0x0069f2a0` with
+  41-entry jump table at `0x0069F534`, opcodes 0x02-0x2A — bytes decoded directly:
+  ```
+  index opcode  thunk_addr   role
+   00   0x02   0x0069f31e   ObjCreate          -> FUN_0069f620(stream, 0)
+   01   0x03   0x0069f334   ObjCreateTeam      -> FUN_0069f620(stream, 1)
+   02   0x04   0x0069f525   DEFAULT (dead)
+   03   0x05   0x0069f525   DEFAULT (dead)
+   04   0x06   0x0069f3f1   PythonEvent        -> FUN_0069f880
+   05   0x07   0x0069f34a   StartFiring        -> FUN_0069fda0(stream, 0x008000D7)
+   06   0x08   0x0069f363   StopFiring         -> FUN_0069fda0(stream, 0x008000D9)
+   07   0x09   0x0069f37c   StopFiringAtTarget -> FUN_0069fda0(stream, 0x008000DB)
+   08   0x0A   0x0069f395   SubsysStatus       -> FUN_0069fda0(stream, 0x0080006C)
+   09   0x0B   0x0069f3ae   AddToRepairList    -> FUN_0069fda0(stream, 0x008000DF)
+   0A   0x0C   0x0069f3c7   ClientEvent        -> FUN_0069fda0(stream, 0)            (shared)
+   0B   0x0D   0x0069f3f1   PythonEvent2       -> FUN_0069f880                       (shared)
+   0C   0x0E   0x0069f405   StartCloak         -> FUN_0069fda0(stream, 0x008000E3)
+   0D   0x0F   0x0069f41e   StopCloak          -> FUN_0069fda0(stream, 0x008000E5)
+   0E   0x10   0x0069f437   StartWarp          -> FUN_0069fda0(stream, 0x008000ED)
+   0F   0x11   0x0069f3c7   RepairListPriority -> FUN_0069fda0(stream, 0)            (shared)
+   10   0x12   0x0069f3c7   SetPhaserLevel     -> FUN_0069fda0(stream, 0)            (shared)
+   11   0x13   0x0069f2f6   HostMsg            -> HostMsgHandler @ 0x006A01B0
+   12   0x14   0x0069f47d   DestroyObject      -> FUN_006A01E0
+   13   0x15   0x0069f491   CollisionEffect    -> CollisionEffectHandler @ 0x006A2470
+   14   0x16   0x0069f525   DEFAULT (routes via MultiplayerWindow dispatcher)
+   15   0x17   0x0069f4a5   DeletePlayerUI     -> FUN_006A1360
+   16   0x18   0x0069f4b9   DeletePlayerAnim   -> FUN_006A1420
+   17   0x19   0x0069f4cd   TorpedoFire        -> FUN_0069F930
+   18   0x1A   0x0069f4e1   BeamFire           -> FUN_0069FBB0
+   19   0x1B   0x0069f450   TorpTypeChange     -> FUN_0069fda0(stream, 0x008000FD)
+   1A   0x1C   0x0069f3dd   StateUpdate        -> FUN_0069FF50
+   1B   0x1D   0x0069f4f5   ObjNotFound        -> FUN_006A0490
+   1C   0x1E   0x0069f51d   RequestObj         -> FUN_006A02A0
+   1D   0x1F   0x0069f509   EnterSet           -> FUN_006A05E0
+   1E   0x20   0x0069f525   DEFAULT (NetFile dispatcher owns 0x20)
+   1F   0x21   0x0069f525   DEFAULT
+   20   0x22   0x0069f525   DEFAULT
+   21   0x23   0x0069f525   DEFAULT
+   22   0x24   0x0069f525   DEFAULT
+   23   0x25   0x0069f525   DEFAULT
+   24   0x26   0x0069f525   DEFAULT
+   25   0x27   0x0069f525   DEFAULT
+   26   0x28   0x0069f525   DEFAULT
+   27   0x29   0x0069f469   Explosion          -> FUN_006A0080
+   28   0x2A   0x0069f30a   NewPlayerInGame    -> NewPlayerInGameHandler @ 0x006A1E70
+  ```
+- **Generic event-forward override semantics:** confirmed by direct decompile of
+  `FUN_0069FDA0` line `if (param_2 != 0) puVar7[4] = param_2;`. When the dispatcher
+  PUSHes a non-zero event-ID (opcodes 0x07/0x08/0x09/0x0A/0x0B/0x0E/0x0F/0x10/0x1B),
+  that constant **overrides** the event code that came in on the wire. When the
+  dispatcher PUSHes 0 (opcodes 0x0C/0x11/0x12), the wire's event code is kept verbatim.
+  This is exactly the asymmetry the doc's footer documents (line 148: *"0x12 uses the
+  same code 0x008000E0 on both sides (no pairing, no override)"*).
+- **Dead opcodes 0x04 and 0x05:** confirmed dead — jump table entries 2 and 3 (`0069f525`)
+  point to the same default cleanup as 0x16/0x20-0x28, and no `case '\x04':` or `case
+  '\x05':` exists in the dispatcher body.
+- **Opcode 0x16 routing:** confirmed — jump table index 0x14 (=0x16-2) is the default-
+  cleanup address `0x0069F525`; the opcode is handled by `MultiplayerWindow` dispatcher
+  `FUN_00504C10` per the wire-format-spec hub.
+- **DestroyObject (0x14) wire format:** confirmed `[u8 opcode][i32v object_id]` —
+  decompile of `FUN_006A01E0` shows `OpenBuffer(buf+1, len-1)` (skips opcode) then
+  `ReadIntVirtual()` (i32v); branches on `puVar3[8] == 0` (owner field at +0x20) to
+  cleanup vs `owner->vtable[0x5C](object_id)`.
+- **PythonEvent (0x06 / 0x0D) handler shape:** confirmed — both opcodes share
+  `FUN_0069F880`. Body skips opcode byte, instantiates TGEvent via `FUN_006D6200` factory,
+  resolves refs via `FUN_006F13C0`, zeroes `puVar2[9]` (the "preserve" field), and posts
+  via `FUN_006DA300`.
+- **CollisionEffect (0x15) re-post event code:** confirmed `0x008000FC`
+  (`ET_HOST_OBJECT_COLLISION`) via direct read of
+  `piVar9[4] = (int)&DAT_008000fc;` at the end of the handler. Doc's claim about
+  the event-type transformation 0x00800050 -> 0x008000FC is anchored.
+- **CollisionEffect (0x15) distance gate:** confirmed — handler reads
+  `_DAT_008955c8` and compares `(distance - radius1 - radius2)`; rejects if the gap is
+  >= threshold. Anchors the collision-effect-protocol's distance-gap claim.
+- **Explosion (0x29) wire field order:** confirmed — receiver reads `ReadIntVirtual()`
+  (object_id), `CompressedVector4_ReadVirtual(..., 1)` (impact_pos with CF16 magnitude),
+  then `ReadShort` -> `CompressedFloat16_Decode` -> `fStack_50`, then `ReadShort` ->
+  `CompressedFloat16_Decode` -> `fStack_54`. Calls `FUN_004BBDE0(&pos, fStack_50,
+  fStack_54)`. Doc's claim "radius written first, damage second" survives if the
+  receiver's first CF16 read is radius and the constructor signature is `(pos, radius,
+  damage)`. This pairs cleanly with the cf16-explosion-encoding.md doc's anchor on
+  `FUN_00595C60` (sender) writing radius from `source+0x14` first.
+- **StateUpdate (0x1C):** handler exists at `0x0069FF50` (body 0x0069FF50-0x0069FFEB,
+  84 bytes — small wrapper that delegates to StateUpdate machinery). This was previously
+  missing from CLAUDE.md's opcode table; campaign-close action will add it.
+
+**Corrected claims:**
+
+1. **C1 — "Recv Event Code" column header is ambiguous (clarification, not a binary
+   correction).** The doc's table at lines 131-144 has a column "Recv Event Code" with
+   values `0x008000D7`, `0x008000D9`, ..., `0x00800076`, `0x008000E0`. Two of those
+   entries (`0x00800076` for 0x11 RepairListPriority and `0x008000E0` for 0x12
+   SetPhaserLevel) are NOT what the dispatcher PUSHes — those thunks PUSH 0, falling
+   through to keep whatever event code the wire payload carried. The values in the doc
+   ARE correct as "event code carried on the wire and ultimately seen by the Python
+   receive handler", but they are NOT "event code injected by the dispatcher". The
+   doc's own footer (line 148) explains this asymmetry, but the column header doesn't
+   reflect it. Recommend:
+   - Rename column to "Effective Event Code (post-receive)" OR add an explicit
+     "(override)" / "(from stream)" marker per row.
+   - The 8 rows where the dispatcher PUSHes a non-zero constant are: 0x07, 0x08, 0x09,
+     0x0A, 0x0B, 0x0E, 0x0F, 0x10, 0x1B (9 actually) — these are the rows where the
+     event code is forced by the dispatcher and the receiver sees the override.
+   - The 3 rows where the dispatcher PUSHes 0 are: 0x0C, 0x11, 0x12 — for these, the
+     value in the table came from the WIRE payload, and the receiver sees what the
+     sender wrote.
+   - The sender/receiver pairing list at line 148 (`D8->D7`, `DA->D9`, ...) describes
+     how the **sender** path uses one code and the **dispatcher override** swaps it to
+     a paired code on the receive side. That list is correct and unchanged.
+
+**Dropped claims:** None — every doc claim survived.
+
+**Retired (dedup with sibling — resolves cross-doc disagreement #16):**
+
+- The 15-row SpeciesToShip table in game-opcodes.md (inventory §3.4 notes this) overlaps
+  with the 45-row table in `objcreate-serialization.md`. Recommend: game-opcodes.md
+  keeps a 3-line summary + cross-link; `objcreate-serialization.md` remains canonical.
+  Note: the inventory's #3.4 row for this debt may have been about a different table
+  scope (I did not see the 15-row table in the current doc body, which suggests it may
+  already have been trimmed in a prior edit; no action required this pass beyond the
+  cross-link). **Status: deferred to objcreate-serialization.md row's pass.**
+
+**Body restructure suggested:**
+
+1. Add v5 YAML frontmatter:
+   ```yaml
+   ---
+   title: Game Opcodes (0x02-0x2A)
+   type: reference
+   audience: re-engineer
+   status: partial
+   validated: 2026-05-28
+   methodology: FUNCTION_DOC_WORKFLOW_V5
+   binary:
+     name: stbc.exe
+     size: 6182400
+     base: 0x00400000
+   companions:
+     - docs/protocol/wire-format-spec.md
+     - docs/protocol/transport-layer.md
+     - docs/protocol/stream-primitives.md
+     - docs/protocol/stateupdate.md
+     - docs/protocol/object-replication.md
+     - docs/protocol/pythonevent-wire-format.md
+     - docs/protocol/collision-effect-protocol.md
+     - docs/protocol/set-phaser-level-protocol.md
+     - docs/protocol/delete-player-ui-wire-format.md
+     - docs/protocol/objnotfound-requestobj-enterset-wire-format.md
+     - docs/protocol/cf16-explosion-encoding.md
+     - docs/engine/decompiled-functions.md
+     - docs/protocol/v5-validation-status.md
+   supersedes: prior pre-v5 game-opcodes.md
+   ---
+   ```
+2. Tag every per-opcode row + the jump-table + dispatcher claim with
+   `[v5-validated 2026-05-28]`. The 41-entry jump table is the single biggest anchor —
+   surface it explicitly at the top of the doc (after the intro) so downstream docs
+   can cite "see jump-table table in game-opcodes.md".
+3. Tag the trace-derived session-frequency counts (2282/session StartFiring, 33/session
+   SetPhaserLevel, 84/session CollisionEffect, etc.) as
+   `[cross-source-2026-02-XX trace]` per the engine campaign's two-tag convention —
+   these come from `docs/analysis/valentines-day-battle-analysis.md` and similar trace
+   docs, not from Ghidra.
+4. Clarify the "Recv Event Code" column per C1 above. Add a short footer paragraph
+   distinguishing:
+   - **Sender path event code** = what the local C++ posts to its event manager.
+   - **Wire event code** = what gets serialized into the opcode 0x07-0x1B payload
+     (TGEvent factory + event_code field).
+   - **Dispatcher override** = what the receive-side dispatcher thunk PUSHes (non-zero
+     for 9 opcodes, 0 for 3 opcodes).
+   - **Effective event code** = what the receiver's event manager ultimately sees
+     (override wins if non-zero, else wire value).
+5. Cross-link every opcode row with a wire-format sub-doc to that sub-doc explicitly
+   (collision-effect-protocol.md for 0x15, pythonevent-wire-format.md for 0x06/0x0D,
+   set-phaser-level-protocol.md for 0x12, delete-player-ui-wire-format.md for 0x17,
+   objnotfound-requestobj-enterset-wire-format.md for 0x1D/0x1E/0x1F,
+   cf16-explosion-encoding.md for 0x29, stateupdate.md for 0x1C, object-replication.md
+   for 0x02/0x03).
+6. Add a "Stub" doc note for opcode 0x18 (DeletePlayerAnim) — game-opcodes.md mentions
+   the handler address but has no wire-format detail; per the inventory §3.4 visible
+   debt, no companion leaf exists for 0x18. There IS an OpenBC clean-room doc
+   (`../OpenBC/docs/wire-formats/delete-player-anim-wire-format.md`); the BC side
+   should mirror it. **Status: open question; not blocking game-opcodes.md's
+   partial->verified transition once the doc is restructured.**
+
+**Companion follow-ups:**
+
+- **stateupdate.md** (row #8) — receives the StateUpdate handler anchor at `0x0069FF50`
+  from this pass; its own validation will deepen the per-flag wire formats.
+- **collision-effect-protocol.md** (row #15) — receives the re-post event code
+  `0x008000FC` and the distance gate `_DAT_008955c8` confirmations.
+- **cf16-explosion-encoding.md** (row #21) — receives the receive-side field-order
+  confirmation (radius first via fStack_50, damage second via fStack_54).
+- **pythonevent-wire-format.md** (row #14) — receives the 0x06/0x0D shared-handler
+  confirmation.
+- **delete-player-ui-wire-format.md** (row #17) — receives the 0x17 handler chain
+  confirmation.
+- **CLAUDE.md game-opcode table** — campaign-close batch should add the 0x1C row
+  (currently missing). The dispatcher recovery already noted this in
+  `dispatcher-recovery-20260528.md`. Action: append a row
+  `| 0x1C | StateUpdate | FUN_0069FF50 | Object state replication (8 dirty-flag formats)|`
+  to CLAUDE.md's Game Opcode Table.
+- **OpenBC** has a delete-player-anim spec; the BC side needs a mirror doc for opcode
+  0x18 to fill the documentation gap.
+
+**Open questions left for downstream rows:**
+
+1. **Opcode 0x18 (DeletePlayerAnim) wire format.** Handler `FUN_006A1420` is named but
+   the wire format and TGL crash risk noted in `docs/analysis/tgl-lookup-crash-analysis.md`
+   need a dedicated wire-format leaf doc on the BC side. Mirror from
+   `../OpenBC/docs/wire-formats/delete-player-anim-wire-format.md`.
+2. **TGEvent factory address `DAT_0097f838` for posting.** Doc claims (line 111):
+   *"posts it to the event manager at `DAT_0097f838`"*. The body of FUN_0069F880 reaches
+   `FUN_006DA300` (the event-poster pipeline), but the engine campaign doc #8 validation
+   placed the TGEventManager singleton at global `0x00991438`, not `0x0097F838`.
+   `0x0097F838` is documented in the engine anchor table (§7.1) as "Event manager", so
+   both addresses may be valid — possibly two registries (event-handler hash table vs
+   event manager singleton). Resolution belongs to whichever doc claims the precise
+   field. This game-opcodes.md row does not need to anchor that distinction; defer to
+   pythonevent-wire-format.md or stateupdate.md when one of them needs the exact
+   singleton address.
+3. **Session-frequency counts** — the doc's "Stock 15-min count" column (2282, 33, 84,
+   etc.) is sourced from packet traces, not the binary. Per the engine campaign's
+   two-tag convention, these need `[cross-source-2026-02-XX]` tags pointing to the
+   trace docs in `docs/analysis/`. **Status: stylistic; doc remains correct, just
+   needs the tags surfaced.**
+
+**Files touched:** docs/protocol/v5-validation-status.md (this row added; §2 row #4
+status flipped to partial). docs/protocol/game-opcodes.md NOT modified this pass —
+the documentation-writer agent will re-render with the v5 frontmatter, column-header
+clarification, two-tag annotations on session-frequency claims, and explicit
+cross-links to each leaf wire-format doc.
 
 ---
 

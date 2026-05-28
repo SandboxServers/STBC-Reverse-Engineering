@@ -83,7 +83,7 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 | 5 | checksum-opcodes.md | Mid: opcodes 0x20-0x28 NetFile dispatcher | wire-format-spec, transport-layer | **partial (2026-05-28)** — 2 material corrections (dialog swap + 5-round fabrication); 32 anchors confirmed; 1 open question on round-0xFF sender; see §6.5 |
 | 6 | python-messages.md | Mid: opcodes 0x2C+ MAX_MESSAGE_TYPES + SendTGMessage path | wire-format-spec, stream-primitives | **partial (2026-05-28)** — 1 correction (WriteCString length-prefix width), 1 clarification (TGBufferStream::Serialize vs TGMessage::WriteToBuffer), 2 cross-source-tagged Python-handler claims; see §6.6 |
 | 7 | tgmessage-routing.md | Mid: relay-all + star topology + opaque payload | python-messages, transport-layer | **partial (2026-05-28)** — 3 material corrections (C1: FUN_006B63A0 is connect handler not type-0x00 relay; C2: `NoMe` created by C++ MultiplayerGame_Ctor not Python; C3: THREE routing mechanisms not two) + 2 minor (function name FUN_006B8530 = TGBufferStream_GetBufferAndSize; SendTGMessage pseudocode now covers targetID == -1); 15 anchors confirmed; 3 open questions including chat 1:2 mystery; see §6.7 |
-| 8 | stateupdate.md | Mid: opcode 0x1C dirty flags + 8 field formats + round-robin | game-opcodes, stream-primitives | pending |
+| 8 | stateupdate.md | Mid: opcode 0x1C dirty flags + 8 field formats + round-robin | game-opcodes, stream-primitives | **partial (2026-05-28)** — all 8 dirty-bit wire formats anchored byte-by-byte; ZERO material corrections; 5 clarifications (hash-flag-emit gate identity, wire-vs-validation conflation, weapon list shared with subsystems, CLIENT-side IsMultiplayer speculation should be dropped, PowerSubsystem WriteState created in Ghidra); see §6.8 |
 | 9 | object-replication.md | Mid: FUN_0069f620 thin index for ObjCreate | game-opcodes | pending |
 | 10 | objcreate-serialization.md | Mid: full ObjCreate chain + species map | object-replication, stream-primitives | pending |
 | 11 | stateupdate-subsystem-wire-format.md | Mid: subsystem linked list + 3 WriteState formats | stateupdate | pending |
@@ -1722,6 +1722,175 @@ relay table with trace ratios, SendTGMessage 3-mode pseudocode including targetI
 NoMe-creation correction, function-name C4 correction, Open Questions section,
 refreshed Key Addresses table). docs/protocol/v5-validation-status.md (this row added;
 §2 row #7 status flipped to partial).
+
+### 6.8 stateupdate.md — 2026-05-28 (game-archaeology-specialist)
+
+**Status:** validated -> `partial` (5 clarifications, ZERO material wire-format
+corrections; doc was accurate).
+**Methodology:** Per-doc workflow Phases 1-3 with `program: STBC.exe` on every MCP call.
+
+**Headline:** the highest-volume protocol message (30K+ packets per stock session)
+is byte-anchored end-to-end. All 8 dirty-bit wire formats verified against the
+sender (Ship__WriteStateUpdate at `0x005B17F0`, 2,472 bytes) and the receiver
+(Ship__ReadStateUpdate at `0x005B21C0`, 1,539 bytes). The dispatcher entry
+(MpgameHandleStateUpdate at `0x0069FF50`) was recovered and named. The
+subsystem-integrity-hash.md "dead in MP" claim is re-confirmed via byte-level
+disassembly (the decompiler's `bVar2` vs `bVar16` aliasing was misleading;
+disasm at 005b1c76 proves BL is reloaded to `bIsSinglePlayer` before the
+flag-0x01 hash-bit emit). **PowerSubsystem__WriteState at `0x005644B0`** was
+CREATED in Ghidra (was an undefined function despite the doc citing the address
+correctly) — Format 3 (base + 2 battery bytes) confirmed.
+
+**Functions touched (completeness):**
+
+| Function | Addr | effective_score | Role |
+|----------|------|-----------------|------|
+| MpgameHandleStateUpdate | 0x0069ff50 | 42.1 | opcode 0x1C dispatcher entry (jump-table slot 28); reads opcode + obj_id + dispatches to ship vtable[+0x124] |
+| Ship__ReadStateUpdate | 0x005b21c0 | 5.8 | per-flag decode + apply to ship kinematic state + animation tracker |
+| Ship__WriteStateUpdate | 0x005b17f0 | 0.0 | per-tick per-peer encoder; vtable slot 72; 2,472 bytes (348 decompiled lines) |
+| PowerSubsystem__WriteState | 0x005644b0 | n/a (created) | Format 3 reactor subsystem WriteState: base + 2 battery bytes |
+
+(Sender and receiver effective scores are below v5 target — these are massive functions
+with extensive undefined struct accesses that the decompiler can't resolve without
+deeper class definitions. The plate comments + 56 inline annotations on the sender +
+26 on the receiver capture the wire-format and algorithm semantics required for
+doc validation.)
+
+**Confirmed claims (high confidence):**
+
+- All 8 dirty-bit wire formats verified byte-for-byte (see memory file for table).
+- Wire header layout (opcode + obj_id + gameTime + dirty_flags = 10 bytes) verified
+  at both sender (writes via swig_WriteChar / WriteInt / WriteFloat) and receiver
+  (reads via swig_ReadChar / ReadInt / ReadFloat).
+- Dispatcher chain: 0x0069F2A0 jump-table slot 28 → 0x0069FF50 → ship vtable[+0x124] =
+  slot 73 → 0x005B21C0 (Ship__ReadStateUpdate).
+- Sender chain: ship vtable[+0x120] = slot 72 → 0x005B17F0 (Ship__WriteStateUpdate).
+- Vtable slot 72 + slot 73 confirmed via tg-hierarchy-vtables doc + ship vtable
+  at 0x00894340 with addresses 0x00894460 and 0x00894464 byte-pinned (Ship slot
+  72 / 73).
+- Subsystem WriteState formats: Base FUN_0056D320 (writes condition byte + recurse
+  children + flush via vtable+0xD8); PoweredSubsystem FUN_00562960 (base + bit-gated
+  powerPct byte); PowerSubsystem FUN_005644B0 (base + 2 battery bytes via
+  FUN_005634C0 GetMainBatteryLimit + FUN_005634D0 GetBackupBatteryLimit).
+- Round-robin budgets: 10 bytes for subsystems (sender 005b1ec0 `CMP EAX, 0xa`),
+  6 bytes for weapons (sender 005b1f66 `CMP EAX, 0x6`).
+- Weapon filtering: `vtable[+8](0x801C)` = IsWeaponType — only emitted/applied for
+  matching nodes. SAME ship+0x284 linked list as subsystems.
+- Receiver per-flag wire-byte sizes match sender exactly: 12 bytes (3 floats) +
+  1 bit + (optional 2 bytes hash) for 0x01; 5 bytes CV4 for 0x02; 3 bytes CV3 for
+  0x04 / 0x08; 2 bytes CF16 for 0x10; 1 bit for 0x40.
+- Anti-cheat dead-code in MP: sender emits hash bit=1 only when single-player
+  (bVar16 = !DAT_0097fa8a); receiver validates only in MP. Mutually exclusive
+  conditions confirm subsystem-integrity-hash.md.
+- Speed encoding: `||vel||`, sign-flipped if IsReversing (FUN_005AC4F0 returns 1
+  when vel·fwd < 0), then CF16-encoded.
+- Cloak state read from `ship[+0x2DC]+0x9C` (cloak device subsystem status byte).
+- ET_BOOT_PLAYER constant 0x008000F6 used in anti-cheat kick path
+  (FUN_006BB840 chain).
+
+**Corrected claims (clarifications, not material corrections):**
+
+1. **Hash flag-emit gate is `bIsSinglePlayer`, not `bVar2`.** The decompiler shows
+   `if (bVar16) { WriteBit(1); ... } else WriteBit(0); }` at flag 0x01. But the
+   `bVar16` here is NOT the bVar16 from earlier in the function (the !MP flag);
+   nor is it bVar2 (the MP+owner-match flag). At disasm site 005b1c76, BL is
+   RELOADED from `[ESP+0x23]` which holds bVar16 (= !DAT_0097fa8a = !isMultiplayer).
+   So the SP-only emit logic is what's tested, and the dead-in-MP claim holds.
+
+2. **Flag 0x01 wire-format box "[if has_subsystem_hash AND is_multiplayer:]"
+   conflates wire format with validation gate.** The wire format is always
+   `[bit][if bit set: ushort hash]`. The `AND is_multiplayer` part describes
+   the RECEIVER's validation gate; it's not part of the wire format. Receiver
+   ALWAYS reads the bit and (if set) the 2-byte hash from the stream; the MP
+   check only gates whether validation is performed.
+
+3. **Subsystems and weapons share the SAME `ship+0x284` linked list**, with the
+   weapon path filtered by `IsWeaponType` vtable lookup. The doc says "weapon
+   linked list at ship+0x284" — correct address but misleading; should say
+   "filtered iteration over the same subsystem linked list at ship+0x284".
+
+4. **"This suggests the CLIENT-side value of `DAT_0097fa8a` differs..." speculation
+   should be DROPPED.** The mechanism is correctly described above: the
+   friendly-fire + player-count gate at FUN_006a2650 naturally selects 0x20 or
+   0x80 based on (host >= 2 players) / (client >= 3 players). The traces confirm
+   100% disjoint usage; no need to invoke client-side IsMultiplayer
+   inconsistency. (`IsMultiplayer = 1` on both endpoints during stock MP.)
+
+5. **PowerSubsystem WriteState at 0x005644B0 was an undefined function** but the
+   doc's claim is correct — this validation pass created the function in Ghidra
+   and decompiled it. Format 3 confirmed: base + 2 battery bytes.
+
+**Dropped claims:** none. All 8 dirty-bit format claims and all 3 subsystem
+WriteState format claims survived intact.
+
+**Retired (no opportunities this pass):** the doc is the canonical StateUpdate
+reference; cross-link siblings (stateupdate-subsystem-wire-format.md,
+subsystem-integrity-hash.md, per-ship-subsystem-wire-format.md) are downstream
+and should keep referencing it.
+
+**Body restructure suggested:**
+
+1. Add v5 YAML frontmatter (validated 2026-05-28, methodology FUNCTION_DOC_WORKFLOW_V5,
+   status partial, companions list).
+2. Tag verified addresses with `[v5-validated 2026-05-28]` plus new Ghidra names
+   (Ship__WriteStateUpdate, Ship__ReadStateUpdate, MpgameHandleStateUpdate,
+   PowerSubsystem__WriteState).
+3. Note vtable slot 72 = sender and slot 73 = receiver near the function-address citations.
+4. Reframe flag 0x01 wire-format box to separate wire format from validation gate.
+5. Drop the "CLIENT-side DAT_0097fa8a" speculation paragraph.
+6. Clarify weapon path uses SAME ship+0x284 linked list as subsystems (filtered by
+   IsWeaponType vtable call), not a separate list.
+7. Cross-link to docs/engine/tg-hierarchy-vtables.md (Ship slot 72/73), to
+   docs/protocol/stream-primitives.md (CV3/CV4/CF16), to docs/protocol/transport-layer.md
+   (TGMessage envelope), and to docs/protocol/subsystem-integrity-hash.md
+   (anti-cheat hash dead-code).
+
+**Companion follow-ups:**
+
+- stateupdate-subsystem-wire-format.md row in §2: stateupdate.md confirms the 3
+  WriteState formats and round-robin algorithm — sibling can build on these anchors.
+- per-ship-subsystem-wire-format.md row in §2: ship+0x284 linked list anchor +
+  IsWeaponType filter mechanism confirmed; per-ship catalog can ground its tracer
+  counts against these.
+- subsystem-integrity-hash.md row in §2: dead-in-MP claim CONFIRMED by this pass;
+  sibling doc can cite this validation as primary evidence.
+
+**Open questions left for downstream rows:**
+
+1. **OQ1 — Ship_WriteStateUpdate caller location.** No CALL with FUN_005B17F0 found
+   (vtable-dispatched). Likely sits in TGNetwork tick loop iteration. Worth
+   tracking, but not blocking for the doc.
+2. **OQ2 — pTrackerCtx semantic identity.** Has +0x08 (hash key) and +0x0C (some
+   matching ID). Looks like TargetPeerContext. Layout deferred.
+3. **OQ3 — Per-weapon delta-dedup hash table at tracker+0x40 entry size 0xC bytes.**
+   Layout TBD.
+4. **OQ4 — Animation tracker pointer at iVar3 in receiver.** Obtained via
+   FUN_005A1720 + FUN_0047DE50 (Cast to type=9). Type 9 is likely NIAnimationNode
+   or similar; receiver writes interpolation state at +0x2C..+0x54.
+5. **OQ5 — DAT_00888860 force-resend threshold value** — appears in 934 sites
+   project-wide. Single-source-of-truth value (probably "1.0" seconds) worth
+   pinning.
+
+**Annotations applied this session:**
+
+- 3 functions renamed: `MpgameHandleStateUpdate`, `Ship__ReadStateUpdate`,
+  `Ship__WriteStateUpdate`.
+- 1 function CREATED via `mcp__ghidra__create_function`:
+  `PowerSubsystem__WriteState` at 0x005644B0.
+- 3 typed __thiscall / __cdecl prototypes installed.
+- 2 globals labeled: `g_flWeaponHealthScale` at 0x008944C4; `ET_BOOT_PLAYER`
+  at 0x008000F6.
+- 4 plate comments installed: MpgameHandleStateUpdate, Ship__ReadStateUpdate,
+  Ship__WriteStateUpdate (massive); plus annotation patterns for the inline
+  comments.
+- 56 inline decompiler comments on Ship__WriteStateUpdate, 26 on Ship__ReadStateUpdate,
+  5 on MpgameHandleStateUpdate.
+- ~30 + ~25 variable renames on sender/receiver respectively (Hungarian-compliant).
+
+**Files touched:** docs/protocol/v5-validation-status.md (this row added; §2 row #8
+status flipped to partial). docs/protocol/stateupdate.md NOT modified this pass —
+the documentation-writer agent will re-render with the corrections + restructure
+listed above.
 
 ---
 

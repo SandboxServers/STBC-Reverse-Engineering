@@ -22,6 +22,7 @@
 - [ui-class-hierarchy.md](ui-class-hierarchy.md) - Phase 8D: UI system classes (135 renames)
 - [function-map-validation-20260528.md](function-map-validation-20260528.md) - v5 validation: doc partition is exact (+0 in 18/20 cats, +1 in Cat 9 & 17); 18,249 in-body funcs (doc:18,247); Unwind=4692 EXACT
 - [rtti-catalog-validation-20260528.md](rtti-catalog-validation-20260528.md) - v5 validation: MSVC RTTI/NiRTTI hash table confirmed (117 regs EXACT); TG section has SYSTEMATIC ADDR ERR (cites mid-SWIG-ptr-string offsets)
+- [function-mapping-report-validation-20260528.md](function-mapping-report-validation-20260528.md) - v5: doc structurally stale; coverage 15,209/83% WRONG (truth 4,797/25.8%); Pass 1-8 renames absent; recommend Option A
 
 ## TGObjPtrEvent System (2026-02-21, COMPLETE)
 - See [docs/protocol/tgobjptrevent-class.md](../../docs/protocol/tgobjptrevent-class.md)

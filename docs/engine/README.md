@@ -15,5 +15,5 @@ NetImmerse 3.1 / Gamebryo internals, class catalogs, and function maps.
 | [event-system-architecture.md](event-system-architecture.md) | TGEventManager dispatch, handler tables, TGCallback layout |
 | [ui-class-hierarchy.md](ui-class-hierarchy.md) | UI inheritance tree, MainWindow type IDs, event constants |
 | [function-map.md](function-map.md) | 18K-function organized map |
-| [function-mapping-report.md](function-mapping-report.md) | ~15,209 functions named/excluded (83%), annotation script docs |
+| [function-mapping-report.md](function-mapping-report.md) | Annotation script reference (currently unapplied); current naming = 25.8% |
 | [decompiled-functions.md](decompiled-functions.md) | Key function analysis (network / checksum / event focus) |

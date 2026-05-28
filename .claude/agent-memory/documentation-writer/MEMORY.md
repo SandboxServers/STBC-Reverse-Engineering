@@ -12,3 +12,4 @@ Entries appear here as the campaign progresses. Each entry links to a topic file
 - [verified status criteria](verified-status-criteria.md) — when a foundation doc qualifies for `verified` vs `partial`; pattern extrapolation as a valid medium-confidence justification
 - [vtable doc render patterns](vtable-doc-render-patterns.md) — 4 patterns for vtable reference docs: address reassignment, two-stage construction, GetRTTI cross-check, vtable-size vs object-size disambiguation
 - [TG vtable render patterns](tg-vtable-render-patterns.md) — 5 TG-specific patterns: __purecall reclassification, universal slot inheritance, type-ID constants table, sibling cross-link section, zero-xref negative claim format
+- [process-meta doc pattern](process-meta-doc-pattern.md) — process-meta docs (coverage reports, pass narratives) validate by content removal, not address re-anchoring; three-class section taxonomy + status-partial-not-verified rule

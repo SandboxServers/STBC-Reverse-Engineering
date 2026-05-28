@@ -89,7 +89,7 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 | 11 | stateupdate-subsystem-wire-format.md | Mid: subsystem linked list + 3 WriteState formats | stateupdate | **partial (2026-05-28)** — 2 material corrections (C1 ship+0x2C4 was HullSubsystem not PowerSubsystem + add missing 0x2C0/0x2C8; C2 EndMarker attribution corrected from 0x006CDAE0 to 0x006CF9B0); 10+ confirmed claims; 14 Ghidra renames + 1 created + 7 plates; see §6.11 |
 | 12 | per-ship-subsystem-wire-format.md | Mid: 16 stock ship subsystem catalogs | stateupdate-subsystem-wire-format | **partial (2026-05-28)** — 4 sampled ships byte-exact (Sovereign 49 / Bird of Prey 32 / Galor 31 / Akira 47); ZERO material wire-format corrections; 3 refinements (R1 cycle-byte math is per-tick exact / per-cycle approximate due to bit packing; R2 "top-level" is post-link count; R3 silently-dropped templates like Probe Launcher / Shuttle Bay / Decoy Launcher); 11 remaining ships + Enterprise@37 at medium confidence via pattern extrapolation; foundation cross-anchor (mid #11 ship+0x2B0..+0x2DC slot table) re-confirmed; see §6.12 |
 | 13 | tgobjptrevent-class.md | Mid: TGObjPtrEvent class layout + 11 producers | (engine: TGEvent vtable 0x00895FF4) | **partial (2026-05-28)** — 0 wire-format / 0 producer corrections; 3 corrections (C1 0x101 is TGEvent itself not "TGSubsystemEvent" / C2 vtable slot 0 is dtor not 0x00403310 + 17 slots not 12-14 / C3 SWIG wrapper addresses unverified in current Ghidra DB); class layout 0x2C bytes confirmed byte-by-byte; all 11 game event types verified at producer sites; dual-fire and host-only gates confirmed; see §6.13 |
-| 14 | pythonevent-wire-format.md | Leaf: opcode 0x06 + 4 event factories | tgobjptrevent-class, game-opcodes | pending |
+| 14 | pythonevent-wire-format.md | Leaf: opcode 0x06 + 4 event factories | tgobjptrevent-class, game-opcodes | **partial (2026-05-28)** — class hierarchy correction (0x101 = TGEvent itself, not "TGSubsystemEvent"); ObjectExploding IsA-chain refinement (3 IDs not 2); source-vs-dest WriteObjectRef encoding asymmetry; wire-format dimensions for all 4 classes byte-by-byte CONFIRMED; both producers (HostEventHandler 0x006A1150 + ObjectExplodingHandler 0x006A1240) byte-by-byte confirmed but were undefined in DB (still are — disassembled raw); MpgameHandlePythonEvent renamed at 0x0069F880; see §6.14 |
 | 15 | collision-effect-protocol.md | Leaf: opcode 0x15 + CollisionEvent class + validation chain | game-opcodes, stream-primitives | pending |
 | 16 | set-phaser-level-protocol.md | Leaf: opcode 0x12 + TGCharEvent | game-opcodes, tgobjptrevent-class | pending |
 | 17 | delete-player-ui-wire-format.md | Leaf: opcode 0x17 + factory 0x866 | game-opcodes, pythonevent-wire-format | pending |
@@ -2929,6 +2929,244 @@ row added; §2 row #13 status flipped to partial; §3.13 inventory
 will be refreshed when documentation-writer renders the corrected
 doc; §7.7 event-class anchor table for TGObjPtrEvent vtable expanded
 from 12 slots to 17 slots when restructure happens).
+
+---
+
+### 6.14 pythonevent-wire-format.md — 2026-05-28 (game-archaeology-specialist)
+
+**Status:** validated -> `partial`. ZERO wire-format byte-count
+corrections (all 4 class sizes — 16 / 17 / 20 / 24 bytes — confirmed
+byte-by-byte via WriteToStream decompiles + stream vtable slot
+verification). FIVE non-wire corrections: hierarchy fabrication
+(C1 — same as tgobjptrevent #13 cascade), ObjectExploding IsA
+chain misnaming (C2), source/dest WriteObjectRef encoding asymmetry
+(C3 — refinement), receiver-flow function-name approximation
+(C4 — `EventManager::PostEvent` is actually Event-self-dispatch via
+event->dest_obj vtable), and ObjectExplodingEvent's wire size
+incorrectly given as 25 in doc Example heading (C5 — text says "25"
+but layout sums to 24 + opcode = 25 total). All producer behavior
+matches doc; both undefined-in-DB handler bodies confirmed via raw
+disassembly.
+
+**Methodology:** Phase 1-5 per v5 workflow. `program: STBC.exe` on
+every MCP call. Doc anchors against doc #13 (just validated) for
+TGObjPtrEvent details + engine doc #8 for TGEvent base/vtable +
+doc #4 for opcode dispatch + doc #7 for routing.
+
+**Functions touched (completeness):**
+
+| Function | Addr | effective_score | Plate? |
+|----------|------|-----------------|--------|
+| MpgameHandlePythonEvent | 0x0069f880 | 22.14 | yes |
+
+Single function renamed + prototyped + plated. The four event-class
+serialization functions (WriteToStream / ReadFromStream pairs) and
+the two producer-handler functions (HostEventHandler 0x006A1150,
+ObjectExplodingHandler 0x006A1240) were either undefined in DB or
+already named-and-plated by prior passes; no incremental v5 edits.
+
+**Wire-format CONFIRMATION (per class, byte-by-byte):**
+
+| Class | Factory | Base | Ext | Total payload | + opcode | Confirmed via |
+|-------|---------|------|-----|---------------|----------|----------------|
+| TGEvent | 0x0101 | 16 | 0 | 16 | 17 | FUN_006D6130 — 4 calls × 4-byte writes (vtable+0x64 ×2 + vtable+0x84 ×2) |
+| TGCharEvent | 0x0105 | 16 | 1 | 17 | 18 | 0x006D6940 disasm — base call + `CALL [EAX+0x54]` (vtable+0x54 = WriteChar 1 byte) |
+| TGObjPtrEvent | 0x010C | 16 | 4 | 20 | 21 | TGObjPtrEvent_WriteToStream 0x006D6DC0 (already v5-plated in doc #13) |
+| ObjectExplodingEvent | 0x8129 | 16 | 8 | 24 | **25** | FUN_0043F990 — base + vtable+0x6C (i32 firing_player) + vtable+0x74 (f32 lifetime) |
+
+Stream vtable slot map (TGBufferStream SWIG variant vtable
+0x00895C58 — confirmed via raw memory dump + decompile of each):
+
+| Slot offset | Address | Method | Byte cost |
+|-------------|---------|--------|-----------|
+| +0x60 | 0x006CF640 | ReadInt (raw 4-byte) | 4 |
+| +0x64 | 0x006CF830 | WriteInt (raw 4-byte) | 4 |
+| +0x68 | 0x006CF670 | ReadInt (alias) | 4 |
+| +0x6C | 0x006CF870 | WriteInt (alias) | 4 |
+| +0x70 | 0x006CF6B0 | ReadFloat | 4 |
+| +0x74 | 0x006CF8B0 | WriteFloat | 4 |
+| +0x80 | 0x006CF6A0 | ReadInt virtual dispatcher (forwards to +0x68) | 4 |
+| +0x84 | 0x006CF930 | WriteInt virtual dispatcher (forwards to +0x6C) | 4 |
+| +0x50 | 0x006CF540 | ReadChar (1 byte) | 1 |
+| +0x54 | 0x006CF730 | WriteChar (1 byte) | 1 |
+
+NOTE: slot +0x64 and +0x6C end up writing 4 raw bytes each. The +0x80/+0x84
+slots are virtual dispatchers that forward to +0x68/+0x6C in the SWIG-
+visible class. They look like "polymorphic" hooks but in this class they're
+fixed-width.
+
+**Confirmed claims (high confidence):**
+
+- **Opcode 0x06 + 0x0D shared receiver FUN_0069F880** — receiver
+  decompile confirms NO opcode-byte inspection; dispatcher (FUN_0069F2A0
+  jump-table slots 6 and 13) routes both to this function. Doc claim
+  byte-by-byte confirmed.
+- **Receiver flow** — 8 steps: GetBufferAndSize / Ctor / OpenBuffer-skip-1 /
+  ReadObjectFromStream (006D6200) / ResolveRefs (006F13C0) / clear +0x24 /
+  PostEvent (006DA300) / refcount-release. Confirmed via decompile.
+- **Factory-tag-first wire format** — ReadObjectFromStream reads factory_id
+  via `stream->vtable[+0x60]` (4 raw bytes), looks up TGFactoryCreate
+  (006F13E0), instantiates concrete class, calls `event->vtable[+0x38]`
+  (= ReadFromStream). Confirmed via FUN_006D6200 decompile.
+- **HostEventHandler 0x006A1150 producer flow** — byte-by-byte via raw
+  disasm: reads g_TGWinsockNetwork at 0x97FA78, stores opcode 0x06 byte at
+  stack +0x3C, calls SWIG TGBufferStream_Ctor (0x006CEFE0), OpenBuffer
+  with cap 0x3FF, invokes event->vtable[+0x34] = WriteToStream, allocates
+  TGMessage(0x40) via TGAlloc, sets msg+0x3A = 1 (reliable), calls
+  SendTGMessageToGroup (0x006B4DE0) with "NoMe" string at 0x008E5528. All
+  matches doc verbatim.
+- **ObjectExplodingHandler 0x006A1240 dual-path** — confirmed via raw
+  disasm. MP path at 006A126A is byte-identical to HostEventHandler. SP
+  path at 006A131B does `FLD [event+0x2C]; FSTP [ship+0x14C]` then calls
+  FUN_005AC250 (Python `Effects.ObjectExploding`). MP/SP gate is
+  `MOV AL, [0x97FA8A]; TEST AL,AL; JZ` (g_IsMultiplayer test).
+- **Event registration in MultiplayerGame_Ctor (0x0069E590)** — confirmed
+  via decompile:
+    - 0x008000DF + 0x00800074 + 0x00800075 -> HostEventHandler (host-only
+      gate `DAT_0097fa8a != 0`)
+    - 0x0080004E -> ObjectExplodingHandler (ALWAYS-on, gate is internal)
+  Cross-doc consistency with python-messages.md plate comment.
+- **Class hierarchies via IsA decompile**:
+    - TGCharEvent IsA (0x00574C50) -> true for 0x105, 0x101, 0x02
+    - TGObjPtrEvent IsA (0x004032C0) -> true for 0x10C, 0x101, 0x02
+    - ObjectExploding IsA (0x0043F8F0) -> true for 0x8129, **0x101**, 0x02
+  All three sibling classes inherit from TGEvent base (0x101). The doc's
+  hierarchy diagram puts ObjectExploding as a sibling of "TGSubsystemEvent"
+  but reality is they all share TGEvent base.
+- **TGEvent base GetFactoryID** — at 0x006D5CE0 = `MOV EAX, 0x101; RET`.
+  Confirms 0x101 IS TGEvent itself (cross-anchor with doc #13 C1).
+- **TGObjPtrEvent obj_ptr encoding** — producer-side stores already-
+  resolved network ID at `+0x28` (no NULL/sentinel translation needed
+  at write time; the producer encodes NULL->0 itself). Verified via
+  RepairSubsystem_RaisePriority (0x005519e0) producer pattern:
+    `if (param_1 == 0) uVar3 = 0; else uVar3 = *(undefined4 *)(param_1 + 4);`
+    `puVar2[10] = uVar3;`  (puVar2[10] = +0x28)
+- **"NoMe" group string** — at 0x008E5528 = ASCIIZ "NoMe" (confirmed
+  via memory dump).
+- **ObjectExploding vtable @ 0x0088A178** — 18-slot table dumped:
+    +0x04 = 0x0043F8E0 GetFactoryID -> 0x8129
+    +0x08 = 0x0043F8F0 IsA
+    +0x18/+0x1C = 0x006D6050 / 0x006D60B0 (ResolveRefs — inherited from TGEvent)
+    +0x24 = 0x0043F920 GetClassName -> "ObjectExplodingEvent" @0x008DA270
+    +0x28 = 0x0043F930 GetSWIGName -> "_p_ObjectExplodingEvent" @0x008DA288
+    +0x30 = 0x006D6230 CopyFrom (inherited)
+    +0x34 = 0x0043F990 WriteToStream (verified)
+    +0x38 = 0x0043F9C0 ReadFromStream (verified)
+
+**Corrected claims:**
+
+1. **C1 — class hierarchy "TGSubsystemEvent (factory 0x101)" is
+   fabricated** (cascade from doc #13 C1). The doc has a hierarchy
+   diagram with `TGSubsystemEvent (factory 0x101)` as the parent of
+   TGCharEvent/TGObjPtrEvent. Binary: GetFactoryID at TGEvent base
+   (0x006D5CE0) emits 0x101 directly. NO TGSubsystemEvent class exists
+   anywhere — no RTTI string, no vtable, no ctor, no IsA branch with
+   that name. The doc's "Event Class 1: TGSubsystemEvent (factory 0x101)"
+   section header should read "Event Class 1: TGEvent (factory 0x101)"
+   and the inheritance diagram should be:
+     `NiObject -> TGEvent (0x101)`
+                     `├── TGCharEvent (0x105) [+1 byte]`
+                     `├── TGObjPtrEvent (0x10C) [+4 byte obj_id]`
+                     `└── ObjectExplodingEvent (0x8129) [+4 player + +4 lifetime]`
+   The "vtable 0x008932A4" address claimed for TGSubsystemEvent has
+   ZERO xrefs in the binary (confirmed via `get_xrefs_to`). Class
+   layout for "TGSubsystemEvent" should be re-labeled as TGEvent base.
+
+2. **C2 — ObjectExplodingEvent IsA chain is 3-IDs, not 2** (low impact).
+   Doc says "ObjectExplodingEvent::IsA returns true for 0x8129
+   (ObjectExplodingEvent), 0x02 (TGEvent)". Binary disasm of
+   0x0043F8F0 returns true for **0x8129, 0x101, 0x02** (three IDs).
+   ObjectExplodingEvent inherits from TGEvent (0x101) just like the
+   other event subclasses. This is a 1-line text fix to the doc's
+   IsA Chain bullet list.
+
+3. **C3 — Object Reference Encoding has source/dest asymmetry**
+   (refinement). Doc says `WriteObjectRef` has 3 cases (NULL / sentinel /
+   valid). Binary FUN_006D6130 disasm shows:
+     - SOURCE field (this+0x08): TWO cases — `if NULL -> 0; else *(obj+4)`.
+       NO sentinel test. There is no path that writes 0xFFFFFFFF for
+       the source.
+     - DEST field (this+0x0C): THREE cases — `if sentinel -> -1; elif
+       NULL -> 0; else *(obj+4)`.
+   Practical impact: minimal (a producer would have to manually set
+   source to the sentinel pointer for this to matter, and that doesn't
+   happen in the binary). Replace the single "WriteObjectRef" rule with
+   per-field rules in the doc.
+
+4. **C4 — receiver Step 6 name "EventManager::PostEvent" approximates**
+   (refinement). Doc says "Post event to local event system via
+   FUN_006da300". Actual decompile of 006DA300 shows it reads
+   `event->dest_obj` (this+0x0C), and invokes `dest_obj->vtable[+0x50]`.
+   This is **Event::Dispatch** — the event invokes itself on its dest
+   object's event handler. The name "PostEvent" is acceptable as an
+   abstract description but technically misleading. Suggest renaming
+   in the doc plate to `TGEvent::Dispatch` or `Event::SelfDispatch`.
+
+5. **C5 — ObjectExplodingEvent wire example header says "(25 bytes)"
+   matches layout but doc has it in the heading not the text**. The doc
+   actually says "Total: 25 bytes (fixed)" in the example block but
+   "24 bytes" in the inheritance diagram (`size 0x30, +0x28 = int32,
+   +0x2C = float`). The CLASS size is 0x30 (48 in-memory); WIRE size is
+   16 base + 8 ext = 24 payload + 1 opcode = 25 wire. Both numbers are
+   correct in their respective contexts; the doc's prose is ambiguous
+   and should clarify in-memory vs wire size.
+
+**Dropped claims (none material).** The "TGCharEvent vtable 0x008932DC"
+address remains correct as a reference (data xref to 0x008932DC confirmed
+from FUN_00574C20 ctor at 0x00574C2D — meaning a vtable DOES exist there,
+even though the doc's "vtable @ 0x008932DC" 14-slot table needs slot
+recount — the SWIG triple-string scheme means slot +0x2C is GetSWIGPtrName
+not "CopyFrom"; same correction as doc #13 C2).
+
+**Open questions:**
+
+- The doc's "Worked Example" claims 14 messages per collision (1 ObjectExploding
+  + 13 ADD_TO_REPAIR_LIST), but "Collision Chain Event Count" near the end
+  claims 12-14 with 1 + 11 + 2 delayed = 14. The math is inconsistent (11 + 2
+  = 13 — not 14). Real ground-truth would require packet trace replay against
+  a known collision. Suggest documentation-writer reconciles or labels as
+  "approximate" in both places.
+- The doc says PlayerN base ID is `0x3FFFFFFF + N * 0x40000`. The constant
+  0x3FFFFFFF appears in `DAT_0095adfc` as the dest-sentinel. The Player0
+  base claim is consistent with the sentinel value chosen so that an
+  uninitialized ship (id = sentinel) wraps to player 0's base ID minus
+  one. Not validated this pass; suggest cross-anchor with
+  objcreate-serialization (doc #10) which has player base ID anchored.
+- Subsystem ID assignment via `DAT_0095B078` global counter is doc-cited
+  but not verified this pass. The receive-side hash table at `DAT_0099A67C`
+  IS doc-cited; not verified this pass.
+
+**Cross-doc anchor reuse:**
+
+- **From doc #13 (tgobjptrevent-class.md):** TGObjPtrEvent vtable 0x0088869C,
+  factory 0x010C, size 0x2C, wire 21B — directly inherited (no re-derivation).
+- **From doc #7 (tgmessage-routing.md):** LOCAL-ONLY dispatch (no relay) at
+  FUN_0069F880 — confirmed (no SendToGroup in receiver body).
+- **From doc #4 (game-opcodes.md):** dispatcher slots 6 (PythonEvent) and
+  13 (PythonEvent2) both route to FUN_0069F880 — confirmed via dispatcher
+  jump table (recorded in doc #4 validation).
+- **From engine doc #8 (event-system-architecture.md):** TGEvent vtable
+  0x00895FF4, sizeof 0x28 — confirmed; slot +0x34 = WriteToStream and
+  slot +0x38 = ReadFromStream consistent with that doc's vtable table.
+
+**Verification methods used:**
+- `decompile_function` for receiver + base WriteToStream/ReadFromStream
+  + ObjectExploding WriteToStream/ReadFromStream + ResolveRefs +
+  Event::Dispatch + RepairSubsystem_RaisePriority producer + ctor +
+  base ctor + MultiplayerGame_Ctor + IsA functions.
+- `disassemble_bytes` for the two undefined-in-DB producer functions
+  (HostEventHandler 0x006A1150, ObjectExplodingHandler 0x006A1240),
+  TGEvent base GetFactoryID, TGCharEvent serialize pair, ObjectExploding
+  IsA + GetClassName + GetSWIGName, stream vtable slot 0x64 writer.
+- `read_memory` for stream SWIG vtable @ 0x00895C58 (160 bytes) and
+  ObjectExplodingEvent vtable @ 0x0088A178 (80 bytes).
+- `inspect_memory_content` for "NoMe" group string verification.
+- `get_xrefs_to` for vtable address xref counts (TGSubsystemEvent vtable
+  address has 0 xrefs — confirms fabrication).
+
+**Files touched:** `docs/protocol/v5-validation-status.md` (this row
+added; §2 row #14 status flipped to partial; §3.14 inventory will be
+refreshed when documentation-writer renders the corrected doc).
 
 ---
 

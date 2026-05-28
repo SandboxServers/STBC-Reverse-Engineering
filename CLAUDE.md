@@ -99,11 +99,11 @@ collision damage and subsystem damage. The main multiplayer loop is functional.
 
 ### Three Message Dispatchers
 1. **NetFile dispatcher (FUN_006a3cd0)**: Checksums/file opcodes 0x20-0x27
-2. **MultiplayerGame dispatcher (0x0069f2a0)**: Game opcodes 0x00-0x2A (jump table at 0x0069F534, 41 entries)
+2. **MultiplayerGame dispatcher (MpgameHandleMessage at 0x0069f2a0)**: Game opcodes 0x02-0x2A (jump table at 0x0069F534, 41 entries indexed by opcode-2). v5-validated 2026-05-28.
 3. **MultiplayerWindow dispatcher (FUN_00504c10)**: Opcodes 0x00, 0x01, 0x16 (UI-level settings)
 4. **Python SendTGMessage**: Opcodes 0x2C-0x39 (chat, scoring, game flow) bypass C++ dispatcher
 
-### Game Opcode Table (complete, verified from jump table + packet traces)
+### Game Opcode Table (v5-validated 2026-05-28 from MpgameHandleMessage jump table + packet traces)
 | Opcode | Name | Handler | Type |
 |--------|------|---------|------|
 | 0x00 | Settings | FUN_00504d30 | Game config (gameTime, map, collision) — MultiplayerWindow dispatcher |
@@ -133,7 +133,8 @@ collision damage and subsystem damage. The main multiplayer loop is functional.
 | 0x18 | DeletePlayerAnim | FUN_006a1420 | "Player joined/left" floating text (TGL lookup, crash risk) |
 | 0x19 | TorpedoFire | FUN_0069f930 | Torpedo launch (897/session) |
 | 0x1A | BeamFire | FUN_0069fbb0 | Beam weapon hit |
-| 0x1B | TorpTypeChange | FUN_0069fda0 | Torpedo type switch |
+| 0x1B | TorpTypeChange | FUN_0069fda0 | Torpedo type switch (event 0x008000FD) |
+| 0x1C | StateUpdate | FUN_0069ff50 | **Per-tick object state replication** — see `docs/protocol/stateupdate.md` (v5-validated 2026-05-28) |
 | 0x1D | ObjNotFound | FUN_006a0490 | Object lookup failure |
 | 0x1E | RequestObj | FUN_006a02a0 | Request object data |
 | 0x1F | EnterSet | FUN_006a05e0 | Enter game set |

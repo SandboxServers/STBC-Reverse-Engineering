@@ -12,3 +12,4 @@ How-tos for working with the STBC reverse engineering project.
 | [python-152-guide.md](python-152-guide.md) | Python 1.5.2 compatibility guide |
 | [swig-api.md](swig-api.md) | SWIG function reference |
 | [lessons-learned.md](lessons-learned.md) | Debugging techniques, pitfalls, protocol discoveries |
+| [v5-evidence-header.md](v5-evidence-header.md) | v5 evidence standard: YAML header schema, claim/address binding, status promotion rules |

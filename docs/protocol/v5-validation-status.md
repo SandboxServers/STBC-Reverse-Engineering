@@ -81,7 +81,7 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 | 3 | transport-layer.md | Foundation: UDP framing + 7 transport types + TGMessage vtable + fragments | wire-format-spec, stream-primitives | **partial (2026-05-28)** — 4 corrections, AlbyRules cipher anchored, TGMessage cascade absorbed; see §6.3 |
 | 4 | game-opcodes.md | Mid: opcodes 0x00-0x2A handler addresses + per-opcode formats | wire-format-spec, transport-layer | **partial (2026-05-28)** — opcode table fully anchored from dispatcher recovery; one column-header clarification + small wire-format anchorings; see §6.4 |
 | 5 | checksum-opcodes.md | Mid: opcodes 0x20-0x28 NetFile dispatcher | wire-format-spec, transport-layer | **partial (2026-05-28)** — 2 material corrections (dialog swap + 5-round fabrication); 32 anchors confirmed; 1 open question on round-0xFF sender; see §6.5 |
-| 6 | python-messages.md | Mid: opcodes 0x2C+ MAX_MESSAGE_TYPES + SendTGMessage path | wire-format-spec, stream-primitives | pending |
+| 6 | python-messages.md | Mid: opcodes 0x2C+ MAX_MESSAGE_TYPES + SendTGMessage path | wire-format-spec, stream-primitives | **partial (2026-05-28)** — 1 correction (WriteCString length-prefix width), 1 clarification (TGBufferStream::Serialize vs TGMessage::WriteToBuffer), 2 cross-source-tagged Python-handler claims; see §6.6 |
 | 7 | tgmessage-routing.md | Mid: relay-all + star topology + opaque payload | python-messages, transport-layer | pending |
 | 8 | stateupdate.md | Mid: opcode 0x1C dirty flags + 8 field formats + round-robin | game-opcodes, stream-primitives | pending |
 | 9 | object-replication.md | Mid: FUN_0069f620 thin index for ObjCreate | game-opcodes | pending |
@@ -1381,6 +1381,155 @@ replacing the 5-round fabrication, round-0xFF subsection, reference-hash bundle
 subsection, IMPORTANT block on 0x22/0x23 swap, 0x28 outbound-only section, Event IDs
 subsection, Open Questions section, cross-references). docs/protocol/v5-validation-status.md
 (this row added; §2 row #5 status flipped to partial).
+
+### 6.6 python-messages.md — 2026-05-28 (game-archaeology-specialist)
+
+**Status:** validated -> `partial` (1 material correction on WriteCString length-prefix
+width, 1 naming clarification on the wire-serialize entry, 3 cross-source tags
+required on the Python-side handler list; the doc is overwhelmingly well-anchored —
+this is the lowest-correction pass of the protocol family so far).
+
+**Methodology:** Per-doc workflow Phases 1-3 with `program: STBC.exe` on every MCP call.
+~80 load-bearing claims; all SWIG wrappers traced from format-string PUSH sites; the
+ET_NETWORK_MESSAGE_EVENT receive-side dispatch confirmed end-to-end.
+
+**Headline:** python-messages.md is the cleanest pre-v5 protocol doc validated to date.
+The MAX_MESSAGE_TYPES = 0x2B constant init at 0x00654f31 is **byte-level confirmed**;
+the SendTGMessage / SendTGMessageToGroup / TGMessage_Create / SetGuaranteed / SetDataFromStream
+function addresses all match the binary; "NoMe" and "Forward" group-name strings at
+0x008e5528 / 0x008d94a0 confirmed in-memory; the receive-side 6-step dispatch including
+TGMessageEvent size 0x2C / ET_NETWORK_MESSAGE_EVENT = 0x60001 is **byte-level confirmed**
+via TGWinsockNetwork::Update at 0x006b4788 (`MOV EBP, 0x60001`) + 0x006b4794 (`PUSH 0x2C`).
+
+**Functions touched (completeness):**
+
+| Function | Addr | effective_score | Used to verify |
+|----------|------|-----------------|----------------|
+| TGWinsockNetwork_SendTGMessage | 0x006b4c10 | 0.00 -> 29.07 | unicast/broadcast/special-mode targetID routing; peer binary-search at [this+0x2C]; 4/0xB error codes |
+| TGWinsockNetwork_SendTGMessageToGroup | 0x006b4de0 | 6.62 -> 71.27 | group-table binary search at [this+0xF4]; strcmp loop; 0x10 not-found return |
+| TGMessage_SetDataFromStream | 0x006b8a00 | 11.93 -> 78.27 | vtable+0xF4 (GetBuffer) + vtable+0xD8 (GetPos) + FUN_006b84d0 (BufferCopy) call chain |
+| TGMessageEvent_Ctor | 0x006bfe80 | 0.00 -> 38.4 | size 0x2C verified at allocation site (0x006b4794 PUSH 0x2C); vtable PTR_FUN_0089580c; +0x28 message-ref slot zeroed |
+| TGMessageEvent_AttachMessage | 0x006bff30 | n/a | stores TGMessage* at [this+0x28] with release-on-replace at vtable[1](1) |
+| MultiplayerGame_Ctor | 0x0069e590 | 0.00 -> 5.39 | builds "NoMe" + "Forward" groups; ET_NETWORK_MESSAGE_EVENT 0x60001 handler registration; 11+ other event registrations (host-only conditional on DAT_0097fa8a) |
+| MpgameHandleMessage | 0x0069f2a0 | 69.84 | dispatcher boundary verified: switch covers 0x02-0x2A only, no case >= 0x2C |
+| (SWIG TGNetwork_SendTGMessage wrapper) | 0x005e3a70 | n/a (no fn entry) | format string `"OiO|i:TGNetwork_SendTGMessage"` at 0x0093846c; calls 0x006b4c10 |
+| (SWIG TGNetwork_SendTGMessageToGroup wrapper) | 0x005e3b20 | n/a (no fn entry) | format string `"OOO:TGNetwork_SendTGMessageToGroup"` at 0x0093848c |
+| (SWIG TGMessage_Create wrapper) | 0x005e13b0 | n/a (no fn entry) | format string `":TGMessage_Create"` at 0x00937c30; PUSH 0x40; CALL 0x00717b70 (alloc); CALL 0x006b82a0 (TGMessage_Ctor) -- confirms sizeof 0x40 |
+| (SWIG TGMessage_SetGuaranteed wrapper) | 0x005e19c0 | n/a (no fn entry) | format string `"Oi:TGMessage_SetGuaranteed"` at 0x00937d30; SETNZ AL / MOV [ECX+0x3A], AL -- confirms +0x3A boolean field |
+
+**Annotations applied this pass:** 6 function renames + 5 prototypes + 6 plate comments.
+
+| Addr | Old | New | Prototype | Plate? |
+|------|-----|-----|-----------|--------|
+| 0x006b4c10 | FUN_006b4c10 | TGWinsockNetwork_SendTGMessage | `int __thiscall(void *, int, TGMessage *, int)` | yes |
+| 0x006b4de0 | FUN_006b4de0 | TGWinsockNetwork_SendTGMessageToGroup | `int __thiscall(void *, char *, TGMessage *)` | yes |
+| 0x006b4ec0 | FUN_006b4ec0 | TGWinsockNetwork_SendToGroup_Iterate | (none) | no |
+| 0x006b8a00 | FUN_006b8a00 | TGMessage_SetDataFromStream | `void __thiscall(TGMessage *, void *)` | yes |
+| 0x006b84d0 | FUN_006b84d0 | TGMessage_BufferCopy | (none) | no |
+| 0x006bfe80 | FUN_006bfe80 | TGMessageEvent_Ctor | `void * __fastcall(void *)` | yes |
+| 0x006bff30 | FUN_006bff30 | TGMessageEvent_AttachMessage | `void __thiscall(void *, TGMessage *)` | yes |
+| 0x0069e590 | FUN_0069e590 | MultiplayerGame_Ctor | (none) | yes |
+
+**Confirmed claims (high confidence):** ~75 anchors.
+
+- **MAX_MESSAGE_TYPES = 0x2B at 0x0090b490, SWIG init at 0x00654f31.** Verified at byte level:
+  `c70590b490002b000000` = `MOV dword ptr [0x0090b490], 0x2b`. The SWIG-globaltable name-slot
+  pointer `0x00952cf8` ("MAX_MESSAGE_TYPES") is stored 10 bytes earlier at `0x00654f27`.
+- **SendTGMessage at 0x006b4c10** with targetID semantics:
+  - `targetID == -1` → resolves peer via FUN_006bb9d0(optional_arg), queues to that peer; returns 0xB on lookup fail.
+  - `targetID > 0` → binary-search [this+0x2C] peer array (count [this+0x30]) sorted by [peer+0x18]; fallback to [this+0x20] (local-player peer ID) before returning 0xB.
+  - `targetID == 0` → iterates entire [this+0x2C] peer array; for each peer with `[peer+0xBC] != 1` (not disconnected), Clone-and-enqueue via vtable[6]; last peer reuses caller's message.
+- **SendTGMessageToGroup at 0x006b4de0** with group-table binary search at [this+0xF4] (count [this+0xF8]) sorted by group-name string at [entry+0x04]; strcmp via unrolled 2-bytes-at-a-time loop at 0x006b4e22; calls FUN_006b4ec0 (now `TGWinsockNetwork_SendToGroup_Iterate`) on found group; returns 0x10 on not-found.
+- **"NoMe" group name at 0x008e5528** + **"Forward" group name at 0x008d94a0** — both strings inspected in-memory; null-terminated.
+- **MultiplayerGame_Ctor at 0x0069e590 creates both groups when DAT_0097fa78 (TGWinsockNetwork singleton) and DAT_0097fa8a (g_IsMultiplayer) are non-zero.** Each group is a 0x14-byte allocation with vtable `PTR_FUN_00894684`, strcpy-style name copy, then FUN_006b70d0 (group register) on TGNetwork's group table.
+- **ET_NETWORK_MESSAGE_EVENT = 0x60001** confirmed at three independent sites:
+  - MultiplayerGame_Ctor at 0x0069e590 registers `FUN_006db380(0x60001, ..., s_MultiplayerGame____ReceiveMessag_0095a218, 1, 1, ...)`.
+  - TGWinsockNetwork::Update at 0x006b4788 sets `MOV EBP, 0x60001`, the event-type written at [event+0x10].
+  - Receiver path (TGMessageEvent created, message attached, posted to FUN_006d62b0).
+- **TGMessageEvent sizeof = 0x2C** verified at 0x006b4794: `PUSH 0x2C` (allocation size pushed to FUN_00717b70).
+- **TGMessageEvent ctor at 0x006bfe80**: installs vtable `PTR_FUN_0089580c`, zeros [+0x28] (message-ref slot).
+- **TGMessageEvent::AttachMessage at 0x006bff30** stores TGMessage* at [this+0x28], releases prior reference via vtable[1](1) on replace.
+- **TGMessage_Create at 0x005e13b0** allocates 0x40 bytes via FUN_00717b70 + FUN_00718010 pool, then calls TGMessage_Ctor at 0x006b82a0 (foundation #3 confirmed sizeof 0x40).
+- **SetGuaranteed at 0x005e1a18** writes `byte [TGMessage+0x3A] = (param != 0) ? 1 : 0` (SETNZ AL pattern) — confirms the `+0x3A` reliable-flag field.
+- **SetDataFromStream at 0x006b8a00** calls stream vtable+0xF4 (GetBuffer at [+0x1C]) and vtable+0xD8 (GetPos at [+0x24]), then BufferCopy at FUN_006b84d0 — exactly as doc claims.
+- **MpgameHandleMessage dispatcher boundary** (range check `0x02-0x2A` bias-decoded) confirmed: switch has no case for opcodes >= 0x2C; opcodes 0x2C+ fall through silently.
+- **Receive-side dispatch chain (6 steps)** end-to-end byte-traced:
+  1. ReceivePacket FUN_006b95f0 — exists, named.
+  2. ProcessIncomingPackets FUN_006b5c90 — exists, named (note: name is `ProcessIncomingPackets`, not `ProcessIncomingMessages` as doc says — see C2 below).
+  3. TGMessage factory Type 0x32 at FUN_006b83f0 — exists, named.
+  4. Dequeue FUN_006b52b0 — exists.
+  5. TGWinsockNetwork::Update FUN_006b4560 wraps each into a TGMessageEvent; sets event type to 0x60001; calls AttachMessage; PostEvent via FUN_006d62b0.
+  6. C++ handlers (MultiplayerGame, NetFile, MultiplayerWindow) each registered on 0x60001 read first payload byte.
+- **TGBufferStream write primitives** all match (foundation #2 verified): WriteByte 0x006cf730 / WriteShort 0x006cf7f0 / WriteInt 0x006cf830 / WriteLong 0x006cf870 / WriteFloat 0x006cf8b0 / WriteBool 0x006cf7a0 / WriteBytes 0x006cf2b0 — addresses + vtable offsets + byte counts confirmed.
+- **CHAT_MESSAGE byte-by-byte wire example walkthrough** is internally consistent: payload `2C 02 00 00 00 05 00 68 65 6C 6C 6F` (12 bytes) wraps as type-0x32 with `flags_len=0x800F` (bit 15 reliable, bits 0-12 size=15) + 16-bit seq + payload — matches TGBufferStream_Serialize (foundation-#2 wire-container Serialize) byte layout exactly.
+
+**Corrected claims:**
+
+1. **C1 — WriteCString length prefix is uint32 LE, not uint16 LE (material).**
+   - Doc line 94: `WriteCString(s) | +0x24 (0x006cf460) | 2+N bytes | [uint16 LE strlen] [raw chars, NO null]`
+   - Reality: FUN_006cf460 decompiles as `for(i = 0; param_2[i] != 0; i++); vtable[+0x6c](i); vtable[+0x14](param_2, i);` — slot +0x6c is **WriteLong** (4-byte int, FUN_006cf870), NOT slot +0x5C (WriteShort).
+   - Result: wire format is `[uint32 LE strlen] [raw chars, NO null]` = **4+N bytes**, not 2+N.
+   - **Important**: Stock BC's mod code uses explicit `WriteShort(len) + Write(buf, len)` (as the CHAT_MESSAGE example shows), NOT WriteCString. So this correction does NOT invalidate the CHAT_MESSAGE example or any stock-trace observation. Mods/scripts that called WriteCString directly would have used a uint32 prefix.
+   - Cross-source check needed: the relay-audit memory's CHAT_MESSAGE / TEAM_CHAT relay observations are unaffected (they use the explicit `WriteShort + Write` pattern, not WriteCString).
+
+2. **C2 — Step 4 of Receive Side Dispatch names TGMessage::WriteToBuffer for FUN_006b8340; binary names it TGBufferStream::Serialize.**
+   - Doc line 140: "This payload is serialized by `TGMessage::WriteToBuffer` (`FUN_006b8340`) into a type 0x32 transport message"
+   - Reality: Ghidra DB has FUN_006b8340 named `TGBufferStream_Serialize` (the wire-container class's Serialize method, vtable[2] of the 0x40-byte class at 0x006B82A0).
+   - Caveat: per the stream-primitives memory + transport-layer correction C4, the 0x40-byte class is now confirmed as **TGMessage** (not "TGBufferStream wire-container"). So `FUN_006b8340 IS TGMessage::Serialize` (vtable[2]). The doc's naming "WriteToBuffer" is descriptive of behavior but the canonical method name is `Serialize` per foundation #2/#3.
+   - Resolution: replace "TGMessage::WriteToBuffer" with "TGMessage::Serialize" throughout. The wire-format walkthrough below it is correct — class tag 0x32 / flags_len with bit-15 reliable / 16-bit seq / payload — and matches the decompile byte-for-byte.
+
+3. **C3 — Receive-side dispatch step 2 names "ProcessIncomingMessages"; binary names it "ProcessIncomingPackets".**
+   - Doc line 194: "ProcessIncomingMessages (FUN_006b5c90)"
+   - Reality: Ghidra has it named `TGWinsockNetwork_ProcessIncomingPackets` (renamed by transport-layer validation).
+   - Resolution: rename in doc to match the Ghidra symbol — `ProcessIncomingPackets`.
+
+**Cross-source-tagged claims (mark with `[cross-source-2026-02-24 trace]` -> relay-audit memory):**
+
+These three are cross-source observations from the Cady/XFS01 21-min trace; they corroborate
+the doc's routing claims but are NOT binary-derived:
+
+4. **0x2C CHAT_MESSAGE 1:2 echo (relayed to ALL clients including sender).** Doc line 211
+   ("CHAT_MESSAGE 0x2C - MultiplayerMenus") doesn't explicitly state the relay semantics, but
+   tgmessage-routing.md (the sibling) does. Tag as [cross-source-2026-02-24 trace].
+5. **0x36 SCORE_CHANGE always paired (sent to ALL clients simultaneously) — 10 S->C observed.**
+   Doc line 46 lists `SCORE_CHANGE_MESSAGE = 54 = 0x36 MissionShared`. The "always paired" /
+   "1:N broadcast" routing semantic is a trace observation. Tag as [cross-source-2026-02-24 trace].
+6. **0x37 SCORE_MESSAGE per-join roster update (6 S->C observed; doc reaches 0x37 as
+   "full score sync" implicitly).** Tag as [cross-source-2026-02-24 trace].
+
+These are NOT corrections — the doc isn't wrong about routing; it just doesn't carry the
+empirical evidence inline. Adding cross-source tags makes the provenance explicit.
+
+**Dropped claims:** None. Every claim survived validation in some form.
+
+**Cross-doc consistency check:**
+
+- **foundation #2 stream-primitives.md** — fully consistent: WriteByte/Short/Int/Long/Float/Bool/Bytes all at the addresses python-messages.md cites. The two docs agree on field offsets +0x1C buffer / +0x20 capacity / +0x24 cursor (cursor = "position" in stream-primitives vocab). The 7-vs-8-row write-table discrepancy from §4 #2 is RESOLVED: python-messages.md's 8-row table is the correct superset (adds WriteBool, WriteLong, WriteCString — the last with the C1 correction above).
+- **foundation #3 transport-layer.md** — fully consistent: TGMessage sizeof 0x40, vtable 0x008958d0, ctor TGMessage_Ctor at 0x006b82a0. C4 of transport-layer (TGMessage naming throughout) already absorbed; python-messages.md inherits.
+- **mid #4 game-opcodes.md** — fully consistent: MpgameHandleMessage at 0x0069f2a0 owns 0x02-0x2A; python-messages.md's claim that "opcodes 0x2C+ bypass the C++ dispatcher" is the negative complement of game-opcodes.md's coverage statement. Both agree on the dispatcher boundary.
+- **wire-format-spec.md** — fully consistent: opcode constants 0x2C-0x39 in the Python-Level Messages section of CLAUDE.md match python-messages.md's table.
+- **CLAUDE.md TopWindow drift (0x0097e238 = PlayWindow not TopWindow)** — does NOT apply to python-messages.md. The doc never cites 0x0097e238.
+
+**New factual sections added (for documentation-writer):**
+
+- **Top-of-doc NOTE block** stating partial status, the WriteCString length correction (C1), and the cross-source-tagged routing observations.
+- **Annotation table** (the 6 renames + 5 prototypes + 6 plate comments from this pass).
+- **"SWIG wrapper -> real function" cross-reference table** listing the 5 SWIG wrappers (SendTGMessage / SendTGMessageToGroup / TGMessage_Create / SetGuaranteed / SetDataFromStream) and their format strings + real targets. Currently scattered through the doc body; consolidating helps clean-room implementers.
+
+**Companion follow-ups (deferred to those docs' own validation passes):**
+
+- **tgmessage-routing.md** (row #7) — receives anchor confirmation for SendTGMessage / SendTGMessageToGroup / BroadcastToOthers / SendToGroupMembers; also inherits the "NoMe" / "Forward" group identity.
+- **stream-primitives.md** (already partial) — should pick up the corrected WriteCString length-prefix width (4 bytes, not 2) in its write-primitives table. Cross-doc disagreement #2 is RESOLVED in python-messages.md's favor (its 8-row table is correct except for the WriteCString row).
+- **wire-format-spec.md** (already partial) — should drop the Python-Level Messages summary table's claim that 0x35 "GameState" = MISSION_INIT_MESSAGE without anchoring the Python-side constant name. The doc's 11-row constants table (lines 41-51) is sourced from Python script imports (MultiplayerMenus, MissionShared, Mission5), NOT from the binary, so the numeric values 0x2C-0x41 are binary-correct (just message-type bytes on the wire) but the **names** (CHAT_MESSAGE, MISSION_INIT_MESSAGE, etc.) are Python-side. Mark the table as [python-source: scripts/MissionShared.py, scripts/MultiplayerMenus.py, scripts/Mission5/].
+
+**Open questions left for downstream rows:**
+
+1. **OQ1 — TGMessageEvent vtable PTR_FUN_0089580c slot layout unknown.** Used by `AttachMessage` (vtable[1] for release) but no other slots verified. Belongs to a TGMessageEvent class-layout pass under the engine family if/when one is undertaken.
+2. **OQ2 — The "Python ProcessMessageHandler" claim is unanchorable from the binary alone.** The doc lists 6 handlers registered on ET_NETWORK_MESSAGE_EVENT (3 C++ + 3 Python). The 3 C++ handlers (MultiplayerGame / NetFile / MultiplayerWindow) are anchored. The 3 Python ones (MissionShared.ProcessMessageHandler / MultiplayerMenus.ProcessMessageHandler / mission-specific) live in `reference/scripts/*.py` and are out of scope for this validation pass. Documentation-writer should re-render those 3 rows with a `[python-source]` tag pointing readers to the script-side handler implementations. Verification would require Python-corpus inspection, which is policy-allowed but explicitly de-scoped here.
+3. **OQ3 — 0x35 MISSION_INIT_MESSAGE vs "GameState" name conflict.** The relay-audit memory calls 0x35 "GameState"; this doc calls it `MISSION_INIT_MESSAGE`. Both refer to the same byte (0x35), but the Python-constant name is in MissionShared.py per this doc, while the relay-audit observation tagged it from packet-trace heuristic. Resolution: the doc's Python-source name is canonical; relay-audit's "GameState" was a working label. Document the resolution.
+4. **OQ4 — SendTGMessage `targetID == -1` "optional 4th param" semantics.** The doc states this is a special mode; the decompile shows it calls FUN_006bb9d0(param_4) to resolve a peer object. The exact semantic (peer-handle ID? in-flight message slot? something else?) needs a FUN_006bb9d0 deep-dive — deferred to a tgmessage-routing.md / transport-layer.md follow-up.
+
+**Files touched:** docs/protocol/v5-validation-status.md (this row added; §2 row #6 status flipped to partial). docs/protocol/python-messages.md NOT modified this pass — the documentation-writer agent will re-render with the v5 frontmatter, top-of-doc NOTE block, body corrections (C1 / C2 / C3), cross-source tags on the 3 routing claims, Python-source tag on the constants table, annotation summary, and explicit cross-links to transport-layer / stream-primitives / game-opcodes / tgmessage-routing.
 
 ---
 

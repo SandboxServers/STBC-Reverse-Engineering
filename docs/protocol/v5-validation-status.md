@@ -78,7 +78,7 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 |---|-----|-------|--------------------------|----------------|
 | 1 | wire-format-spec.md | Foundation / hub: opcode index + handler addresses + subsystem catalog | (engine: MpgameHandleMessage, vtable anchors) | **partial (2026-05-28)** — body restructure pending; see §6.1 |
 | 2 | stream-primitives.md | Foundation: TGBufferStream read/write + CF16 + CompressedVector3/4 | (engine: TGBufferStream vtable 0x008958D0) | **partial (2026-05-28)** — see §6.2; one CV3 correction + restructure for two-class disambiguation |
-| 3 | transport-layer.md | Foundation: UDP framing + 7 transport types + TGMessage vtable + fragments | wire-format-spec, stream-primitives | pending |
+| 3 | transport-layer.md | Foundation: UDP framing + 7 transport types + TGMessage vtable + fragments | wire-format-spec, stream-primitives | **partial (2026-05-28)** — 4 corrections, AlbyRules cipher anchored, TGMessage cascade absorbed; see §6.3 |
 | 4 | game-opcodes.md | Mid: opcodes 0x00-0x2A handler addresses + per-opcode formats | wire-format-spec, transport-layer | pending |
 | 5 | checksum-opcodes.md | Mid: opcodes 0x20-0x28 NetFile dispatcher | wire-format-spec, transport-layer | pending |
 | 6 | python-messages.md | Mid: opcodes 0x2C+ MAX_MESSAGE_TYPES + SendTGMessage path | wire-format-spec, stream-primitives | pending |
@@ -792,7 +792,158 @@ The doc has minimal redundancy with siblings (CF16 details are in cf16-precision
 
 **Files touched:** docs/protocol/v5-validation-status.md (this row added; §2 row #2 status flipped to partial). docs/protocol/stream-primitives.md NOT modified this pass — the documentation-writer agent will re-render with the corrections+restructure listed above.
 
+### 6.3 transport-layer.md — 2026-05-28 (game-archaeology-specialist)
 
+**Status:** validated -> `partial` (4 corrections applied; 3 open questions remain).
+**Methodology:** Per-doc workflow Phases 1-3 with `program: STBC.exe` on every MCP call.
+
+**Headline:** the AlbyRules cipher transform is **fully located** for the first time
+(`AlbyRulesCipher_InitKey` at `0x006c2280`, `AlbyRulesCipher_Encrypt` at `0x006c2490`,
+`AlbyRulesCipher_Decrypt` at `0x006c2520`, vtable `0x008958c0`, `0x58`-byte state). Both
+Encrypt and Decrypt call `InitKey` on every packet — the cipher is **re-keyed per packet**,
+which is why it's robust to UDP packet loss. The two TGWinsockNetwork functions
+`SendPacket` (`0x006b9870`) and `ReceivePacket` (`0x006b95f0`) had to be **created** via
+`mcp__ghidra__create_function` because auto-analysis had not disassembled them (vtable[27]
+and vtable[28] of the TGWinsockNetwork base class — no direct CALL xrefs, same hidden-DATA
+pattern as `MpgameHandleMessage`).
+
+**Functions touched (completeness):**
+
+| Function | Addr | Role | Plate? |
+|----------|------|------|--------|
+| `TGWinsockNetwork_Ctor` | 0x006b3a00 | MTU 1024 (network+0xAC, +0x2B); cipher state alloc; initial conn state 4 | — |
+| `TGWinsockNetwork_HostOrJoin` | 0x006b3ec0 | Connection states 4 -> 2 (host) / 4 -> 3 (join) | — |
+| `TGWinsockNetwork_QueueMessageForPeer` | 0x006b5080 | Seq counter offsets peer+0x26 / +0x2A | — |
+| `TGWinsockNetwork_SendOutgoingPackets` | 0x006b55b0 | MTU-bounded pack buffer | — |
+| `TGWinsockNetwork_ProcessIncomingPackets` | 0x006b5c90 | Packet structure peer_id / msg_count; factory dispatch | — |
+| `TGWinsockNetwork_HandleReliableReceived` | 0x006b61e0 | Below32 SET site | yes |
+| `TGWinsockNetwork_HandleACK` | 0x006b64d0 | Below32 READ site | — |
+| `TGWinsockNetwork_EnqueueReceived` | 0x006b6ad0 | Seq window + reassemble dispatch | — |
+| `TGMessage_ReassembleFragments` | 0x006b6cc0 | 256-entry index; fragment 0 carries total_frags | — |
+| `TGMessage_Ctor` | 0x006b82a0 | Size 0x40; vtable 0x008958d0 (was existing — name confirmed) | — |
+| `TGMessage_Factory_Type32` | 0x006b83f0 | Type 0x32 deserialize | — |
+| `FragmentMessage` | 0x006b8720 | Vtable[7] splitter — open question on total_frags placement | — |
+| `TGWinsockNetwork_ReceivePacket` | 0x006b95f0 | Decrypt; GameSpy bypass at 0x006b9706 | yes |
+| `TGWinsockNetwork_SendPacket` | 0x006b9870 | Encrypt; self-send loop-back path | yes |
+| `TGBootMessage_Ctor` | 0x006bac70 | Type 0x04 | — |
+| `TGDataMessage_Ctor` | 0x006bc5b0 | Type 0x00 | — |
+| `TGHeaderMessage_Ctor` | 0x006bd120 | Type 0x01 ACK; size 0x44 | — |
+| `TGHeaderMessage_Serialize` | 0x006bd190 | 4 or 5 byte ACK wire format | yes |
+| `TGConnectMessage_Ctor` | 0x006bdc40 | Type 0x02 | — |
+| `TGConnectAckMessage_Ctor` | 0x006be730 | Type 0x03 | — |
+| `TGDisconnectMessage_Ctor` | 0x006bf2e0 | Type 0x05 | — |
+| `AlbyRulesCipher_InitKey` | 0x006c2280 | Key 'AlbyRules!' @ 0x0095abb4 -> 0x58-byte state | yes |
+| `AlbyRulesCipher_Encrypt` | 0x006c2490 | Vtable[1]; called per packet; re-keys via InitKey | yes |
+| `AlbyRulesCipher_Decrypt` | 0x006c2520 | Vtable[2]; called per packet; re-keys via InitKey | yes |
+
+7 v5 plate comments installed; 2 functions newly created
+(`TGWinsockNetwork_SendPacket`, `TGWinsockNetwork_ReceivePacket`).
+
+**Confirmed claims (high confidence):** 23 anchors. Packet structure (peer_id / msg_count /
+factory dispatch via `DAT_009962d4`); all 7 transport-type factory registrations; TGMessage
+envelope layout (`+0x14` seq, `+0x38` total_frags, `+0x39` frag_idx, `+0x3A` reliable,
+`+0x3B` ordered, `+0x3C` is_fragment, `+0x40` below32); TGMessage base vtable 8 slots;
+TGHeaderMessage ACK subclass (size `0x44`, 4-or-5-byte wire format with flag bits
+`is_fragment` and `is_below_0x32`); 256-entry fragment reassembly; MTU `1024` (network+0xAC
++ network+0x2B); below32 ACK three-site agreement (SET / READ / WIRE); AlbyRules cipher
+location + algorithm + vtable + re-key-per-packet; GameSpy bypass (`*buf != '\\'`); cipher
+applied to `buf+1` with `len-1`; self-send loop-back path; three C++ dispatchers (NetFile,
+MpgameHandleMessage, MultiplayerWindow) confirmed including the `this+0xB0 != 0` gate.
+
+**Corrected claims:**
+
+1. **C1 — Sequence counter offsets (load-bearing).** Doc said `peer + 0x98` (types `< 0x32`)
+   and `peer + 0xA8` (types `>= 0x32`). Direct decompile of
+   `TGWinsockNetwork_QueueMessageForPeer` (`0x006b5080`) shows:
+   - `peer + 0x26` (16-bit) for types `< 0x32`
+   - `peer + 0x2A` (16-bit) for types `>= 0x32`
+   - Receive-side window check uses `peer + 0x24` and `peer + 0x28`.
+
+   The prior `+0xA8` likely came from confusing `network + 0xA8 = 0x8000` (a constant set in
+   the ctor — probably a seq-window threshold or max-seq, NOT a per-peer seq counter).
+
+2. **C2 — NetFile dispatcher opcodes (correct catalog).** Doc said "0x20-0x27 contiguous".
+   Actual cases in `FUN_006A3CD0` switch are `0x20`, `0x21`, `0x22`, `0x23`, `0x25`, `0x27`
+   — 0x24 and 0x26 have **no handler**. Range is correct as bounds but not contiguous. Body
+   updated to cross-link to `docs/protocol/checksum-opcodes.md` as the canonical opcode map.
+
+3. **C3 — Appendix A "TGBufferStream Layout" replacement (cascade from foundation #2).**
+   The prior Appendix A described the SWIG `TGBufferStream` class (`0x30`-byte cursor at
+   `FUN_006CEFE0` / vtable `0x00895C58`), not the wire envelope. Appendix A is now retired
+   in favour of a one-paragraph cross-link to `stream-primitives.md` plus a note explaining
+   that the bit-packing primitive class shares `+0x1C` / `+0x20` / `+0x24` conventions with
+   TGMessage but has an independent buffer.
+
+4. **C4 — TGMessage naming throughout the doc.** The validation of stream-primitives.md
+   (§6.2) resolved the long-standing "0x40-byte wire-container class" open question:
+   that class is `TGMessage`. Anywhere the doc previously said "TGBufferStream" referring
+   to the wire envelope is now `TGMessage`. The canonical anchor row is now: vtable
+   `0x008958d0`, ctor `TGMessage_Ctor` at `0x006b82a0`, size `0x40`. SWIG `new_TGMessage`
+   wrapper at `0x005e12e0` confirms class identity (allocates `0x40`, calls
+   `TGMessage_Ctor`).
+
+**Dropped claims:** None.
+
+**New factual sections added:**
+
+- **Top-of-doc NOTE block** stating partial status and listing the 4 corrections and 2 open
+  questions.
+- **MTU promoted to the introduction** with explicit citation (`network+0xAC` and `+0x2B`,
+  both `0x400 = 1024`, set in ctor `0x006b3a00`). Previously implicit.
+- **"Cipher object" subsection** under Encryption: vtable `0x008958c0`, `0x58`-byte state,
+  re-key-per-packet property, cipher applied to `buf+1` with `len-1`, GameSpy `\\` first-
+  byte bypass at `0x006b9706`, send-side call at `0x006b98e0`, receive-side call at
+  `0x006b970e`. Cross-link to `docs/networking/alby-rules-cipher-analysis.md`.
+- **"Self-send Loop-back" subsection** under Send Path: local queue at `network+0x33C`
+  / `+0x340`, toggle at `network+0x344`, branch at `0x006b9870` `if (param_2 ==
+  *(int *)(param_1 + 0x1c))`.
+- **Connection state machine** subsection: states 2 (HOSTING), 3 (JOINING), 4 (IDLE / READY)
+  documented; state 1 marked as open question.
+- **`+0x40` below32 field** added to the TGMessage object-layout table (most prior versions
+  missed this field).
+- **Cross-doc reconciliation** subsection near doc bottom: three deferred companion-doc
+  follow-ups (alby-rules-cipher-analysis.md, network-protocol.md, checksum-opcodes.md).
+
+**Companion follow-ups (deferred to those docs' own validation passes):**
+
+- `docs/networking/alby-rules-cipher-analysis.md` — absorb cipher addresses (`0x006c2280`,
+  `0x006c2490`, `0x006c2520`, vtable `0x008958c0`, `0x58`-byte state) + re-key-per-packet
+  property.
+- `docs/networking/network-protocol.md` — re-anchor any peer-offset claims that cited
+  `+0x98` / `+0xA8` to `+0x26` / `+0x2A`.
+- `docs/protocol/checksum-opcodes.md` — canonical for NetFile non-contiguous opcode list
+  (`0x20`, `0x21`, `0x22`, `0x23`, `0x25`, `0x27`); this doc just cross-links.
+
+**Open questions left for downstream rows:**
+
+1. **`FragmentMessage` total_fragments placement** (medium confidence). The cleaned
+   decompile of `0x006b8720` is ambiguous about whether the post-loop write
+   `*(undefined1 *)(*piVar8 + 0x38) = (undefined1)iStack_38` targets Fragment 0 or the
+   last clone. The deserializer-side read is unambiguous (`aiStack_400[0]+0x38`), and
+   working packet traces confirm reassembly succeeds, so the sender code MUST put it on
+   whatever clone has `+0x39 == 0`. Resolution: emulate `FragmentMessage` with a synthetic
+   3-fragment input.
+
+2. **Connection state 1.** Doc claims states 1, 2, 3, 4. Only 2, 3, 4 verified directly in
+   `HostOrJoin`. State 1 may be a sub-state during connect handshake; needs investigation
+   of the `006B8B30` family (TGConnectMessage send-side helpers).
+
+3. **TGMessage vtable slots 3 and 4** (`0x006b9440` returns 0; `0x006b9450` unknown). Likely
+   Save/Load or GetAge/IsExpired given surrounding retry-state context. Not investigated.
+
+4. **NetFile event registration at `0x60001`.** The dispatcher posts event `0x60002` from
+   inside (visible in case 0x25 handler). The `0x60001` registration site is not anchored
+   here; needs `RegisterHandler` call-site cross-check.
+
+5. **MTU divergence.** `network+0x2B` (pack buffer) and `network+0xAC` (recv buffer) both
+   init to `0x400` in the ctor. Are they ALWAYS equal, or could they diverge under runtime
+   config? Could affect fragmentation thresholds.
+
+**Files touched:** docs/protocol/transport-layer.md (re-rendered with v5 frontmatter,
+top-of-doc NOTE block, body corrections, retired Appendix A, new Cipher Object subsection,
+new Self-send Loop-back subsection, new Connection State Machine subsection, Cross-doc
+reconciliation table, Open Questions list). docs/protocol/v5-validation-status.md (this
+row added; §2 row #3 status flipped to partial).
 
 ---
 

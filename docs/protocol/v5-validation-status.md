@@ -92,7 +92,7 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 | 14 | pythonevent-wire-format.md | Leaf: opcode 0x06 + 4 event factories | tgobjptrevent-class, game-opcodes | **partial (2026-05-28)** — class hierarchy correction (0x101 = TGEvent itself, not "TGSubsystemEvent"); ObjectExploding IsA-chain refinement (3 IDs not 2); source-vs-dest WriteObjectRef encoding asymmetry; wire-format dimensions for all 4 classes byte-by-byte CONFIRMED; both producers (HostEventHandler 0x006A1150 + ObjectExplodingHandler 0x006A1240) byte-by-byte confirmed but were undefined in DB (still are — disassembled raw); MpgameHandlePythonEvent renamed at 0x0069F880; see §6.14 |
 | 15 | collision-effect-protocol.md | Leaf: opcode 0x15 + CollisionEvent class + validation chain | game-opcodes, stream-primitives | **verified (2026-05-28)** — first protocol family doc to clear `verified`; all 110+ claims byte-by-byte confirmed; ZERO material wire-format changes; 1 byte-level typo (handler-table 0x005afab0 -> 0x005AFAD0) + 1 wording clarification (PostEvent __thiscall via TGEventManager singleton at 0x0097F838); critical OpenBC finding confirmed (stock dedi has NO server-side recomputation of contact points or force); see §6.15 |
 | 16 | set-phaser-level-protocol.md | Leaf: opcode 0x12 + TGCharEvent | game-opcodes, tgobjptrevent-class | **verified (2026-05-28)** — second protocol-family doc to clear `verified`; 18-byte wire format byte-by-byte confirmed; ZERO material wire-format changes; 3 minor corrections (C1 hierarchy cascade — no TGSubsystemEvent, 0x101 IS TGEvent; C2 registration-string typography "MultiplayerGame :: SetPhaserLevelHandler" with spaces; C3 helper-fn rename FUN_006d6200 → TGFactory_DeserializeObject); 4 functions newly created (sender thunk, applier, TGCharEvent::Write/ReadFromStream) + 4 renamed + 4 plates; foundation cross-anchors (TGCharEvent 0x2C, IsA {0x105, 0x101, 0x02}, TGEvent base 16B) all hold; see §6.16 |
-| 17 | delete-player-ui-wire-format.md | Leaf: opcode 0x17 + factory 0x866 | game-opcodes, pythonevent-wire-format | pending |
+| 17 | delete-player-ui-wire-format.md | Leaf: opcode 0x17 + factory 0x866 | game-opcodes, pythonevent-wire-format | **partial (2026-05-28)** — 3 corrections + 4 clarifications + MAJOR architectural finding (two-registry architecture closes wire-format-spec OQ #2); receiver/transport/authority all v5-validated; 0x866 located in TGFactory registry (DAT_0099a578) which is separate from NiRTTI; FUN_006a0ca0 corrected to opcode 0x18 sender (not 0x17); dst_obj_id semantic corrected (network singleton handle, not ship/player); see §6.17 |
 | 18 | objnotfound-requestobj-enterset-wire-format.md | Leaf: opcodes 0x1D/0x1E/0x1F triad | game-opcodes, objcreate-serialization | pending |
 | 19 | subsystem-integrity-hash.md | Leaf analysis: dead-code anti-cheat hash | stateupdate, per-ship-subsystem-wire-format | pending |
 | 20 | cf16-precision-analysis.md | Leaf analysis: CF16 encoder/decoder + precision tables | stream-primitives | pending |
@@ -579,7 +579,7 @@ binary as authority.
 | 10 | Direction-split claim location | stateupdate.md, stateupdate-subsystem-wire-format.md, and message-trace-vs-packet-trace.md all assert the SUB-vs-WPN by direction split with the same packet counts | stateupdate.md (canonical); others link |
 | 11 | Subsystem field offsets at ship+0x280 family | stateupdate-subsystem-wire-format.md says +0x280 count, +0x284 head, +0x288 tail, +0x28C free list; stateupdate.md says subsystem list at +0x284 (head only) | Ghidra decompile of Ship_AddSubsystemToLists FUN_005b3e50 |
 | 12 | Opcode 0x18 wire format | game-opcodes.md says "DeletePlayerAnim, Handler FUN_006A1420, plays animation" — no wire format | New leaf doc needed (delete-player-anim-wire-format.md exists in `OpenBC/docs/wire-formats/` already; mirror it on the BC side) |
-| 13 | Factory 0x866 family | delete-player-ui-wire-format.md says "0x866 = base TGEvent"; tgobjptrevent-class.md's factory-table top is 0x02 = TGEvent; the 0x8xx family is `0x8129 = ObjectExplodingEvent` | Need a factory-id catalog: 0x02 vs 0x101 / 0x105 / 0x10C / 0x866 / 0x8124 / 0x8129. Where does 0x866 live? |
+| 13 | Factory 0x866 family | delete-player-ui-wire-format.md says "0x866 = base TGEvent"; tgobjptrevent-class.md's factory-table top is 0x02 = TGEvent; the 0x8xx family is `0x8129 = ObjectExplodingEvent` | **CLOSED (2026-05-28, leaf #17):** 0x866 lives in the **TGFactory registry** (`DAT_0099a578` / `DAT_0099a584`), a **second class registry separate from NiRTTI** used exclusively by `TGFactory_DeserializeObject` (0x006D6200). 0x866 is a TGEvent subclass (vtable 0x00895848, size 0x2C), NOT base TGEvent. Confirmed siblings: 0x801, 0x865, 0x867. Full TGFactory enumeration deferred to downstream pass. See delete-player-ui-wire-format.md "Two-Registry Architecture" section. |
 | 14 | objnotfound-requestobj-enterset doc not indexed | The doc exists at `docs/protocol/objnotfound-requestobj-enterset-wire-format.md` but is not listed in `docs/protocol/README.md` (the README table has 18 docs; this is doc 19) | Add to README in v5 close batch |
 | 15 | Breadcrumb header inconsistency | objnotfound-requestobj-enterset-wire-format.md lacks the `> [docs](../README.md) / [protocol](README.md) /` breadcrumb header that all siblings have | Add on re-validation |
 | 16 | SpeciesToShip table duplication | game-opcodes.md (15 playable rows) and objcreate-serialization.md (45 rows) | objcreate-serialization.md canonical; game-opcodes.md keeps short list + link |
@@ -3725,6 +3725,202 @@ none change the gate logic, none change the relay semantics.
   `v5-validation-status.md`
 - supersedes: prior set-phaser-level-protocol.md
 
+### 6.17 delete-player-ui-wire-format.md — 2026-05-28 (game-archaeology-specialist)
+
+**Status:** validated -> `partial` (after 3 corrections + 4 clarifications + 1 MAJOR
+architectural finding). **Seventeenth protocol doc** under v5 — third protocol leaf
+(after #15 collision-effect-protocol and #16 set-phaser-level-protocol). Does NOT
+clear `verified` despite zero wire-format byte changes because the dst_obj_id
+semantic correction (network singleton handle vs ship/player ID) is a load-bearing
+interpretation change, and the two-registry finding still has open enumeration debt.
+
+**Headline finding: TWO independent class registries in stbc.exe.** This pass
+discovered that stbc.exe has not one but two class registries that coexist:
+
+1. **NiRTTI registry** — engine classes via `NiRTTI_*` factory paths; catalog has
+   0x02 / 0x101 / 0x105 / 0x10C / 0x8124 / 0x8129. Used by engine's standard RTTI lookup.
+2. **TGFactory registry** — table at `DAT_0099a578`, count at `DAT_0099a584`;
+   classes registered via `FUN_006B2670` and siblings. Catalog includes 0x801 and the
+   0x86x range (0x865 / 0x866 / 0x867 confirmed; full enumeration deferred).
+   Used by `TGFactory_DeserializeObject` (0x006D6200) **exclusively**.
+
+The 0x866 class registered at `0x006b27a3` inside `FUN_006B2670` is what opcode 0x17
+uses. Previous validation passes that searched only the NiRTTI catalog for 0x866 came
+up empty — the class isn't there. This is the binary-truth resolution for
+wire-format-spec.md OQ #2 (factory 0x866 catalog gap) and the §4 #13 cross-doc
+disagreement. Both are now closed.
+
+**Methodology:** Phase 1-5 per v5 workflow. `program: STBC.exe` on every MCP call.
+Doc anchors against engine doc #8 (TGEventManager singleton 0x0097F838 + TGEvent base
+vtable 0x00895FF4), protocol doc #4 (game-opcodes opcode 0x17 dispatcher row), protocol
+doc #14 (pythonevent-wire-format — same TGFactory_DeserializeObject + factory ID
+encoding pattern). The two-registry finding is a NEW cross-anchor that affects every
+protocol leaf using factory IDs in the 0x801 / 0x86x range.
+
+**Functions touched:**
+
+| Function | Addr | effective_score | Plate? |
+|----------|------|-----------------|--------|
+| DeletePlayerUIHandler (receiver) | 0x006A1360 | high | yes (anchored) |
+| LAB_0x006a1590 (event-fired wire-send handler) | 0x006A1590 | n/a (LAB_) | n/a — no fn body in DB |
+| FUN_006B75B0 (disconnect-side event poster) | 0x006B75B0 | high | anchored |
+| FUN_006B2670 (TGFactory registration) | 0x006B2670 | high | yes (registers 0x866 at offset 0x133) |
+| Class_0x866_GetTypeID | 0x006B3700 | high | yes |
+| Class_0x866_Save (vtable+0x34) | 0x006BB890 | high | yes |
+| Class_0x866_Read (vtable+0x38) | 0x006BB8B0 | high | yes |
+| Base TGEvent ctor | 0x006D5C00 | high | anchored |
+| Base TGEvent Save (vtable+0x34) | 0x006D6128 | high | anchored |
+| Base TGEvent Read (vtable+0x38) | 0x006D61B8 | high | anchored |
+| TGFactory_DeserializeObject | 0x006D6200 | high | yes |
+| FUN_006DA300 (dispatch loop) | 0x006DA300 | high | anchored |
+| TGEventManager__PostEvent wrapper | 0x006DA2A0 | high | anchored |
+| FUN_0069EFE0 (handler-table registration) | 0x0069EFE0 | high | anchored (binds 28 C++ labels) |
+
+**Wire-format CONFIRMATION (byte-by-byte, no changes):**
+
+| Section | Claim | Verified via |
+|---------|-------|--------------|
+| Total size | 18 bytes (opcode + 4+4+4+4+1) | Sum of per-field byte widths |
+| Class 0x866 layout | 0x2C bytes (base 0x28 + 4-byte extension) | `FUN_006BB840` ctor + vtable 0x00895848 dump |
+| Per-byte sender layout | opcode @ 0x006a15d4 → class_id via Save → event+0x10 → event+0x8 → event+0x12 → event+0x28 | Disasm of LAB_0x006a1590 + Class_0x866_Save 0x006BB890 |
+
+**Three corrections:**
+
+**C1 — `FUN_006a0ca0` sends opcode 0x18, NOT 0x17.** Pre-v5 doc attributed
+disconnect-side opcode 0x17 sending to `FUN_006a0ca0` ("DeletePlayerHandler").
+Disasm of FUN_006a0ca0 at offset 166 shows `C6 44 24 48 18` = `MOV byte ptr
+[ESP+0x48], 0x18` — this function sends DeletePlayerAnim, not DeletePlayerUI. The
+**actual disconnect-side 0x17 sender is `FUN_006b75b0` inside TGWinsockNetwork** —
+it posts a 0x866 event with event_code 0x60005, which the EventManager routes to
+`LAB_0x006a1590` which performs the actual wire serialization.
+
+**C2 — 0x866 is a TGEvent SUBCLASS, not base TGEvent.** Pre-v5 doc treated factory
+0x866 as if it were base TGEvent itself. Actually:
+- Base TGEvent: vtable 0x00895FF4, size 0x28
+- Subclass 0x866: vtable 0x00895848, size 0x2C (adds wire_peer_id at +0x28)
+- Cluster siblings: 0x865 (vtable 0x0089580C, size 0x2C), 0x867 (vtable 0x00895884, size 0x30)
+- 0x866 is registered in the **TGFactory registry** (`DAT_0099a578` / `DAT_0099a584`) via
+  `FUN_006B2670` at offset 0x133 — NOT in the NiRTTI catalog. This is exactly why
+  prior NiRTTI-catalog searches for 0x866 turned up nothing.
+
+**C3 — `tgt_obj_id` is the TGWinsockNetwork singleton's internal object handle,
+not a ship or player ID.** Pre-v5 doc described `tgt_obj_id` as "ship or player
+object ID". `FUN_006d62b0` is called with `this = TGWinsockNetwork singleton` and
+writes the singleton's internal handle into event+0xC. The stock trace value
+`0x0000064F` is a network context value for that session, not a ship ID. Confirmed
+via decompile of FUN_006d62b0 + xref check against `FUN_006B75B0` and `FUN_006A1E70`
+producer paths.
+
+**Four clarifications:**
+
+**Clar1 — `src_obj_id` is ALWAYS 0 via this path, not "typically 0".** No producer
+in the binary writes a non-zero value through the 0x866 send path. Base TGEvent ctor
+at 0x006D5C00 inits event+0x8 to 0; no subsequent path writes it before posting.
+
+**Clar2 — `NewPlayerInGameHandler` LAB_-vs-function name collision.** Ghidra's
+database shows ONE defined function named `NewPlayerInGameHandler` at 0x006A1E70 (the
+opcode 0x2A wire receiver). There is ALSO an event-fired wire-send handler at
+`LAB_0x006A1590` (no function body in DB) that registers under the same SWIG name
+`"MultiplayerGame :: NewPlayerInGameHandler"` (string at 0x0095A028). Both are
+correct — `FUN_0069EFE0` registers both addresses against the same string via
+`FUN_006DA130(&LAB_006A1590, s_MultiplayerGame____NewPlayerInGa_0095A028)`. Same
+SWIG-callback-vs-function pattern as leaves #13 / #14 / #15 / #16.
+
+**Clar3 — EventManager singleton at 0x0097F838 has registry table at +0x2C =
+0x0097F864.** Both addresses are correct; they're different offsets of the same
+singleton, not separate globals. Cross-anchor with engine event-system-architecture.md
+and protocol leaf #15.
+
+**Clar4 — Two-Registry Architecture is a new dedicated doc section.** The discovery
+that NiRTTI and TGFactory are separate registries deserves explicit body documentation
+in the leaf so downstream readers don't repeat the missing-branch search. New doc
+section: "Two-Registry Architecture" near the top of the doc.
+
+**Sibling SWIG triple-string pattern confirmed:** the 0x866 class uses the standard
+SWIG triple-string pattern (class-name / `_p_` pointer-tag / `Ptr` smart-pointer-tag),
+same as TGCharEvent / TGObjPtrEvent / ObjectExplodingEvent in leaves #14 / #16. No
+new pattern introduced.
+
+**Non-corrections (verified, no change needed):**
+- Opcode 0x17 receiver address 0x006A1360 — correct
+- 7 instances/session frequency — correct (matches relay-audit-20260224)
+- S->C only — correct (0 C->S, 7 S->C across audits)
+- Scoreboard population requirements (TGPlayerList + score dict) — correct
+- Stock trace #25 packet byte-by-byte decode — correct in structure (only
+  `dst_obj_id` semantic label needs the C3 fix)
+
+**Cross-doc anchor reuse:**
+
+- **From doc #1 (wire-format-spec.md):** OQ #2 factory 0x866 catalog gap — **CLOSED**
+  by this validation; class lives in TGFactory registry, see §4 #13 closure note.
+- **From engine doc #8 (event-system-architecture.md):** TGEventManager singleton at
+  0x0097F838 — confirmed; +0x2C registry pointer at 0x0097F864 — confirmed.
+- **From doc #4 (game-opcodes.md):** opcode 0x17 dispatcher row + handler address
+  0x006A1360 — confirmed. The 0x17 / 0x18 sender-attribution distinction needs
+  reflection in game-opcodes.md (batched at family close).
+- **From doc #14 (pythonevent-wire-format.md):** `TGFactory_DeserializeObject`
+  (0x006D6200) is the shared factory deserialization helper for both opcodes 0x06
+  and 0x17 — consistent.
+- **From leaf #15 / #16:** SWIG-callback-vs-function-body pattern (handler addresses
+  appear only as DATA xrefs from registration sites; Ghidra auto-analysis never
+  creates a function entry) — same pattern observed here for LAB_0x006a1590.
+
+**Cross-doc impacts (no in-this-pass modifications; batched):**
+
+- `wire-format-spec.md` OQ #2 — **CLOSED**. The hub doc's NOTE block at line 208
+  pointing to v5-validation-status.md §4 #13 can be updated at family close to point
+  here as the resolution.
+- `game-opcodes.md` — the 0x17 / 0x18 sender attribution may need a one-line
+  clarification noting the distinct senders (also a family-close task).
+- `objnotfound-requestobj-enterset-wire-format.md` (next leaf, doc #18) — may benefit
+  from the TGFactory registry anchor if any 0x801 / 0x86x classes appear in that
+  opcode trio.
+- All protocol docs that reference factory IDs in the 0x801 / 0x86x range — should
+  cross-link to the Two-Registry Architecture section as the canonical source.
+
+**Open questions:**
+
+- Classes 0x865 and 0x867 — payload semantics, dispatch path, any wire usage?
+- `event+0x24` — receiver clears it before dispatch; sender doesn't write it. Engine
+  read site unknown.
+- **TGFactory registry full enumeration** — only 0x801, 0x865, 0x866, 0x867
+  confirmed this session. A dedicated sweep of xrefs to `DAT_0099a578` /
+  `DAT_0099a584` and `FUN_006B2670` siblings would yield the complete catalog.
+- Disconnect-time 0x17 wire observation — path is binary-confirmed (FUN_006B75B0 →
+  LAB_0x006a1590 → opcode 0x17); 0 instances observed across available traces.
+  Reproducing this requires a multi-client session with one client disconnecting
+  AND remaining receivers.
+
+**Verification methods used:**
+- `decompile_function` on FUN_006A1360, FUN_006A1E70, FUN_006D5C00, FUN_006D6200,
+  FUN_006DA300, FUN_006DA2A0, FUN_006B2670, FUN_0069EFE0, FUN_006D62B0
+- `disassemble_bytes` for LAB_0x006a1590 (no fn body in DB), FUN_006A0CA0 prologue
+  (to confirm C1 — `MOV [ESP+0x48], 0x18`), Class_0x866_Save 0x006BB890,
+  Class_0x866_Read 0x006BB8B0, GetTypeID at 0x006B3700
+- `read_memory` for class 0x866 vtable @ 0x00895848 (vs base TGEvent vtable
+  0x00895FF4), TGFactory registry table DAT_0099a578
+- `get_xrefs_to` on 0x866 class ID immediate, on string s_MultiplayerGame____NewPlayerInGa_0095A028,
+  on DAT_0099a578 / DAT_0099a584
+- `inspect_memory_content` on stock trace #25 byte-by-byte (1 occurrence in
+  self-destruct test; 6 in Valentine's Day 33.5-min trace)
+
+**Files touched:** `docs/protocol/delete-player-ui-wire-format.md` (re-rendered with
+v5 frontmatter, Two-Registry Architecture section, NewPlayerInGameHandler Name
+Collision subsection, C1 / C2 / C3 corrections, Clar1-4 applied, all section tables
+tagged `[v5-validated 2026-05-28]`); `docs/protocol/v5-validation-status.md` (this
+row added; §2 row #17 status flipped to partial with summary; §4 #13 marked CLOSED
+with anchor to leaf doc; §8 spot-check #6 marked CLOSED).
+
+**Header inputs for documentation-writer:**
+- validated: 2026-05-28
+- methodology: FUNCTION_DOC_WORKFLOW_V5
+- binary fingerprint: STBC.exe, image base 0x00400000, size 0x619638 (6.39 MB)
+- status: `partial`
+- companions: `wire-format-spec.md`, `game-opcodes.md`, `tgmessage-routing.md`,
+  `transport-layer.md`, `tgobjptrevent-class.md`, `event-system-architecture.md`,
+  `v5-validation-status.md`
+- supersedes: prior 2026-02-21 delete-player-ui-wire-format.md
+
 ---
 
 ## Notes for the archaeology specialist's snapshot
@@ -3747,8 +3943,13 @@ disputed):
 4. **ship+0x2BC slot** — §4 #4: is it "always NULL" (wire-format-spec slot map) or
    "Pulse Weapon System hash slot 11" (subsystem-integrity-hash)?
 5. **DAT_009962d4** — confirm 256-slot transport factory table; confirm only 7 populated.
-6. **Factory 0x866** — find it in the factory hash table. Where does it live in the
-   factory-ID space (0x02 base / 0x101 / 0x105 / 0x10C / 0x866 / 0x8124 / 0x8129)?
+6. **Factory 0x866** — **CLOSED (2026-05-28, leaf #17):** lives in the **TGFactory
+   registry** (`DAT_0099a578` / `DAT_0099a584`) — a class registry SEPARATE from
+   NiRTTI, used exclusively by `TGFactory_DeserializeObject` (0x006D6200). Registered
+   at `0x006b27a3` inside `FUN_006B2670`. 0x866 is a TGEvent subclass (vtable
+   0x00895848, size 0x2C), not base TGEvent. See delete-player-ui-wire-format.md
+   "Two-Registry Architecture" section and §4 #13 closure. Full TGFactory enumeration
+   is still open — only 0x801, 0x865, 0x866, 0x867 confirmed.
 7. **DAT_00888860** — the force-update threshold — what's its value?
 8. **DAT_008e5c18** — RequestObj HP gate threshold — what's its value?
 9. **DAT_008955c8** — collision distance threshold — what's its value?

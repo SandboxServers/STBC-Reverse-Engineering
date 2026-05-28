@@ -23,9 +23,11 @@ Sub-element of MultiplayerGame's `aPlayerSlots[16]`. 16 entries x 0x18 = 0x180 b
 
 Pad bytes inserted for 1->4 boundary alignment and 0x11..0x17 tail.
 
-## Struct: TGBufferStream (size 0x2C)
+## Struct: TGBufferStream (size 0x2C — SUPERSEDED, now 0x40)
 
-The dispatcher's "stream" object — what `pMsg->pStreamBuffer` points to. The dispatcher dereferences it as an object with vtable.
+**See [[tgbufferstream-vtable-20260528]] for the updated 0x40-byte layout.** The 0x40 size was pinned by `operator delete(this, 0x40)` in vtable[1] (scalar deleting destructor at 0x006B82F0). Field 0x08 reanchored as `dwCursor` (not buffer length). Fields 0x2C-0x3D added from constructor and copy-constructor evidence. Field semantics for 0x38-0x3D recovered from TGBufferStream_Serialize (0x006B8340) wire-byte writes.
+
+Original (under-sized) skeleton:
 
 | Offset | Size | Hungarian | Type | Evidence |
 |--------|------|-----------|------|----------|
@@ -97,7 +99,7 @@ HostMsgHandler illustrates the upper bound of "typed prototype only" gain — sm
 
 ## Field-Size Uncertainties to Revisit
 
-1. **TGBufferStream +0x10..+0x27 (24 bytes)** — at least one of these bytes is the bit-cursor state (per `docs/protocol/stream-primitives.md`), and one is likely a read-position cursor. The local 48-byte BitStreamReader at FUN_006cefe0 wraps TGBufferStream and tracks its OWN cursor, suggesting TGBufferStream doesn't internalize bit-level state.
+1. **TGBufferStream +0x10..+0x27 (24 bytes)** — RESOLVED in [[tgbufferstream-vtable-20260528]]. Cursor is at 0x08 (was misnamed dwBufferLen). The 0x14 short is a "variant prefix" written by Serialize. Ints at 0x18, 0x1C, 0x20, 0x24 mirrored by copy ctor but still semantically unmapped.
 2. **TGMessage +0x04..+0x27 (36 bytes)** — completely unknown. The dispatcher reads only +0x00 and +0x28. Producer paths in handlers write +0x10, +0x14, +0x28, +0x39..+0x3D, +0x40, but only after `new TGMessageSubclass` calls (FUN_006bb840, FUN_006b82a0) — those are SUBCLASS-specific.
 3. **MultiplayerGame +0x04..+0x37 (52 bytes)** — base class state. Likely contains a TGUtopiaModule-derived base + RTTI/SmartPointer slots.
 4. **MultiplayerGame +0x38..+0x4F** — 6 ints zeroed by ctor; roles unknown. Could be game-settings (gameTime, mapID, etc.) hinted at by CLAUDE.md "Settings packet".

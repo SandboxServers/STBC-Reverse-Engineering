@@ -1,15 +1,116 @@
 > [docs](../README.md) / [engine](README.md) / rtti-class-catalog.md
 
+---
+title: stbc.exe RTTI / Class Catalog
+type: reference
+audience: re-engineer
+validated: 2026-05-28
+methodology: FUNCTION_DOC_WORKFLOW_V5
+binary:
+  name: STBC.exe
+  size: 6394712
+  base: 0x00400000
+status: partial
+evidence:
+  - claim: "stbc.exe was compiled with MSVC RTTI disabled (/GR-) for all game and engine code"
+    address: null
+    function: null
+    confidence: high
+    note: "Only MSVC TypeDescriptors present belong to CRT/STL (21 entries) plus one game throw-type (TGStreamException). No NiObject/TGObject _TypeDescriptor exists. Verified by scanning .data for the `.?AV` pattern."
+  - claim: "21 MSVC _TypeDescriptor structures plus 1 MSVC throw-type for TGStreamException"
+    address: 0x00979A18
+    function: null
+    confidence: high
+    note: "TypeDescriptors at 0x00979A18-0x00979E98 (all CRT/STL). The `.?AV` and `.PAV` are distinct MSVC RTTI structures — don't conflate them."
+  - claim: "TGStreamException MSVC throw-type at 0x0095AD10"
+    address: 0x0095AD10
+    function: null
+    confidence: high
+    note: "Byte-perfect `.PAVTGStreamException@@\\0` at this address. The only game-specific exception with MSVC RTTI, used with C++ throw/catch."
+  - claim: "NiRTTI factory hash table at DAT_009a2b98 with 37 buckets"
+    address: 0x009a2b98
+    function: null
+    confidence: high
+    note: "237 xrefs; 117 factory registrations partition into 37 buckets (0x25). Vtable PTR_FUN_0088b7c4 — see nirtti-factory-catalog.md."
+  - claim: "117 NiRTTI factory registrations"
+    address: null
+    function: null
+    confidence: high
+    note: "Of 129 NI classes catalogued, 117 are registered with the factory table; the remaining 12 are abstract bases or stream-only types — exact partition deferred for netimmerse-vtables.md."
+  - claim: "NiNode registration FUN_007e3670, factory FUN_007e5450, string at 0x00978500"
+    address: 0x007e3670
+    function: FUN_007e3670
+    confidence: high
+    note: "Canonical example of the NiRTTI registration pattern. String s_NiNode at 0x00978500 is pushed alongside factory FUN_007e5450."
+  - claim: "NiObject class-name string at 0x009780D8"
+    address: 0x009780D8
+    function: null
+    confidence: high
+    note: "Bare class-name string anchor for the root of the NiRTTI tree."
+  - claim: "NI bare class-name strings occupy .data range 0x00975E98-0x009799F8"
+    address: 0x00975E98
+    function: null
+    confidence: high
+    note: "Sampled — full enumeration of all 129 NI bare-string addresses deferred to netimmerse-vtables.md."
+  - claim: "All TG class-name strings live in the .data segment (0x008bb000-0x009b5357)"
+    address: null
+    function: null
+    confidence: high
+    note: "Per list_segments on STBC.exe; .rdata is 0x00888000-0x008bafff and does NOT contain TG class strings. The prior `.rdata 0x008Dxxxx` claim was wrong."
+  - claim: "TG bare class-name strings cluster into three sub-regions: 0x008D8000-0x008E6000 (early classes), 0x00958000-0x0095D200 (SWIG table), 0x00932B00-0x00933600 (input events)"
+    address: 0x008D8000
+    function: null
+    confidence: high
+    note: "Primary early cluster ~18 classes (animation events, math/data, dimmer, fuzzy, model property, window, paragraph). Secondary SWIG cluster ~47 classes (actions, scripting, UI, sound, music, network, typed events). Outlier input-event cluster 5 classes."
+  - claim: "TG bare-string addresses verified for 28 originally-listed classes (re-anchored 2026-05-28)"
+    address: null
+    function: null
+    confidence: high
+    note: "Phase 2.6 re-derivation: 28 of 81 originally-listed TG classes have confirmed bare-string addresses; their row addresses are updated. See body for the [v5-validated 2026-05-28] tag."
+  - claim: "41 newly-discovered TG classes added to catalog"
+    address: 0x008d8594
+    function: null
+    confidence: high
+    note: "Bare-string anchors for TGObjPtrEvent, TGScriptAction, TGStringEvent, and 38 others — slotted into appropriate subsections."
+  - claim: "TGBufferStream is an internal C++ class with no bare class-name string in the binary"
+    address: 0x008958D0
+    function: null
+    confidence: high
+    note: "v5-validated vtable at 0x008958D0 (parallel investigation). Anchored via factory ID / vtable rather than bare string. Same applies to TGStream, TGMessage subclasses, TGWinsockNetwork, etc."
+  - claim: "Game-specific class-name strings sampled at canonical addresses (ShipClass, ShipSubsystem, MultiplayerGame, DamageableObject)"
+    address: 0x008D8AC0
+    function: null
+    confidence: medium
+    note: "Spot-checked. Full enumeration of all ~420 game-specific class strings deferred — surface as documentation debt."
+  - claim: "TG SWIG method counts are aspirational identifier counts pending v5 verification"
+    address: null
+    function: null
+    confidence: low
+    note: "Per-class 'method count' column equals `^ClassName_` prefix string count in the binary, which mixes bound methods with enum/constant identifiers (e.g., TGSound_SS_PLAYING). Actual bound-method counts typically 3-10 lower. Aggregate ~1,340 should read as '~1,340 SWIG-bound Python identifiers (methods + constants)'."
+companions:
+  - docs/engine/nirtti-factory-catalog.md
+  - docs/engine/gamebryo-cross-reference.md
+  - docs/engine/netimmerse-vtables.md
+  - docs/engine/function-map.md
+  - docs/engine/v5-validation-status.md
+supersedes:
+  - 2026-02-15
+---
+
 # RTTI Class Catalog - stbc.exe
 
+> [!NOTE]
+> This doc is `status: partial`. The MSVC RTTI section, NiRTTI factory anchors, and the TG section are v5-verified against the current Ghidra import (2026-05-28). The NetImmerse and game-specific catalog rows are **sampled** — canonical anchors confirmed, but full enumeration is deferred. SWIG method-count columns carry `confidence: low` because they conflate bound methods with constant identifiers. See [docs/guides/v5-evidence-header.md](../guides/v5-evidence-header.md) for the standard.
+
 Complete catalog of class type information extracted from the Star Trek: Bridge Commander
-executable (`stbc.exe`, 5.9MB, 32-bit PE, base 0x00400000).
+executable (`stbc.exe`, ~6.1 MB, 32-bit PE, base 0x00400000).
 
 ## Key Finding: No MSVC RTTI for Game/Engine Classes
 
-stbc.exe was compiled with MSVC RTTI **disabled** (`/GR-`) for all game and engine code.
-Only 22 standard MSVC TypeDescriptor structures exist in the binary, and all belong to the
-C++ Standard Library (CRT) or `type_info` itself. The one exception is `TGStreamException`.
+stbc.exe was compiled with MSVC RTTI **disabled** (`/GR-`) for all game and engine code. The
+binary contains **21 standard MSVC `_TypeDescriptor` structures** (all CRT / STL) and **1 MSVC
+throw-type / ThrowInfo** (`.PAV` pattern) for `TGStreamException`. The `.?AV` (TypeDescriptor)
+and `.PAV` (throw-type) are distinct MSVC RTTI structures — don't conflate them.
 
 Instead, the game uses **two custom type information systems**:
 
@@ -23,7 +124,7 @@ Instead, the game uses **two custom type information systems**:
 
 ---
 
-## MSVC RTTI TypeDescriptors (22 entries)
+## MSVC RTTI TypeDescriptors (21 entries, all CRT/STL)
 
 All located in `.data` segment (0x00979A18-0x00979E98). Pattern: `.?AVClassName@@`
 
@@ -52,19 +153,27 @@ All located in `.data` segment (0x00979A18-0x00979E98). Pattern: `.?AVClassName@
 | 0x00979E98 | `.?AVtype_info@@` | type_info |
 
 ### MSVC Throw Type (`.PAV` pointer-to-class)
+
 | Address | Name |
 |---------|------|
-| 0x0095AD10 | `.PAVTGStreamException@@` |
+| 0x0095AD10 | `.PAVTGStreamException@@` [v5-validated 2026-05-28] |
 
-This is the only game-specific exception class with MSVC RTTI, used with C++ throw/catch.
+This is the only game-specific exception class with MSVC RTTI, used with C++ throw/catch. The
+`.PAV` pattern is the MSVC throw-type / ThrowInfo structure — a distinct RTTI artifact from
+`.?AV` TypeDescriptors. The binary contains exactly one `.PAV` entry and 21 `.?AV` entries.
 
 ---
 
-## NetImmerse 3.1 Classes (129 unique)
+## NetImmerse 3.1 Classes (129 catalogued, sampled anchors)
 
 These are the core engine classes from the NetImmerse 3.1 SDK. Class name strings are located
-primarily in `.data` at 0x00975E98-0x009799F8. Each class registers itself into the NiRTTI
-factory hash table via a static initialization function.
+primarily in `.data` at 0x00975E98-0x009799F8 (sampled — full enumeration deferred to the
+`netimmerse-vtables.md` v5 pass). Each class registers itself into the NiRTTI factory hash
+table via a static initialization function.
+
+Of 129 NI classes catalogued, **117 are registered** with the NiRTTI factory table; the
+remaining 12 are abstract bases or stream-only types. Exact partition deferred for the
+netimmerse-vtables.md validation pass.
 
 Registration pattern (from `FUN_007e3670` -- NiNode registration):
 ```
@@ -271,186 +380,264 @@ factory function, and guard flag addresses), see
 
 ---
 
-## Totally Games Framework Classes (124 unique)
+## Totally Games Framework Classes (~70 confirmed)
 
-The TG framework is the game engine layer built on top of NetImmerse. Class name strings are
-distributed across `.rdata` (0x008Dxxxx-0x008Exxxx) and `.data` (0x0091xxxx-0x0095xxxx).
+The TG framework is the game engine layer built on top of NetImmerse. All TG class-name
+strings live in the `.data` segment (0x008bb000-0x009b5357 per `list_segments`; `.rdata` is
+0x00888000-0x008bafff and does **not** contain TG class strings).
+
+TG bare class-name strings occupy three sub-regions:
+
+- **Primary cluster:** 0x008D8000-0x008E6000 — ~18 early classes (animation events, math/data,
+  dimmer, fuzzy, model property, window, paragraph).
+- **Secondary cluster:** 0x00958000-0x0095D200 — the SWIG-driven TG class string table,
+  ~47 classes (actions, scripting, UI, sound, music, network, typed events).
+- **Outlier cluster:** 0x00932B00-0x00933600 — 5 typed input-event classes (TGShortEvent,
+  TGVoidPtrEvent, TGIEvent, TGMouseEvent, TGKeyboardEvent, TGGamepadEvent).
+
+The 0x0091xxxx-0x0094xxxx range previously cited holds SWIG `_p_<class>\0` pointer-type
+strings, where bare class names appear as substrings 3 bytes into the `_p_` prefix. Those
+offsets are **not** canonical anchors for class-identity purposes — addresses below have been
+re-anchored to the bare-string locations.
+
+> [!NOTE]
+> The prior catalog claimed "124 unique TG classes". That count was inflated by ~34
+> speculative-by-analogy rows (UI widgets named after Windows conventions, Manager classes by
+> pattern-matching) that have **no** matching string in the binary. Those rows are dropped.
+> Real internal C++ classes that exist but have no bare string (because they are not
+> SWIG-bound) are listed separately under "Internal C++ classes (no SWIG binding)" below.
 
 ### Core Framework
-| Address | Class | SWIG Methods | Description |
-|---------|-------|-------------|-------------|
-| 0x009142B3 | TGObject | 9 | Base game object |
-| 0x0091427F | TGEvent | 21 | Event system base |
-| 0x009143A3 | TGEventHandlerObject | 7 | Event handler |
-| 0x00912C43 | TGEventManager | 5 | Event dispatch |
-| 0x0091428B | TGSequence | 8 | Action sequence |
+| Address | Class | SWIG Identifiers | Description |
+|---------|-------|------------------|-------------|
+| 0x0095b05c | TGObject | 9 | Base game object [v5-validated 2026-05-28] |
+| 0x0095ad70 | TGEvent | 21 | Event system base [v5-validated 2026-05-28] |
+| 0x0095ae00 | TGEventHandlerObject | 7 | Event handler [v5-validated 2026-05-28] |
+| 0x0095b9a8 | TGSequence | 8 | Action sequence [v5-validated 2026-05-28] |
 | 0x008DBA14 | TGCondition | 8 | Conditional logic |
-| 0x009143E3 | TGPythonInstanceWrapper | 1 | Python-to-C++ bridge |
-| 0x0091435F | TGAttrObject | 7 | Attributed object |
-| 0x00914473 | TGTemplatedAttrObject | 1 | Templated attributed object |
+| 0x0095ad28 | TGPythonInstanceWrapper | 1 | Python-to-C++ bridge [v5-validated 2026-05-28] |
+| 0x0095b328 | TGAttrObject | 7 | Attributed object [v5-validated 2026-05-28] |
+| 0x0095b2f4 | TGTemplatedAttrObject | 1 | Templated attributed object [v5-validated 2026-05-28] |
 | 0x008DA004 | TGString | 7 | String class |
 | 0x008D9808 | TGPoint3 | 35 | 3D vector (wraps NiPoint3) |
-| 0x00913B27 | TGColorA | 21 | RGBA color (wraps NiColorA) |
-| 0x009122E3 | TGMatrix3 | 38 | 3x3 matrix |
-| 0x009138B3 | TGRect | 24 | Rectangle |
-| 0x0091437F | TGdb | -- | Database (unclear) |
-
-### Streaming / Serialization
-| Address | Class | SWIG Methods | Description |
-|---------|-------|-------------|-------------|
-| 0x00912797 | TGStream | -- | Base stream |
-| 0x009127B7 | TGBufferStream | 35 | Buffer-based stream |
-| 0x00914E37 | TGProfilingInfo | 7 | Performance profiling |
 
 ### Actions / Scripting
-| Address | Class | SWIG Methods | Description |
-|---------|-------|-------------|-------------|
-| 0x00913EE3 | TGAction | 20 | Base action |
-| 0x009143BB | TGActionManager | 3 | Action scheduler |
-| 0x00913EF3 | TGMovieAction | 10 | Movie playback action |
-| 0x00913F37 | TGCreditAction | 10 | Credits sequence |
-| 0x0095B83C | TGOverlayAction | -- | Overlay display action |
-| 0x0095B7C0 | TGPhonemeAction | -- | Lip-sync phoneme action |
-| 0x008D85CC | TGScriptAction | -- | Python script action |
-| 0x00913F63 | TGSoundAction | 7 | Sound playback action |
-| 0x008E0F20 | TGTimedAction | -- | Time-delayed action |
-| 0x00913EE3 | TGAnimAction | 5 | Animation action |
-| 0x00913EC3 | TGAnimPosition | 2 | Animation position |
-| 0x00913F4B | TGConditionAction | 4 | Conditional action |
+| Address | Class | SWIG Identifiers | Description |
+|---------|-------|------------------|-------------|
+| 0x0095b874 | TGAction | 20 | Base action [v5-validated 2026-05-28] |
+| 0x0095b71c | TGActionManager | 3 | Action scheduler [v5-validated 2026-05-28] |
+| 0x0095b758 | TGAnimAction | 5 | Animation action [v5-validated 2026-05-28] |
+| 0x0095b778 | TGAnimPosition | 2 | Animation position [v5-validated 2026-05-28] |
+| 0x0095b708 | TGConditionAction | 4 | Conditional action [v5-validated 2026-05-28] |
+| 0x0095a9f0 | TGCreditAction | 10 | Credits sequence [v5-validated 2026-05-28] |
+| 0x0095a998 | TGMovieAction | 10 | Movie playback action [v5-validated 2026-05-28] |
+| 0x0095B83C | TGOverlayAction | — | Overlay display action |
+| 0x0095B7C0 | TGPhonemeAction | — | Lip-sync phoneme action |
+| 0x008D85CC | TGScriptAction | — | Python script action |
+| 0x0095b79c | TGSoundAction | 7 | Sound playback action [v5-validated 2026-05-28] |
+| 0x008E0F20 | TGTimedAction | — | Time-delayed action |
 
 ### Events (Typed)
 | Address | Class | Description |
 |---------|-------|-------------|
-| 0x0091429B | TGIEvent | Input event base |
+| 0x009332a4 | TGIEvent | Input event base [v5-validated 2026-05-28] |
 | 0x008D9840 | TGBoolEvent | Boolean event |
 | 0x008E54D0 | TGCharEvent | Character event |
 | 0x008DCE9C | TGFloatEvent | Float event |
-| 0x008DAC5C | TGIntEvent | Integer event |
-| 0x00914D77 | TGKeyboardEvent | Keyboard event |
-| 0x00913FB3 | TGMouseEvent | 15 methods, mouse input |
-| 0x00914D9F | TGGamepadEvent | Gamepad input |
-| 0x008D8594 | TGObjPtrEvent | Object pointer event |
-| 0x00913E9F | TGPlayerEvent | Player event |
-| 0x009580E4 | TGSequenceEvent | Sequence event |
-| 0x00913EB3 | TGShortEvent | Short integer event |
-| 0x008D8764 | TGStringEvent | String event |
-| 0x00913E8B | TGVoidPtrEvent | Void pointer event |
 | 0x0095AA78 | TGGameSpyEvent | GameSpy event |
-| 0x00913F9F | TGMessageEvent | Network message event |
+| 0x008DAC5C | TGIntEvent | Integer event |
+| 0x00933430 | TGKeyboardEvent | Keyboard event [v5-validated 2026-05-28] |
+| 0x00933574 | TGGamepadEvent | Gamepad input [v5-validated 2026-05-28] |
+| 0x0095aa30 | TGMessageEvent | Network message event [v5-validated 2026-05-28] |
+| 0x00933314 | TGMouseEvent | Mouse input (15 identifiers) [v5-validated 2026-05-28] |
 | 0x0095BAA8 | TGMusicFadeEvent | Music fade event |
+| 0x008D8594 | TGObjPtrEvent | Object pointer event |
+| 0x0095aa54 | TGPlayerEvent | Player event [v5-validated 2026-05-28] |
+| 0x009580E4 | TGSequenceEvent | Sequence event |
+| 0x00932b00 | TGShortEvent | Short integer event [v5-validated 2026-05-28] |
+| 0x008D8764 | TGStringEvent | String event |
+| 0x00932d50 | TGVoidPtrEvent | Void pointer event [v5-validated 2026-05-28] |
 
-### Networking
-| Address | Class | SWIG Methods | Description |
-|---------|-------|-------------|-------------|
-| 0x0091437F | TGWinsockNetwork | 9 | UDP network (WSN) |
-| 0x00914393 | TGNetwork | 50 | Network abstraction |
-| 0x00913CCB | TGNetworkListType | -- | Network list type |
-| 0x0091221F | TGNetGroup | 8 | Network group |
-| 0x00913D85 | TGNetPlayer | 16 | Network player |
-| 0x0091319F | TGPlayerList | 11 | Player list |
-| 0x00913D5F | TGGroupPlayer | 2 | Group-player association |
-| 0x00913B0B | TGEncrypt | -- | Encryption (AlbyRules cipher) |
+### Networking (SWIG-bound)
+| Address | Class | SWIG Identifiers | Description |
+|---------|-------|------------------|-------------|
+| 0x0095aa14 | TGNetwork | 50 | Network abstraction [v5-validated 2026-05-28] |
 
-### Network Messages
-| Address | Class | SWIG Methods | Description |
-|---------|-------|-------------|-------------|
-| 0x009137DD | TGMessage | 53 | Base network message |
-| 0x0091379D | TGAckMessage | 6 | Acknowledgement message |
-| 0x00913769 | TGBootPlayerMessage | 6 | Boot/kick player message |
-| 0x00913751 | TGConnectMessage | 4 | Connection message |
-| 0x00913735 | TGDisconnectMessage | 4 | Disconnection message |
-| 0x00913785 | TGDoNothingMessage | 4 | No-op/keepalive message |
-| 0x009137B1 | TGNameChangeMessage | 4 | Name change message |
+See **Internal C++ classes** below for `TGWinsockNetwork`, `TGNetGroup`, `TGNetPlayer`,
+`TGPlayerList`, `TGGroupPlayer`, `TGEncrypt`, `TGNetworkListType` — these are real C++
+classes used by the network layer but have no bare class-name string in the binary because
+they are not exposed to Python via SWIG. The prior catalog rows for those classes pointed at
+`_p_` SWIG pointer-type substrings, not at canonical class-name anchors.
 
-### Managers (Singletons)
-| Address | Class | SWIG Methods | Description |
-|---------|-------|-------------|-------------|
+### Managers (Singletons, SWIG-bound)
+| Address | Class | SWIG Identifiers | Description |
+|---------|-------|------------------|-------------|
+| 0x0095b71c | TGActionManager | 3 | Action scheduler |
+| 0x0095ba70 | TGSoundManager | 33 | Sound management |
+
+The prior catalog listed many additional "manager" classes (TGEventManager, TGModuleManager,
+TGRenderManager, TGAudioManager, TGSystemManager, TGFileManager, TGTextureManager,
+TGNiManager, TGPlayManager, TGScriptManager, TGMessageManager, TGTimerManager, TGGameManager,
+TGControlManager, TGVarManager). **None of those strings exist in the binary** — they were
+speculative-by-analogy with conventional engine naming. They are dropped from this catalog.
+The real manager-style classes use the names above plus the four below (which are
+SWIG-bound but distributed across other clusters):
+
+| Address | Class | SWIG Identifiers | Description |
+|---------|-------|------------------|-------------|
 | 0x00912C93 | TGInputManager | 41 | Input handling |
-| 0x00912C6B | TGTimerManager | 3 | Timer management |
-| 0x00912C43 | TGEventManager | 5 | Event dispatch |
-| 0x00912AEF | TGMovieManager | 7 | Movie playback |
-| 0x00912B33 | TGModelPropertyManager | 18 | Model property management |
 | 0x00912CB7 | TGIconManager | 22 | Icon management |
-| 0x00912B9B | TGFontManager | 8 | Font management |
+| 0x00912B33 | TGModelPropertyManager | 18 | Model property management |
+| 0x00912C1B | TGModelManager | 17 | Model management |
+| 0x00912AEF | TGMovieManager | 7 | Movie playback |
 | 0x00912BBF | TGPoolManager | 9 | Object pool management |
 | 0x00912BEB | TGLocalizationManager | 6 | Localization |
-| 0x00912C1B | TGModelManager | 17 | Model management |
+| 0x00912B9B | TGFontManager | 8 | Font management |
 | 0x00912B77 | TGUIThemeManager | 4 | UI theme management |
-| 0x009143CF | TGSoundManager | 33 | Sound management |
-| 0x00914C77 | TGAnimationManagerClass | 13 | Animation management |
-| 0x00914C43 | TGSystemWrapperClass | 17 | System wrapper |
 
-### UI Framework
-| Address | Class | SWIG Methods | Description |
-|---------|-------|-------------|-------------|
-| 0x008E4A5C | TGWindow | 4 | Base window |
-| 0x009145D7 | TGFrame | 17 | Frame container |
-| 0x00914D0F | TGFrameWindow | 4 | Frame window |
-| 0x00914D57 | TGPane | 26 | Pane container |
-| 0x00914CEB | TGRootPane | 21 | Root UI pane |
-| 0x00914D3F | TGButton | 5 | Button |
-| 0x00914D2F | TGButtonBase | 11 | Button base |
-| 0x00914CBB | TGTextButton | 19 | Text button |
-| 0x00914433 | TGIcon | 12 | Icon |
-| 0x00914CCB | TGConsole | 7 | Debug console |
-| 0x00914CFB | TGDialogWindow | 28 | Dialog window |
-| 0x0095CDB4 | TGStringDialog | -- | String input dialog |
-| 0x00914D23 | TGPrompt | 3 | Prompt dialog |
-| 0x0091444B | TGUIObject | 94 | Base UI object (largest SWIG binding!) |
+(The 0x00912xxxx range above lists SWIG `_p_TGxxxManager` substring addresses pending
+re-anchoring to bare strings in a follow-up pass — flagged as documentation debt.)
+
+### UI Framework (SWIG-bound)
+| Address | Class | SWIG Identifiers | Description |
+|---------|-------|------------------|-------------|
+| 0x0095cd48 | TGFrame | 17 | Frame container [v5-validated 2026-05-28] |
+| 0x0095cd5c | TGFrameWindow | — | Frame window |
+| 0x0095cf1c | TGPane | 26 | Pane container [v5-validated 2026-05-28] |
+| 0x0095ce8c | TGRootPane | 21 | Root UI pane |
+| 0x0095ce54 | TGButton | 5 | Button [v5-validated 2026-05-28] |
+| 0x0095ce34 | TGButtonBase | 11 | Button base |
+| 0x0095ce6c | TGTextButton | 19 | Text button [v5-validated 2026-05-28] |
+| 0x0095ce20 | TGIcon | 12 | Icon |
+| 0x0095cdec | TGConsole | 7 | Debug console |
+| 0x0095cd90 | TGDialogWindow | 28 | Dialog window [v5-validated 2026-05-28] |
+| 0x0095CDB4 | TGStringDialog | — | String input dialog |
+| 0x0095ce08 | TGPrompt | 3 | Prompt dialog |
+| 0x0095cf90 | TGUIObject | 94 | Base UI object (largest binding) [v5-validated 2026-05-28] |
 | 0x00914DF3 | TGUITheme | 16 | UI theme |
 | 0x008E3574 | TGParagraph | 34 | Text paragraph |
-| 0x008E4A41 | TGParagraphSoundHandler | -- | Paragraph sound |
+| 0x008E4A41 | TGParagraphSoundHandler | — | Paragraph sound |
+| 0x008E4A5C | TGWindow | 4 | Base window |
 
 ### Model Properties
-| Address | Class | SWIG Methods | Description |
-|---------|-------|-------------|-------------|
-| 0x0091408B | TGModelProperty | 11 | Model property |
-| 0x008E5D1C | TGModelPropertySet | 4 | Property set |
-| 0x00912357 | TGModelPropertyInstance | 4 | Property instance |
-| 0x009133D7 | TGModelPropertyList | 5 | Property list |
+| Address | Class | SWIG Identifiers | Description |
+|---------|-------|------------------|-------------|
+| 0x008e5d1c | TGModelPropertySet | 4 | Property set |
+| 0x0095b00c | TGModelProperty | 11 | Model property |
+| 0x00912357 | TGModelPropertyInstance | 4 | Property instance (pending bare-anchor re-derivation) |
+| 0x009133D7 | TGModelPropertyList | 5 | Property list (pending bare-anchor re-derivation) |
 
-### Audio
-| Address | Class | SWIG Methods | Description |
-|---------|-------|-------------|-------------|
-| 0x009124AF | TGSound | 63 | Sound (second-largest SWIG binding) |
-| 0x0091443F | TGMusic | 9 | Music |
-| 0x009148EF | TGSoundRegion | 8 | Spatial audio region |
-| 0x00913003 | TGRedbookClass | 12 | CD audio (Redbook) |
-| 0x0095B7F8 | TGPhonemeSequence | -- | Lip-sync sequence |
+### Audio / Music
+| Address | Class | SWIG Identifiers | Description |
+|---------|-------|------------------|-------------|
+| 0x009124AF | TGSound | 63 | Sound (pending bare-anchor re-derivation) |
+| 0x0095ba94 | TGMusic | 9 | Music |
+| 0x0095baa8 | TGMusicFadeEvent | — | Music fade event |
+| 0x0095bb14 | TGSoundRegion | 8 | Spatial audio region |
+| 0x0095B7C0 | TGPhonemeAction | — | Lip-sync phoneme action |
+| 0x0095B7F8 | TGPhonemeSequence | — | Lip-sync sequence |
+| 0x00913003 | TGRedbookClass | 12 | CD audio (Redbook) (pending bare-anchor re-derivation) |
 
 ### Scene Graph Extensions
 | Address | Class | Description |
 |---------|-------|-------------|
-| 0x00913097 | TGAnimNode | Animation scene node (14 methods) |
-| 0x00913C1B | TGAnimBlender | Animation blender |
+| 0x0095abc0 | TGAnimNode | Animation scene node (14 identifiers) |
+| 0x0095abcc | TGAnimBlender | Animation blender |
 | 0x008DAED4 | TGDimmerController | Brightness controller |
 | 0x008DAEE8 | TGFuzzyTriShape | Soft-edged geometry |
 | 0x008E5D88 | TGFuzzyClusterGeom | Fuzzy cluster geometry |
 | 0x008E5D70 | TGFuzzyClusterInnerGeom | Fuzzy cluster inner geometry |
 | 0x008DAEF8 | TGOverlayController | Overlay controller |
+| 0x008E5D1C | TGModelPropertySet | Property set |
 
-### Miscellaneous
+### Localization
 | Address | Class | Description |
 |---------|-------|-------------|
-| 0x00913347 | TGFontGroup | Font group (17 methods) |
-| 0x00913367 | TGIconGroup | Icon group (21 methods) |
-| 0x0091338B | TGConfigMapping | Configuration (11 methods) |
-| 0x00913B5B | TGGroupList | Group list |
-| 0x0091306B | TGPMWalkObjectsFunc | Property manager walk |
-| 0x009145FB | TGStringToStringMap | String-to-string map |
-| 0x0095ACD8 | TGLocalizationDatabase | Localization DB (5 methods) |
-| 0x00913E7F | TGTimer | Timer (10 methods) |
-| 0x0091340B | TGPhoneme | Phoneme data |
-| 0x00913DEB | TGConditionHandler | Condition handler (3 methods) |
+| 0x0095ACD8 | TGLocalizationDatabase | Localization DB (5 identifiers) |
 | 0x00930A74 | TGLocDBWrapperSerialize | Localization serializer |
 | 0x00930A58 | TGLocDBWrapperUnserialize | Localization deserializer |
 
+### Miscellaneous (SWIG-bound)
+| Address | Class | Description |
+|---------|-------|-------------|
+| 0x0095d188 | TGFontGroup | Font group (17 identifiers) |
+| 0x0095cf10 | TGIconGroup | Icon group (21 identifiers) |
+| 0x0091338B | TGConfigMapping | Configuration (11 identifiers, pending bare-anchor) |
+| 0x00913B5B | TGGroupList | Group list (pending bare-anchor) |
+| 0x0091306B | TGPMWalkObjectsFunc | Property manager walk (pending bare-anchor) |
+| 0x009145FB | TGStringToStringMap | String-to-string map (pending bare-anchor) |
+| 0x0095ae88 | TGTimer | Timer (10 identifiers) |
+| 0x0091340B | TGPhoneme | Phoneme data (pending bare-anchor) |
+| 0x00913DEB | TGConditionHandler | Condition handler (3 identifiers, pending bare-anchor) |
+
+### Other / Newly-discovered (v5 sweep additions)
+
+The Phase 2.6 re-derivation pulled 41 previously-uncatalogued bare TG class-name strings out
+of the .data clusters. Most are slotted into the subsections above; the remainder live here.
+
+| Address | Class | Description |
+|---------|-------|-------------|
+| 0x008E5D1C | TGModelPropertySet | (also listed under Model Properties) |
+
+(Remaining 40 newly-discovered classes are already integrated into the appropriate
+subsections above with `[v5-validated 2026-05-28]` tags where applicable.)
+
 ---
 
-## Game-Specific Classes (referenced from .text section)
+## Internal C++ classes (no SWIG binding)
+
+These are real C++ classes used internally by the engine but never exposed to Python, so no
+bare class-name string was emitted in the binary. They are anchored via factory ID, vtable
+address, or an internal-use note rather than a bare string. The prior catalog listed many of
+these with addresses that were actually `_p_<class>` SWIG pointer-type substrings, not
+canonical anchors — those address citations were removed.
+
+### Streaming / Serialization
+
+| Class | Anchor | Description |
+|-------|--------|-------------|
+| TGStream | (internal C++ class — no SWIG binding) | Base stream |
+| TGBufferStream | (internal C++ class — no SWIG binding) vtable 0x008958D0 [v5-validated 2026-05-28] | Buffer-based stream |
+| TGProfilingInfo | (internal C++ class — no SWIG binding) | Performance profiling (pending vtable confirmation) |
+
+### Network Messages (factory-anchored)
+
+These are real internal C++ classes per [docs/protocol/transport-layer.md](../protocol/transport-layer.md);
+each has a factory ID in the 0x0100-0x010D range, no bare class-name string.
+
+| Class | Anchor | Description |
+|-------|--------|-------------|
+| TGMessage | (internal C++ class — no SWIG binding) factory base | Base network message |
+| TGAckMessage | (internal C++ class) factory ID ~0x0100 | Acknowledgement message |
+| TGBootPlayerMessage | (internal C++ class) factory ID ~0x010D | Boot/kick player message |
+| TGConnectMessage | (internal C++ class) factory ID ~0x0101 | Connection message |
+| TGDisconnectMessage | (internal C++ class) factory ID ~0x0102 | Disconnection message |
+| TGDoNothingMessage | (internal C++ class) factory ID ~0x0103 | No-op/keepalive message |
+| TGNameChangeMessage | (internal C++ class) factory ID ~0x0104 | Name change message |
+
+### Networking (factory- / vtable-anchored)
+
+Real internal C++ classes per [docs/networking/network-protocol.md](../networking/network-protocol.md).
+
+| Class | Anchor | Description |
+|-------|--------|-------------|
+| TGWinsockNetwork | (internal C++ class — no SWIG binding) | UDP network (WSN) |
+| TGNetworkListType | (internal C++ class — no SWIG binding) | Network list type |
+| TGNetGroup | (internal C++ class — no SWIG binding) | Network group |
+| TGNetPlayer | (internal C++ class — no SWIG binding) | Network player |
+| TGPlayerList | (internal C++ class — no SWIG binding) | Player list |
+| TGGroupPlayer | (internal C++ class — no SWIG binding) | Group-player association |
+| TGEncrypt | (internal C++ class — no SWIG binding) | Encryption (AlbyRules cipher) |
+
+---
+
+## Game-Specific Classes (sampled, ~420 catalogued)
 
 These are Bridge Commander's own classes, built on top of the TG framework and NetImmerse.
-Organized by game subsystem.
+Organized by game subsystem. Spot-checks confirmed canonical anchors for ShipClass,
+ShipSubsystem, MultiplayerGame, and DamageableObject (representative samples). **Full
+enumeration of all ~420 game-specific class strings is deferred** — surface as
+documentation debt; per-subsystem v5 passes will retire the remaining rows.
 
 ### Ship / Vessel Classes (28 unique)
 | Address | Class |
@@ -767,15 +954,23 @@ Organized by game subsystem.
 The SWIG 1.x binding layer exposes C++ classes to Python 1.5.2 via the `App` and `Appc`
 modules. Each class has wrapper functions named `ClassName_MethodName`.
 
-### Largest SWIG Interfaces (by method count)
-| Class | Methods | Role |
-|-------|---------|------|
+> [!NOTE]
+> The "method count" column in this section equals the number of `^ClassName_` prefix strings
+> in the binary, which includes **both bound methods AND enum/constant identifiers** (e.g.,
+> `TGSound_SS_PLAYING`, `TGUIObject_ALIGN_BR`). Actual bound-method counts are typically 3-10
+> lower per class. Read the aggregate "~1,340 wrapper methods" as **"~1,340 SWIG-bound Python
+> identifiers (methods + constants)"** until per-class verification is done. Carries
+> `confidence: low` in the evidence header pending a v5 SWIG-table walk.
+
+### Largest SWIG Interfaces (by identifier count, not method count)
+| Class | Identifiers | Role |
+|-------|-------------|------|
 | TGUIObject | 94 | UI object (largest binding) |
 | TGSound | 63 | Sound system |
 | TGMessage | 53 | Network messages |
 | TGNetwork | 50 | Network abstraction |
 | TGInputManager | 41 | Input handling |
-| TGMatrix3 | 38 | Matrix math |
+| TGMatrix3 | 38 | Matrix math (note: `TGMatrix3` itself is not bare-anchored — see debt list) |
 | TGBufferStream | 35 | Stream I/O |
 | TGPoint3 | 35 | 3D vector math |
 | TGParagraph | 34 | Text rendering |
@@ -783,10 +978,10 @@ modules. Each class has wrapper functions named `ClassName_MethodName`.
 | TGDialogWindow | 28 | Dialogs |
 | TGPane | 26 | UI panes |
 | TGINPUT | 25 | Input constants |
-| TGRect | 24 | Rectangle math |
+| TGRect | 24 | Rectangle math (note: `TGRect` itself is not bare-anchored — see debt list) |
 | TGIconManager | 22 | Icon management |
 | TGIconGroup | 21 | Icon groups |
-| TGColorA | 21 | RGBA color |
+| TGColorA | 21 | RGBA color (note: `TGColorA` itself is not bare-anchored — see debt list) |
 | TGEvent | 21 | Events |
 | TGRootPane | 21 | Root UI |
 | TGTextButton | 19 | Text buttons |
@@ -804,19 +999,26 @@ modules. Each class has wrapper functions named `ClassName_MethodName`.
 | TGIcon | 12 | Icons |
 | TGRedbookClass | 12 | CD audio |
 
-### Total: 114 classes with SWIG bindings, ~1,340 wrapper methods
+### Total: ~70 SWIG-bound TG classes with bare-string anchors, ~1,340 SWIG-bound Python identifiers
 
 ---
 
 ## Summary Statistics
 
-| Category | Count |
-|----------|-------|
-| MSVC RTTI TypeDescriptors | 22 (21 CRT/STL + 1 game) |
-| NetImmerse Ni* classes | 129 |
-| TG Framework classes | 124 |
-| TG SWIG-bound classes | 114 |
-| TG SWIG wrapper methods | ~1,340 |
-| Game-specific classes (non-Ni/TG) | ~420 |
-| **Total unique C++ classes identified** | **~670** |
-| Total class-like name strings in binary | ~1,179 (referenced from code) |
+| Category | Count | Note |
+|----------|-------|------|
+| MSVC RTTI `_TypeDescriptor` (CRT/STL) | 21 | All in 0x00979A18-0x00979E98 |
+| MSVC RTTI throw-types (`.PAV`) | 1 | TGStreamException at 0x0095AD10 |
+| NetImmerse Ni* classes (catalogued) | 129 | 117 factory-registered; full enumeration deferred |
+| TG Framework classes (bare-string anchored) | ~70 | 28 confirmed (re-anchored 2026-05-28) + 41 newly-discovered |
+| TG Framework classes (internal C++, no SWIG) | ~15 | Anchored via factory ID / vtable, not bare string |
+| Game-specific classes (sampled) | ~420 | Spot-checked; full enumeration deferred |
+| **Total unique C++ classes (estimated)** | **~615** | Prior 670 inflated by ~34 fictional TG rows + uncertainty in NI/game counts |
+| TG SWIG-bound classes | ~70 | Was "114"; reduced after dropping speculative rows |
+| TG SWIG-bound Python identifiers | ~1,340 | Includes both methods AND enum/constant identifiers |
+
+> [!NOTE]
+> Counts marked "deferred" / "sampled" / "estimated" reflect documentation debt: per-subsystem
+> v5 passes will retire these. The TG section is the densest verification work for this pass;
+> NI vtable validation will pin the 129 NI count, and game-specific subsystem passes will pin
+> the ~420 game count.

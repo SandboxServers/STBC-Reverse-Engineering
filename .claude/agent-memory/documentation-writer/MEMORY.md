@@ -8,3 +8,4 @@ Entries appear here as the campaign progresses. Each entry links to a topic file
 
 - [v5 named-function convention](v5-named-function-convention.md) — how to demote pre-v5 annotation-script names in catalog docs without dropping the addresses
 - [v5 foundation claim patterns](v5-foundation-claim-patterns.md) — evidence-row patterns for totals, address ranges, and exhaustive partitions in foundation-tier docs
+- [catalog row disposition tree](catalog-row-disposition-tree.md) — four-bucket decision tree (keep / keep-as-is / move to internal-only / drop) for pre-v5 catalog rows during re-validation

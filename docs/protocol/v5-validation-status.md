@@ -87,7 +87,7 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 | 9 | object-replication.md | Mid: FUN_0069f620 thin index for ObjCreate | game-opcodes | **partial (2026-05-28)** — all 6 claims confirmed at high confidence; 2 wording refinements (R1 sender-side helper FUN_006A19A0; R2 vtable[+0x10C] sender / vtable[+0x118]+[+0x11C] receiver via FUN_005A1F50); MpgameHandleObjCreate renamed at 0x0069F620; see §6.9 |
 | 10 | objcreate-serialization.md | Mid: full ObjCreate chain + species map | object-replication, stream-primitives | **partial (2026-05-28)** — 3 material corrections (C1 velocity = CV4 3-dir + 4-mag, not f32-speed + 3-pad; C2 playerSlots base = +0x74 not +0x84; C3 vtable[+0x118] only does species+Python, body+subsystems is vtable[+0x11C]); orientation quaternion confirmed; species map byte-exact vs scripts; 11 functions renamed; see §6.10 |
 | 11 | stateupdate-subsystem-wire-format.md | Mid: subsystem linked list + 3 WriteState formats | stateupdate | **partial (2026-05-28)** — 2 material corrections (C1 ship+0x2C4 was HullSubsystem not PowerSubsystem + add missing 0x2C0/0x2C8; C2 EndMarker attribution corrected from 0x006CDAE0 to 0x006CF9B0); 10+ confirmed claims; 14 Ghidra renames + 1 created + 7 plates; see §6.11 |
-| 12 | per-ship-subsystem-wire-format.md | Mid: 16 stock ship subsystem catalogs | stateupdate-subsystem-wire-format | pending |
+| 12 | per-ship-subsystem-wire-format.md | Mid: 16 stock ship subsystem catalogs | stateupdate-subsystem-wire-format | **partial (2026-05-28)** — 4 sampled ships byte-exact (Sovereign 49 / Bird of Prey 32 / Galor 31 / Akira 47); ZERO material wire-format corrections; 3 refinements (R1 cycle-byte math is per-tick exact / per-cycle approximate due to bit packing; R2 "top-level" is post-link count; R3 silently-dropped templates like Probe Launcher / Shuttle Bay / Decoy Launcher); 11 remaining ships + Enterprise@37 at medium confidence via pattern extrapolation; foundation cross-anchor (mid #11 ship+0x2B0..+0x2DC slot table) re-confirmed; see §6.12 |
 | 13 | tgobjptrevent-class.md | Mid: TGObjPtrEvent class layout + 11 producers | (engine: TGEvent vtable 0x00895FF4) | pending |
 | 14 | pythonevent-wire-format.md | Leaf: opcode 0x06 + 4 event factories | tgobjptrevent-class, game-opcodes | pending |
 | 15 | collision-effect-protocol.md | Leaf: opcode 0x15 + CollisionEvent class + validation chain | game-opcodes, stream-primitives | pending |
@@ -2478,6 +2478,164 @@ add ship+0x2C0/+0x2C8 rows, update the v5 frontmatter, and add
 documentation-writer agent will apply C1+C2+C3 corrections and R1-R4
 refinements, close the orientation open question, add the v5 frontmatter
 header, and add the `[v5-validated 2026-05-28]` tag to confirmed rows.
+
+---
+
+### 6.12 per-ship-subsystem-wire-format.md — 2026-05-28 (game-archaeology-specialist)
+
+**Verdict:** `partial`. ~250 load-bearing claims (largest protocol doc).
+**Zero material wire-format corrections** — the doc was exceptionally
+accurate. 4 sampled ships byte-by-byte verified (Sovereign 49 / Bird of
+Prey 32 / Galor 31 / Akira 47); 11 remaining ships + Enterprise@37 at
+medium confidence via pattern extrapolation. 3 refinements (no
+binary contradictions): cycle-byte arithmetic precision; "top-level"
+definition is post-link; templates that silently drop from
+`Ship__SetupProperties`.
+
+**Subject:** Per-ship catalog of the StateUpdate (0x1C) flag 0x20
+payload — for each of 16 stock multiplayer ships (species 1-15 +
+Enterprise@37), the AddToSet order, top-level subsystem list, child
+counts, per-subsystem WriteState byte cost, and per-tick cycle bytes.
+The doc operates at the cross-source layer: stbc.exe addresses anchor
+the algorithm (mid #8 round-robin + mid #11 WriteState formulas);
+`reference/scripts/ships/Hardpoints/<name>.py` anchors per-ship
+content.
+
+**Sampling strategy:**
+Four ships verified byte-by-byte against their hardpoint .py files:
+- **Sovereign**: cycle = 49 bytes (11 top-level + 22 children).
+  Computation: `1+1+3+3+5+9+3+11+7+5+1 = 49`. Source: sovereign.py
+  LoadPropertySet lines 1379-1474. Match.
+- **Bird of Prey**: cycle = 32 bytes (10 top-level + 6 children).
+  Computation: `1+1+3+5+4+4+5+3+3+3 = 32`. Source: birdofprey.py
+  LoadPropertySet lines 461-509. No PhaserSystem — "Disruptor Cannons"
+  via WST_PULSE at line 227. Match.
+- **Galor**: cycle = 31 bytes (9 top-level + 8 children). Computation:
+  `1+1+3+7+4+5+4+3+3 = 31`. Source: galor.py LoadPropertySet lines
+  618-668. No Tractors entry. Match.
+- **Akira**: cycle = 47 bytes (11 top-level + 20 children). Computation:
+  `1+1+3+3+5+11+5+9+3+5+1 = 47`. Source: akira.py LoadPropertySet
+  lines 1274-1307. Bridge at AddToSet position 38, Tractors at 21
+  (reversed-from-Federation-norm order). Match.
+
+For each sampled ship, validation followed 4 axes: structural formula
+(1+N+2 for Powered; 1+0+2 for Power; 1 for Base), AddToSet ordering,
+special-case catalog (Cloak / Pulse / Tractors / Bridge presence),
+foundation cross-anchors (slot offsets from mid #11). All 4 axes
+held for all 4 sampled ships, justifying medium-confidence extrapolation
+to the 12 remaining hulls.
+
+**Foundation cross-anchors (re-confirmed via fresh decompile):**
+- `Ship__SetupProperties` at 0x005B3FB0 (4097 bytes) — switch on
+  property type IDs decodes all 12 named ship slots (ship+0x2B0..+0x2DC)
+  per mid #11. Per-ship doc never cites ship+offset directly (operates
+  in terms of the doubly-linked list at ship+0x284), so mid #11
+  corrections do not cascade.
+- WriteState formula trio (Base 0x0056D320, Powered 0x00562960, Power
+  0x005644B0) from mid #11 — per-ship Cycle Bytes column uses these
+  formulas correctly for all sampled ships.
+- Round-robin 10-byte budget (`CMP EAX, 0xA` at 0x005B1EC0 in mid #8) —
+  per-ship "Ticks per Full Cycle" table internally consistent: all 16
+  ships have 9-13 top-level subsystems and complete a full cycle in
+  3-5 ticks.
+
+**Cross-source verification (`reference/scripts/Multiplayer/SpeciesToShip.py`):**
+- IDs 1..15 map to 16 stock MP ships per doc's species table — exact
+  match.
+- `MAX_FLYABLE_SHIPS = 16` at line 51 confirmed.
+- Enterprise@37 inherits from Sovereign (`App.SPECIES_SOVEREIGN` at
+  lines 60 + 92) — doc claim "identical subsystem layout, only
+  HP/capacity values differ" confirmed.
+
+**Confirmed claims (high confidence, sampled ships):**
+
+- All 4 sampled cycle-byte totals match the Summary Table exactly.
+- Universal patterns hold: 7 always-present subsystem types (Hull,
+  Shield, Power, Sensor, Impulse, Warp, Repair) + 5 optional (Phaser,
+  Torpedo, Tractor, Pulse, Cloak).
+- Stock Dedi tracer counts (Section "Stock Dedi Verification") all 15
+  ships (Enterprise excluded since it aliases Sovereign) match the
+  hardpoint-derived totals.
+- Reimplementation implications (6 points) all consistent with binary
+  behavior per foundation anchors.
+
+**Refinements (no binary contradictions, doc clarifications):**
+
+R1. **Cycle-byte arithmetic is per-tick exact, per-cycle approximate.**
+   The Cycle Bytes column rounds each Powered subsystem's
+   `[bit hasData][byte powerPct]` tail to 2 whole bytes. Because
+   hasData is a bit packed into the bit-stream cursor (+0x2C bit mask),
+   actual per-cycle wire totals may differ by 1-3 bytes from this
+   approximation. The 10-byte round-robin budget cap is measured
+   against the BYTE cursor, not bit position, so the approximation is
+   exact at tick boundaries.
+
+R2. **"Top-Level Subsystems" count is post-link.**
+   The number is the post-link state — after
+   `Ship__LinkAllSubsystemsToParents` (0x005B3E20) reparents children.
+   Pre-link, all subsystems sit in ship+0x284 doubly-linked list.
+   Post-link, children with non-zero WeaponID/EngineType get pulled
+   out and re-attached under their parent system.
+
+R3. **Templates that silently drop.**
+   Some templates in LoadPropertySet AddToSet calls never instantiate
+   as subsystems because their property type IDs don't match any case
+   in `Ship__SetupProperties`. Examples: "Probe Launcher" (Sovereign
+   line 1454), "Shuttle Bay" / "Shuttle Bay 2", "Decoy launcher".
+   The switch defaults out; no subsystem is allocated; the result
+   does not appear in the top-level linked list. The per-ship tables
+   in the doc correctly omit them.
+
+**Open questions (recorded for the next dig):**
+
+1. Bit-stream packing across subsystem boundaries: per-cycle byte
+   totals may vary by 1-3 bytes for ships with many Powered
+   subsystems. Needs bit-stream cursor trace from a single StateUpdate
+   flag-0x20 packet to confirm "1+N+2" is exact bytes or +/- 1 byte
+   due to bit alignment.
+2. Round-robin overshoot semantics: when a subsystem starts at cursor
+   9 and would write 5 bytes, does the cap allow completion (cursor
+   → 14) or push to next tick? Foundation mid #8 cites `CMP EAX, 0xA`
+   at 0x005B1EC0 but the comparison-direction semantic is unverified.
+3. Mod ship behavior: explicitly out of scope; the catalog covers
+   16 stock ships.
+4. Byte-by-byte verification for the 12 remaining ships (Ambassador,
+   Galaxy, Nebula, Vor'cha, Warbird, Marauder, Keldon, CardHybrid,
+   KessokHeavy, KessokLight, Shuttle, Enterprise@37). Medium
+   confidence pending; promote to high once verified.
+
+**Cross-doc impacts (no in-this-pass modifications):**
+
+- `stateupdate-subsystem-wire-format.md` (mid #11) — already provides
+  foundation; consistent.
+- `objcreate-serialization.md` (mid #10) — SpeciesToShip.py cross-source
+  consistent.
+- `subsystem-integrity-hash.md` — no overlap (covers flag 0x01, not
+  flag 0x20).
+
+**Annotations written to Ghidra (program: STBC.exe):**
+
+None this pass — all binary anchors were verified-by-reading
+(re-decompile of Ship__SetupProperties at 0x005B3FB0 to re-confirm
+mid #11 slot table). No renames or plate comments were warranted by
+this validation; the foundation docs already carry the heavy
+annotation load.
+
+**Files touched:** docs/protocol/v5-validation-status.md (this row
+added; §2 row #12 status flipped to partial). The doc-under-review
+(`docs/protocol/per-ship-subsystem-wire-format.md`) re-rendered with
+v5 frontmatter, top-of-doc NOTE block, new Validation Sampling
+Strategy subsection, R1/R2/R3 refinement notes, and inline
+`[v5-validated 2026-05-28]` / `[confidence: medium —
+pattern-extrapolated]` / `[cross-source-2026-05-28]` tags on
+applicable rows.
+
+**Promotion path:** Status stays `partial` until byte-by-byte
+verification of the remaining 12 hulls; at that point the doc
+promotes to `verified`. The sampling strategy passed all 4 axes
+on all 4 sampled ships, so extrapolation confidence is medium
+(adequate for the catalog's current operating role; not yet
+suitable for "verified" labelling under v5).
 
 ---
 

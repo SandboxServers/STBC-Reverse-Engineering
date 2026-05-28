@@ -7,6 +7,12 @@ metadata:
 
 # Engine Subsystem Snapshot — 2026-05-28
 
+## Corrigenda
+
+- **NiAlloc address**: Earlier sections of this snapshot cite NiAlloc at `0x00717840`. The correct address per nirtti-factory-validation-20260528 (and re-confirmed during netimmerse-vtables validation — every factory's `FUN_00718cb0(<size>)` call is the actual allocator) is **`0x00718cb0`**. Treat any reference to `0x00717840` below as superseded. The companion file `nirtti-factory-validation-20260528.md` has the canonical evidence.
+- **NiObject RTTI ptr at `0x009a1468`**: confirmed during netimmerse-vtables validation. The GetRTTI stub at `0x00458770` is `mov eax, 0x009a1468 ; ret`. This is the **NiRTTI storage slot**, not the RTTI string (which lives at `0x009780D8`). Both addresses are correct but mean different things — RTTI ptr storage vs name string.
+- **NiObject global counter at `0x009a1478`**: confirmed by direct decompilation of FUN_007d87a0 — `DAT_009a1478 = DAT_009a1478 + 1`.
+
 ## Critical Context: Two Programs Open in Ghidra
 
 Ghidra has **two programs open** in project "SGW":

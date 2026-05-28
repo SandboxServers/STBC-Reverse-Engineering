@@ -82,7 +82,7 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 | 4 | game-opcodes.md | Mid: opcodes 0x00-0x2A handler addresses + per-opcode formats | wire-format-spec, transport-layer | **partial (2026-05-28)** — opcode table fully anchored from dispatcher recovery; one column-header clarification + small wire-format anchorings; see §6.4 |
 | 5 | checksum-opcodes.md | Mid: opcodes 0x20-0x28 NetFile dispatcher | wire-format-spec, transport-layer | **partial (2026-05-28)** — 2 material corrections (dialog swap + 5-round fabrication); 32 anchors confirmed; 1 open question on round-0xFF sender; see §6.5 |
 | 6 | python-messages.md | Mid: opcodes 0x2C+ MAX_MESSAGE_TYPES + SendTGMessage path | wire-format-spec, stream-primitives | **partial (2026-05-28)** — 1 correction (WriteCString length-prefix width), 1 clarification (TGBufferStream::Serialize vs TGMessage::WriteToBuffer), 2 cross-source-tagged Python-handler claims; see §6.6 |
-| 7 | tgmessage-routing.md | Mid: relay-all + star topology + opaque payload | python-messages, transport-layer | pending |
+| 7 | tgmessage-routing.md | Mid: relay-all + star topology + opaque payload | python-messages, transport-layer | **partial (2026-05-28)** — 3 material corrections (C1: FUN_006B63A0 is connect handler not type-0x00 relay; C2: `NoMe` created by C++ MultiplayerGame_Ctor not Python; C3: THREE routing mechanisms not two) + 2 minor (function name FUN_006B8530 = TGBufferStream_GetBufferAndSize; SendTGMessage pseudocode now covers targetID == -1); 15 anchors confirmed; 3 open questions including chat 1:2 mystery; see §6.7 |
 | 8 | stateupdate.md | Mid: opcode 0x1C dirty flags + 8 field formats + round-robin | game-opcodes, stream-primitives | pending |
 | 9 | object-replication.md | Mid: FUN_0069f620 thin index for ObjCreate | game-opcodes | pending |
 | 10 | objcreate-serialization.md | Mid: full ObjCreate chain + species map | object-replication, stream-primitives | pending |
@@ -1530,6 +1530,198 @@ empirical evidence inline. Adding cross-source tags makes the provenance explici
 4. **OQ4 — SendTGMessage `targetID == -1` "optional 4th param" semantics.** The doc states this is a special mode; the decompile shows it calls FUN_006bb9d0(param_4) to resolve a peer object. The exact semantic (peer-handle ID? in-flight message slot? something else?) needs a FUN_006bb9d0 deep-dive — deferred to a tgmessage-routing.md / transport-layer.md follow-up.
 
 **Files touched:** docs/protocol/v5-validation-status.md (this row added; §2 row #6 status flipped to partial). docs/protocol/python-messages.md NOT modified this pass — the documentation-writer agent will re-render with the v5 frontmatter, top-of-doc NOTE block, body corrections (C1 / C2 / C3), cross-source tags on the 3 routing claims, Python-source tag on the constants table, annotation summary, and explicit cross-links to transport-layer / stream-primitives / game-opcodes / tgmessage-routing.
+
+### 6.7 tgmessage-routing.md — 2026-05-28 (game-archaeology-specialist)
+
+**Status:** validated -> `partial` (3 material corrections + 2 minor; 3 open questions
+including the chat 1:2 mystery; doc-render headlined the "three not two" architectural
+reframe).
+
+**Methodology:** Per-doc workflow Phases 1-3 with `program: STBC.exe` on every MCP call.
+~90 load-bearing claims; the C++ side (factory table, factories, SendTGMessage 3-mode,
+SendTGMessageToGroup, SendToGroup_Iterate, dispatcher boundary, per-handler relay) is now
+end-to-end byte-anchored. Cross-source corroboration from the
+`network-protocol-analyst/relay-audit-20260224.md` memory (21-min Cady/XFS01 stock-dedi
+session) tagged `[cross-source-2026-02-24 trace]`.
+
+**Headline:** the architectural reframe from "two relay mechanisms" to **three routing
+mechanisms** is the doc's load-bearing correction. The pre-v5 doc framed relay as a
+transport-level automatic property; the binary doesn't work that way - relay is **per
+game-opcode handler**, mediated by the `Forward` and `NoMe` groups (both C++ created),
+with a separate connect-event broadcast handling transport-level connection coordination.
+
+**Functions touched (completeness):**
+
+| Function | Addr | effective_score | Used to verify |
+|----------|------|-----------------|----------------|
+| TGWinsockNetwork_Ctor | 0x006B3A00 | high | factory-table population (7 slots); group-table init at network+0xF4 |
+| TGWinsockNetwork_SendTGMessage | 0x006B4C10 | 29.07 | three-mode router; targetID == -1 (FUN_006BB9D0 lookup); targetID > 0 (binary search by peer+0x18); targetID == 0 (broadcast loop) |
+| TGWinsockNetwork_SendTGMessageToGroup | 0x006B4DE0 | 71.27 | binary-search group table at network+0xF4 by group+0x4 name; 0x10 not-found return |
+| TGWinsockNetwork_SendToGroup_Iterate | 0x006B4EC0 | high | iterates group+0x8 / group+0xC member array; per-member binary-search lookup; vtable[6] Clone |
+| TGWinsockNetwork_ProcessIncomingPackets | 0x006B5C90 | high | wire-to-factory dispatch; never examines game opcode |
+| TGWinsockNetwork_HandleConnect | 0x006B63A0 | high | NOT a game-data relay; parses peer ID, registers via FUN_006B7410, raises 0x60007, calls FUN_006B51E0 to broadcast the connect event |
+| TGMessage_Factory_Type0x00 | 0x006BC6A0 | high | 14-bit length mask; opaque BufferCopy |
+| TGMessage_Factory_Type32 | 0x006B83F0 | high | 13-bit length mask + bit-13 fragment flag |
+| TGBufferStream_GetBufferAndSize | 0x006B8530 | high | 2-output accessor: returns *(void**)(this+4) AND writes size to *out (NOT "GetData") |
+| MultiplayerGame_Ctor | 0x0069E590 | 5.39 | builds `NoMe` (string xref at 0x0069E6FA) and `Forward` (xref at 0x0069E716) groups - C++, not Python |
+| MpgameHandleMessage | 0x0069F2A0 | 69.84 | class-tag gate `vtable[0]() == 0x32`; bias-decoded jump table at 0x0069F534 |
+| FUN_0069F880 (PythonEvent handler) | 0x0069F880 | high | shared by 0x06 AND 0x0D via wrapper at 0x0069F3F1; LOCAL ONLY (no SendToGroup) |
+| FUN_0069FDA0 (GenericEventForward) | 0x0069FDA0 | high | the per-handler relay pattern - Clone + SendToGroup(`Forward`) |
+| FUN_0069F930 (TorpedoFire handler) | 0x0069F930 | high | same Clone + SendToGroup(`Forward`) pattern |
+| FUN_006A01B0 (HostMsg handler) | 0x006A01B0 | high | no SendToGroup call - canonical non-relay example |
+| MultiplayerWindow_Dispatch | 0x00504C10 | high | byte compares for 0x00, 0x01, 0x16 only |
+| (SWIG TGNetwork_RegisterMessageType wrapper) | 0x005E4860 | high | `AND EAX, 0xFF; MOV [EAX*4 + 0x009962D4], EDX` - byte-level proof natural-wrap mask |
+
+**No annotations applied this pass** - the dispatcher recovery + python-messages.md
+validation pass had already renamed every function in scope. SWIG `TGNetwork_RegisterMessageType`
+remains a bare wrapper (no Ghidra entry) located by format-string xref.
+
+**Confirmed claims (high confidence):** 15 anchors per evidence rows.
+
+- Transport factory table at `DAT_009962D4` (256 entries, 7 populated) - all 7 ctor +
+  registration-fn pairs byte-confirmed.
+- `RegisterMessageType` mask-and-store sequence: byte-level proof in the SWIG wrapper.
+- Type-0x00 factory: 14-bit length mask, opaque BufferCopy, no fragment support.
+- Type-0x32 factory: 13-bit length mask + bit-13 fragment flag.
+- SendTGMessage 3-mode router:
+  - Mode A (targetID == -1) -> `LEA ECX, [ESI+0x28]; CALL FUN_006BB9D0(nOptional)`;
+    walks peer array looking for `peer+0x1C == nOptional`.
+  - Mode B (targetID > 0) -> binary-search by `peer+0x18` with localID fallback.
+  - Mode C (targetID == 0) -> broadcast loop with vtable[6] Clone per peer except last,
+    skip `peer+0xBC == 1`.
+- SendTGMessageToGroup binary-searches group table at `network+0xF4` by `[entry+0x04]`
+  group-name string.
+- SendToGroup_Iterate iterates `group+0x8` / `group+0xC` member array.
+- `NoMe` and `Forward` group-name strings at `0x008E5528` and `0x008D94A0`; both
+  built by `MultiplayerGame_Ctor` (xrefs at `0x0069E6FA` and `0x0069E716`). C++ creation
+  proven; Python only USES them via SWIG SendTGMessageToGroup.
+- Dispatcher class-tag gate + bias-decoded jump table (41 entries, opcodes 0x02-0x2A).
+- 0x06 AND 0x0D both route to `FUN_0069F880` via the SAME wrapper at `0x0069F3F1` -
+  LOCAL ONLY; no SendToGroup in body.
+- The 12 opcodes routed to `FUN_0069FDA0` (StartFiring 0x07, StopFiring 0x08, etc.) +
+  TorpedoFire 0x19 (FUN_0069F930) implement the per-handler relay pattern explicitly.
+- HostMsg 0x13 (FUN_006A01B0) is the canonical non-relay handler.
+- MultiplayerWindow dispatcher uses explicit byte compares for 0x00 / 0x01 / 0x16.
+
+**Corrected claims (3 material + 2 minor):**
+
+1. **C1 (material) - "Host Relay Path - Opaque Forwarding" section misattributes the
+   mechanism.** The pre-v5 doc claimed `FUN_006B63A0` is the type-0x00 game-data relay
+   path. The body of `FUN_006B63A0` is actually the **connect-event handler**: parses
+   peer ID, registers peer via `FUN_006B7410`, raises event 0x60007. The `FUN_006B51E0`
+   call inside it broadcasts the **connect event**, not game data. The TRUE game-data
+   relay is per-handler: handlers like `FUN_0069FDA0` explicitly Clone the message and
+   call `SendToGroup("Forward")` to relay. Replaced the entire pre-v5 section with the
+   "Per-Handler Relay Pattern" section grounded in the FUN_0069FDA0 disassembly.
+
+2. **C2 (material) - `NoMe` group attribution.** Pre-v5 doc claimed Python creates the
+   `NoMe` group. Reality: it's created by **C++ `MultiplayerGame_Ctor` at 0x0069E590**,
+   with the string xref at 0x0069E716 (and `Forward` at 0x0069E6FA - both groups built
+   in the same ctor body, gated on `DAT_0097FA8A && DAT_0097FA78`). Python uses the
+   group via SWIG SendTGMessageToGroup but does not create it.
+
+3. **C3 (material) - "Two relay mechanisms" architectural reframe.** Pre-v5 doc:
+   "C++ automatic relay + Python explicit relay = two relay mechanisms". Reality:
+   **THREE routing mechanisms** exist:
+   - (1) Per-handler `Forward` group routing: handlers (FUN_0069FDA0 / FUN_0069F930)
+     explicitly call SendToGroup("Forward") to relay game opcodes.
+   - (2) Python `NoMe` group routing: Python script messages (0x2C+) use
+     SendTGMessageToGroup("NoMe") to broadcast-excluding-self.
+   - (3) Connect-event broadcast: FUN_006B63A0 handles connect events with its own
+     broadcast pattern (FUN_006B51E0) for join/leave coordination only.
+   The doc adds a new "Three Routing Mechanisms" section near the top with a comparison
+   table; the old "two relay mechanisms" bullet in the star-topology section is updated
+   to reference the three.
+
+4. **C4 (minor) - function name correction.** `0x006B8530` was called
+   "TGMessage::GetData" in pre-v5 docs; it's actually `TGBufferStream_GetBufferAndSize`
+   - a two-output accessor that returns `*(void**)(this+4)` AND writes size into the
+   caller's `*sizeOut`. Behavior is the same; the prior name was inaccurate about the
+   second output. Renamed throughout body + Key Addresses table.
+
+5. **C5 (minor) - SendTGMessage pseudocode omission.** Pre-v5 pseudocode covered only
+   `targetID == 0` (broadcast) and `targetID > 0` (unicast); it omitted the
+   `targetID == -1` branch entirely. The new pseudocode covers all three modes,
+   including the peer+0x1C key lookup via FUN_006BB9D0. This closes python-messages.md
+   OQ4 at the **call-site level** (the meaning of `peer+0x1C` itself remains OQ1 here).
+
+**Cross-source-tagged claims** (`[cross-source-2026-02-24 trace]` -> relay-audit memory):
+
+These are not corrections - they corroborate per-handler relay decisions with empirical
+ratios that fall directly out of which handlers do or don't make the SendToGroup call:
+
+- Per-handler relay table column "Trace ratio C:S/S:C" - all ratios from the audit
+  memory; 1:1 = relayed, x:0 = absorbed.
+- Star Topology section evidence list - peer-map observation from the audit.
+- PythonEvent 0x06 vs 0x0D table - 0x0D 31:0 confirms LOCAL ONLY.
+
+**Dropped claims:** None - every doc claim survived in some form (3 reframed, 2 renamed,
+the rest unchanged).
+
+**Cross-doc impacts:**
+
+- **Closes OQ4 from python-messages.md.** SendTGMessage targetID == -1 mode resolves the
+  peer via `FUN_006BB9D0(optional_arg)` looking up `peer+0x1C == optional_arg`. The
+  semantics of `peer+0x1C` itself remains OQ1 here.
+- **Confirms `NoMe` and `Forward` group creation** at the C++ ctor that python-messages.md
+  already cited - cross-doc agreement.
+- **Confirms dispatcher boundary** with game-opcodes.md and wire-format-spec.md.
+- **Confirms TGMessage class identity** (sizeof 0x40, vtable 0x008958D0, ctor
+  at 0x006B82A0) - inherits cleanly from foundation #3 transport-layer C4.
+
+**New factual sections added (in the rendered doc):**
+
+- **Top-of-doc NOTE block** stating partial status, listing the 3 material + 2 minor
+  corrections, and pointing readers at the v5 evidence header.
+- **"Three Routing Mechanisms" section** with comparison table - replaces the pre-v5
+  "two relay mechanisms" claim.
+- **"Per-Handler Relay Pattern" section** with pseudocode for the
+  `Clone + FindGroup("Forward") + SendToGroup_Iterate` triad - replaces the pre-v5
+  "Host Relay Path - Opaque Forwarding" section.
+- **"Connect-Event Broadcast (FUN_006B63A0)" section** documenting mechanism #3.
+- **Per-handler relay table** with all 41-opcode relay decisions + trace ratios.
+- **Open Questions section** with OQ1 (peer+0x1C semantics), OQ2 (does Python ever use
+  targetID == -1?), OQ3 (chat 1:2 mystery).
+
+**Companion follow-ups (deferred to those docs' own validation passes):**
+
+- **python-messages.md** already covered the SendTGMessage 3-mode anchors in its
+  validation pass; no further edit needed there. The OQ4 reference in python-messages.md
+  can be marked "resolved at call-site level by tgmessage-routing.md OQ1" in the next
+  python-messages.md pass.
+- **transport-layer.md** already covers the cipher / fragment / factory layers; the C1
+  correction here (FUN_006B63A0 is connect-event handler) does not contradict any
+  transport-layer claim.
+- **network-protocol-analyst memory** - the audit memory accurately describes 0x0D
+  absorption, 0x15 absorption, 0x13 absorption, and the per-opcode relay ratios. The
+  chat 1:2 mystery (OQ3) is worth a follow-up trace test with single-message cadence
+  to disambiguate (a) "Python displays AND relays, count includes display" vs
+  (b) "undiscovered second relay path".
+
+**Open questions left for downstream rows:**
+
+1. **OQ1 - peer+0x1C semantics.** Call site located (FUN_006BB9D0 walks peer array for
+   `peer+0x1C == optionalArg`), candidate source located (FUN_006B7540 is called inside
+   the connect handler and is plausibly the producer), but the field's exact semantic
+   (per-connection token? session ID? something else?) is not anchored. A FUN_006B7540
+   deep-dive is the natural next step.
+2. **OQ2 - Does Python ever call SendTGMessage with targetID == -1?** Stock Python
+   patterns observed so far use 0 (broadcast) or positive peer IDs. Whether any stock
+   or mod script invokes mode A is unknown - would need a script-corpus grep over
+   `SendTGMessage(...` first-arg = -1.
+3. **OQ3 - Chat echo 1:2 ratio.** Audit shows 5 C->S, 10 S->C for 0x2C CHAT_MESSAGE.
+   `NoMe`-only relay can't explain it (excludes host, so each chat reaches 1 OTHER
+   client, not 2). Hypothesis (a): Python ALSO displays locally + relays + audit counts
+   local display. Hypothesis (b): undiscovered second relay path. Worth a dedicated
+   chat-trace investigation.
+
+**Files touched:** docs/protocol/tgmessage-routing.md (re-rendered with v5 frontmatter,
+top-of-doc NOTE block, "Three Routing Mechanisms" section, "Per-Handler Relay Pattern"
+section replacing "Host Relay Path", "Connect-Event Broadcast" section, per-handler
+relay table with trace ratios, SendTGMessage 3-mode pseudocode including targetID == -1,
+NoMe-creation correction, function-name C4 correction, Open Questions section,
+refreshed Key Addresses table). docs/protocol/v5-validation-status.md (this row added;
+§2 row #7 status flipped to partial).
 
 ---
 

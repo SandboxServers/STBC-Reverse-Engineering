@@ -95,8 +95,8 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 | 17 | delete-player-ui-wire-format.md | Leaf: opcode 0x17 + factory 0x866 | game-opcodes, pythonevent-wire-format | **partial (2026-05-28)** — 3 corrections + 4 clarifications + MAJOR architectural finding (two-registry architecture closes wire-format-spec OQ #2); receiver/transport/authority all v5-validated; 0x866 located in TGFactory registry (DAT_0099a578) which is separate from NiRTTI; FUN_006a0ca0 corrected to opcode 0x18 sender (not 0x17); dst_obj_id semantic corrected (network singleton handle, not ship/player); see §6.17 |
 | 18 | objnotfound-requestobj-enterset-wire-format.md | Leaf: opcodes 0x1D/0x1E/0x1F triad | game-opcodes, objcreate-serialization | **partial (2026-05-28)** — 3 material wire/value corrections (C1 setName is length-prefixed not null-terminated; C2 DAT_008d8ab8 is `"warp"` tunnel sentinel not `default space combat set`; C3 DAT_008e5c18 is FLT_MAX undamaged sentinel not low-HP threshold — strictly stricter gate) + 2 address-mapping corrections (C4 GetPlayerSlotFromObjID is at 0x006a19a0 not 0x005a2030; C5 0x006a7770 is MakeObjIDFromPlayerSlot the INVERSE and not called by triad) + 2 clarifications (Clar1 triad uses raw stream primitives only — bypasses TGFactory_DeserializeObject — these are command/RPC messages not event objects; Clar2 IsLocalPlayerShip is host-mode-aware so opcode 0x03 is selected for every team-bearing ship on a dedicated server); foundation cross-anchors all hold (dispatcher 0x0069F2A0, jump table 0x0069F534, TGNetwork singleton, "NoMe" group, "UNKNOWN" allocator); 5 functions renamed + 2 created in Ghidra + 5 plates; closes §4 #1 (FUN_005a2030 = ShipReadSpecies — binary sides with objcreate-serialization.md); closes §4 #15 (breadcrumb added); see §6.18 |
 | 19 | subsystem-integrity-hash.md | Leaf analysis: dead-code anti-cheat hash | stateupdate, per-ship-subsystem-wire-format | **partial (2026-05-28)** — ONE material correction (C1: 6 of 12 slot subsystem-identity labels were stale pre-correction names, now cascaded from foundation #1; doc line 129 negative claim "Repair does not appear in the hash" was wrong on TWO counts and is corrected — RepairSubsystem IS hashed at slot 7) + 4 clarifications (Clar-1 receiver event-type at event+0x10 as immediate; Clar-2 torpedo int->float cast precision; Clar-3 &ET_BOOT_PLAYER and 0x008000F6 are the same address constant; Clar-4 sender SAR is signed but wire-identical to unsigned shift); hash function reads CORRECT offsets — only the human-readable identity column was wrong; all 6 boolean sentinel magic constants byte-exact; sender/receiver/wire encoding/kick path byte-by-byte confirmed; container aliasing pattern documented; 5 functions renamed + 1 created (MultiplayerWindow_BootPlayerHandler at 0x00506170) + 4 plates; see §6.19 |
-| 20 | cf16-precision-analysis.md | Leaf analysis: CF16 encoder/decoder + precision tables | stream-primitives | pending |
-| 21 | cf16-explosion-encoding.md | Leaf analysis: opcode 0x29 + mod weapon ID round-trip | cf16-precision-analysis, game-opcodes | pending |
+| 20 | cf16-precision-analysis.md | Leaf analysis: CF16 encoder/decoder + precision tables | stream-primitives | **verified (2026-05-28)** — third protocol-family doc to clear `verified`; rendered as batch with leaf #21; ZERO algorithm / constant / struct changes; 1 refinement (R1 encoder xref count 5 not 4 — extra site at 0x005a2b3b in undefined fn, flag-0x10 speed gate confirmed; full enumerated 5-site table replaces the prior 4-row narrative) + 1 clarification (Clar1 `int()` vs `round()` cross-link added to companion #21 alongside the existing column); 5 .rdata constants byte-exact via shared anchor packet; 14-byte opcode 0x29 wire frame + 0x38 ExplosionDamage struct byte-by-byte confirmed (ctor at 0x004bbde0, vtable 0x0088c6c4); OQ1 (5th caller fn identity) added to §4; see §6.20 |
+| 21 | cf16-explosion-encoding.md | Leaf analysis: opcode 0x29 + mod weapon ID round-trip | cf16-precision-analysis, game-opcodes | **verified (2026-05-28)** — fourth protocol-family doc to clear `verified`; rendered as batch with leaf #20; ZERO algorithm / constant / encoded-hex changes; 1 byte-size correction (C1 CV4 position field is 5 bytes not "~7" — `mag_as_cf16=1` selects 3 dir bytes + CF16 magnitude; the 14-byte total was always inconsistent with the prior "~7" rendering) + 1 clarification (Clar1 ExplosionDamage 0x38-byte struct table cross-linked to companion #20); CV4 byte-size dispatch on `mag_as_cf16` flag documented at FUN_006d2f10; sender FUN_00595c60 + 2 replay-path callers (RequestObjHandler 0x006a02a0 + NewPlayerInGameHandler 0x006a1e70) all xref-confirmed; `round()` match results 15/25/273 YES, 2063 NO confirmed via arithmetic; cross-doc disagreement #8 (CF16 doc overlap) addressed via cross-links rather than merge; see §6.21 |
 | 22 | message-trace-vs-packet-trace.md | Leaf analysis: cross-trace opcode reconciliation | game-opcodes, stateupdate, tgmessage-routing | pending |
 | — | README.md | Index only — refreshed at end of family | all above | pending |
 
@@ -574,7 +574,7 @@ binary as authority.
 | 5 | Subsystem hash table duplication | wire-format-spec.md has its own 12-row hash order table; subsystem-integrity-hash.md is the dedicated doc | **CLOSED (2026-05-28, leaf #19):** subsystem-integrity-hash.md is canonical; foundation §6.1 retired the hub's duplicated Anti-Cheat Hash Field Offsets table in favor of a 1-line link to this leaf. The leaf's slot table is now v5-validated against the corrected ship-slot identities (foundation #1 C1 cascade applied as leaf C1). |
 | 6 | Per-collision PythonEvent count | pythonevent-wire-format.md says "12-14 messages: 1 ObjectExploding + 11 ADD_TO_REPAIR_LIST + 2 delayed" but worked example shows "14: 1 ObjectExploding + 13 ADD_TO_REPAIR_LIST" | Re-derive from trace |
 | 7 | TGEvent base vtable slot count | pythonevent-wire-format.md = 18 slots (0-17); engine family vtable doc baseline = 14 slots; collision-effect-protocol.md TGEvent vtable = 16 slots (ends at +0x40) | Ghidra vtable boundary check at 0x00895FF4 |
-| 8 | CF16 doc overlap | cf16-precision-analysis.md and cf16-explosion-encoding.md duplicate algorithm + constants + scale table + mod round-trip analysis | Merge: precision-analysis = algorithm/constants; explosion-encoding = wire-format + mod ID only |
+| 8 | CF16 doc overlap | cf16-precision-analysis.md and cf16-explosion-encoding.md duplicate algorithm + constants + scale table + mod round-trip analysis | **CLOSED (2026-05-28, leaves #20+#21):** addressed via cross-links rather than merge. Both docs retain the constants table + scale table + algorithm pseudocode for in-context reading (each doc must be self-sufficient at the reader's chosen entry point), but `int()` vs `round()` match strategies are split cleanly — #20 carries the `int() Match` column with FAIL rows; #21 carries the `round() Matches` column with YES/NO rows. Each doc cross-links to the other for the alternative strategy. ExplosionDamage 0x38-byte struct is rendered in both with explicit cross-link headers naming the sibling as the canonical source for the call-graph context. No merge needed — both docs `verified`. |
 | 9 | Per-ship subsystem catalog cross-source | per-ship-subsystem-wire-format.md and stateupdate-subsystem-wire-format.md both list subsystem types but with different inventories | Use stateupdate-subsystem-wire-format as the type catalog; per-ship as per-class catalog |
 | 10 | Direction-split claim location | stateupdate.md, stateupdate-subsystem-wire-format.md, and message-trace-vs-packet-trace.md all assert the SUB-vs-WPN by direction split with the same packet counts | stateupdate.md (canonical); others link |
 | 11 | Subsystem field offsets at ship+0x280 family | stateupdate-subsystem-wire-format.md says +0x280 count, +0x284 head, +0x288 tail, +0x28C free list; stateupdate.md says subsystem list at +0x284 (head only) | Ghidra decompile of Ship_AddSubsystemToLists FUN_005b3e50 |
@@ -585,6 +585,7 @@ binary as authority.
 | 16 | SpeciesToShip table duplication | game-opcodes.md (15 playable rows) and objcreate-serialization.md (45 rows) | objcreate-serialization.md canonical; game-opcodes.md keeps short list + link |
 | 17 | Opcode 0x06 worked-example accuracy | pythonevent-wire-format.md's "exactly 12-14 PythonEvents per collision" — 12-14 doesn't quite match either of the example breakdowns in the same doc | Re-derive from packet trace |
 | 18 | Receiver address for explosion in cf16 docs | Both cf16-precision-analysis.md and cf16-explosion-encoding.md cite Handler_Explosion_0x29 at 0x006A0080 (consistent across CF16 family); game-opcodes.md also = 0x006A0080. OK, this is consistent. (No disagreement; noted as positive cross-anchor.) |  | — |
+| 19 | 5th CF16 encoder caller identity (OQ1 from cf16-precision-analysis leaf #20) | cf16-precision-analysis.md cites a 5th xref to FUN_006d3a90 at 0x005a2b3b inside a Ghidra-undefined function (~0x005a2800-0x005a3000). The function is gated by `TEST BL,0x10` (same flag-0x10 speed bit as Ship__WriteStateUpdate) and preceded by `FMUL float ptr [0x0088d4e4]` (unit-conversion multiplier). Hypothesis: a non-Ship state-writer (torpedo/projectile). Documented at the field+gate+call-site level; only the parent function identity is open. | Decompile + name the parent function at the prologue. Non-blocking for CF16 docs. |
 
 ## 5. Cross-family disagreements (engine vs protocol)
 
@@ -4322,6 +4323,258 @@ Data anchors sub-table, Open Questions, Related Documents); `docs/protocol/v5-va
   `per-ship-subsystem-wire-format.md`, `objnotfound-requestobj-enterset-wire-format.md`,
   `v5-validation-status.md`, `docs/engine/rtti-class-catalog.md`
 - supersedes: prior 2026-02-15 subsystem-integrity-hash.md
+
+### 6.20 cf16-precision-analysis.md — 2026-05-28 (documentation-writer batch with leaf #21)
+
+**Status:** validated -> `verified` (after 1 refinement + 1 clarification). **Twentieth
+protocol doc** under v5 — sixth protocol leaf (after #15 collision-effect-protocol, #16
+set-phaser-level-protocol, #17 delete-player-ui, #18 objnotfound-requestobj-enterset, #19
+subsystem-integrity-hash). **Third protocol-family doc to clear `verified`** (after #15
+and #16). Rendered as a single batch with leaf #21 because both docs share the same Ghidra
+anchors (5 .rdata constants, encoder + decoder addresses, explosion sender/receiver, and
+the ExplosionDamage struct ctor).
+
+**Methodology:** Phase 1-5 per v5 workflow. Combined evidence packet supplied by
+game-archaeology-specialist (`.claude/agent-memory/game-archaeology-specialist/cf16-batch-validation-20260528.md`).
+Doc anchors against stream-primitives (foundation #2 — CF16 encoder/decoder addresses) and
+game-opcodes (mid #4 — opcode 0x29 wire frame row). No new Ghidra renames or plates this pass
+(plates on `CompressedFloat16_Encode` + `CompressedFloat16_Decode` already exist from prior
+stream-primitives validation; the CF16 leaves are the durable artifact for the deep dive).
+
+**Functions touched (shared with leaf #21):**
+
+| Function | Addr | effective_score | Plate? |
+|----------|------|-----------------|--------|
+| CompressedFloat16_Encode | 0x006D3A90 | 52.6 | yes (prior pass) |
+| CompressedFloat16_Decode | 0x006D3B30 | 49.1 | yes (prior pass) |
+| DamageableObject__SendExplosions_0x29 | 0x00595C60 | 0 (load-bearing) | needs plate (deferred) |
+| Handler_Explosion_0x29 | 0x006A0080 | 0 (load-bearing) | needs plate + rename (deferred) |
+| ExplosionDamage_Ctor | 0x004BBDE0 | n/a | anchored (struct layout matches doc) |
+
+**Wire-format / algorithm CONFIRMATION (byte-by-byte, no changes):**
+
+| Section | Claim | Verified via |
+|---------|-------|--------------|
+| Constants | 5 .rdata constants byte-exact: BASE=6F 12 83 3A / ZERO=00 00 00 00 / MULT=00 00 20 41 / ENC_SCALE=00 F0 7F 45 / DEC_SCALE=01 08 80 39 | Direct DAT_… read |
+| Encoder | [sign:1][scale:3][mantissa:12] bit layout + __ftol truncation + scale-8 overflow clamp | Decompile FUN_006D3A90 |
+| Decoder | iterative range rebuild + float32(1/4095) multiply | Decompile FUN_006D3B30 |
+| Opcode 0x29 wire frame | 1 (opcode) + 4 (objID) + 5 (CV4 pos) + 2 (CF16 radius) + 2 (CF16 damage) = 14 bytes; radius first (xref 0x00595d90), damage second (xref 0x00595da1) | Decompile FUN_00595C60 + FUN_006A0080 + ctor body |
+| ExplosionDamage struct | 0x38 bytes: vtable +0, position +0x08, radius +0x14, radius^2 +0x18, damage +0x1C, bbox min +0x20, bbox max +0x2C | Decompile FUN_004BBDE0; vtable 0x0088c6c4 hardcoded; allocator FUN_00718cb0(0x38) matches |
+| Mod round-trip via int() | 15.0/25.0/273.0/2063.0 all FAIL `int(decoded)==original` test | Arithmetic verification via encoder + decoder pseudocode |
+
+**One refinement:**
+
+**R1 — Encoder xref count is 5, not 4.** The pre-v5 doc closed with "All callers confirmed
+via xref analysis of FUN_006d3a90 (4 call sites total)" but the narrative listed only 4
+callers in a bullet list. Binary truth: there are **5 xrefs** to FUN_006d3a90:
+
+| # | From | Function | Field |
+|---|------|----------|-------|
+| 1 | 0x00595d90 | DamageableObject__SendExplosions_0x29 | radius |
+| 2 | 0x00595da1 | DamageableObject__SendExplosions_0x29 | damage |
+| 3 | 0x005b1e38 | Ship__WriteStateUpdate | speed (flag 0x10) |
+| 4 | 0x006d2b8c | CompressedVector3_Write | magnitude |
+| 5 | 0x005a2b3b | (Ghidra-undefined function) | speed-like (flag 0x10 gate via TEST BL,0x10) |
+
+The 5th site lives in an undefined function (~0x005a2800-0x005a3000), gated by the same
+flag-0x10 speed bit as Ship StateUpdate. Likely a non-Ship state-writer (torpedo/projectile
+hypothesis based on FMUL multiplier at 0x0088d4e4 preceding the encode call). Promoted to
+OQ1 below; tracked in §4 #19. Decoder symmetry: 5 xrefs to FUN_006d3b30 as well, paired with
+each encoder site.
+
+The pre-v5 narrative is replaced with an enumerated 5-row table that names each caller, gives
+the call-site address, and tags the 5th site `[open question — OQ1: function identity]`.
+
+**One clarification:**
+
+**Clar1 — `int()` vs `round()` match strategy cross-link to leaf #21.** The pre-v5 doc's
+"Mod Damage Value Round-Trip Analysis" table has an `int() Match` column where all four BC
+Remastered values FAIL. Companion leaf #21 has a `round() Matches` column where 3 of the 4
+succeed (only 2063 fails). These tables are NOT contradictory — they answer different
+questions:
+
+- `int(24.989) = 24` (truncate-toward-zero) → FAIL
+- `round(24.989) = 25` (banker's / away-from-zero) → YES
+
+A one-sentence note next to the table directs readers to leaf #21 for the `round()` view.
+Both columns are correct and useful — pick the strategy that matches your mod's comparison
+code. (Cross-doc disagreement §4 #8 closed via this cross-link convention rather than a
+merge — see §4 #8 closure.)
+
+**Severity:** the R1 count refinement does NOT change algorithm or wire format — only the
+narrative cap; the Clar1 cross-link adds reader clarity. Doc clears `verified` because all
+load-bearing claims (algorithm, constants, struct layout, wire format) are byte-by-byte
+confirmed and the two changes are non-load-bearing.
+
+**Cross-doc anchor reuse:**
+
+- **From stream-primitives (foundation #2):** CF16 encoder / decoder addresses and the 5
+  .rdata constants — confirmed.
+- **From game-opcodes (mid #4):** opcode 0x29 receiver = 0x006A0080 — confirmed (matches
+  this doc and leaf #21).
+- **From sibling leaf #21:** `round()` match column (cross-link added in body).
+
+**Cross-doc impacts (no in-this-pass modifications; batched at family close):**
+
+- `stream-primitives.md` (foundation #2) — note the CV4 byte-size dispatch on `param_5`
+  (`mag_as_cf16` flag): 5-byte form for CF16 magnitude, 7-byte form for raw float magnitude.
+  Both leaves #20 and #21 now cite this dispatch.
+- `game-opcodes.md` (mid #4) — opcode 0x29 row should cross-link both CF16 leaves.
+- `stateupdate.md` (mid #8) — flag 0x10 speed cites the encoder anchored in this leaf.
+
+**Open questions:**
+
+- **OQ1** — The Ghidra-undefined function at ~0x005a2800-0x005a3000 containing the 5th
+  encoder caller (site 0x005a2b3b). Field + gate + call-site documented; only the parent
+  function identity is open. Promoted to §4 #19. Non-blocking for this doc.
+
+**Verification methods used:**
+
+- Shared evidence packet from game-archaeology-specialist (single Ghidra session covering
+  both #20 and #21 against the 2026-05-28 import).
+- `decompile_function` on FUN_006D3A90, FUN_006D3B30, FUN_00595C60, FUN_006A0080, FUN_004BBDE0
+  (all confirmed via packet; not re-run by documentation-writer).
+- 5 .rdata constants byte-confirmed via direct read.
+- 5 xrefs to FUN_006d3a90 enumerated via `get_xrefs_to`.
+
+**Files touched:** `docs/protocol/cf16-precision-analysis.md` (re-rendered with breadcrumb
+header preserved, v5 frontmatter added with 12 evidence rows, NOTE block with 1 refinement
++ 1 clarification, enumerated 5-row caller table replacing the prior 4-row narrative bullet,
+Clar1 cross-link inserted next to the Mod Damage Value Round-Trip Analysis table, OQ1 section
+added, Related Documents section refreshed);
+`docs/protocol/v5-validation-status.md` (§2 row #20 status flipped from `pending` to
+`verified`; §4 #8 marked CLOSED with cross-link convention; §4 #19 added for OQ1; this §6.20
+entry added).
+
+**Header inputs for documentation-writer:**
+
+- validated: 2026-05-28
+- methodology: FUNCTION_DOC_WORKFLOW_V5
+- binary fingerprint: stbc.exe, image base 0x00400000, size 6182400 bytes
+- status: `verified`
+- companions: `cf16-explosion-encoding.md`, `stream-primitives.md`, `game-opcodes.md`,
+  `stateupdate.md`, `wire-format-spec.md`, `v5-validation-status.md`
+- supersedes: prior 2026-02-15 cf16-precision-analysis.md
+
+### 6.21 cf16-explosion-encoding.md — 2026-05-28 (documentation-writer batch with leaf #20)
+
+**Status:** validated -> `verified` (after 1 byte-size correction + 1 clarification).
+**Twenty-first protocol doc** under v5 — seventh protocol leaf. **Fourth protocol-family
+doc to clear `verified`** (after #15, #16, #20). Rendered as a single batch with leaf #20
+because both docs share the same Ghidra anchors. Sibling leaf #20 carries the algorithm-deep
+view; this doc carries the explosion-specific wire format + mod weapon-type ID round-trip.
+
+**Methodology:** Phase 1-5 per v5 workflow. Combined evidence packet supplied by
+game-archaeology-specialist (`.claude/agent-memory/game-archaeology-specialist/cf16-batch-validation-20260528.md`).
+Doc anchors against stream-primitives (foundation #2 — CF16 + CV4 dispatch), game-opcodes
+(mid #4 — opcode 0x29 row), and sibling leaf #20.
+
+**Functions touched (shared with leaf #20 plus 2 CV4 dispatchers and 2 replay-path callers):**
+
+| Function | Addr | effective_score | Plate? |
+|----------|------|-----------------|--------|
+| CompressedFloat16_Encode | 0x006D3A90 | 52.6 | yes (prior pass) |
+| CompressedFloat16_Decode | 0x006D3B30 | 49.1 | yes (prior pass) |
+| CompressedVector4_WriteVirtual | 0x006D2F10 | high | anchored (dispatch on param_5) |
+| CompressedVector4_ReadVirtual | 0x006D2FD0 | high | anchored (symmetric) |
+| DamageableObject__SendExplosions_0x29 | 0x00595C60 | 0 (load-bearing) | needs plate (deferred) |
+| Handler_Explosion_0x29 | 0x006A0080 | 0 (load-bearing) | needs plate + rename (deferred) |
+| MultiplayerGame__RequestObjHandler | 0x006A02A0 | high | replay-path caller |
+| Handler_NewPlayerInGame_0x2A | 0x006A1E70 | high | replay-path caller |
+| ExplosionDamage_Ctor | 0x004BBDE0 | n/a | anchored |
+
+**Wire-format / algorithm CONFIRMATION (byte-by-byte, no changes to algorithm or constants):**
+
+| Section | Claim | Verified via |
+|---------|-------|--------------|
+| Constants | Same 5 .rdata constants as leaf #20 — byte-exact | Direct DAT_… read |
+| Encoder / Decoder | Same algorithms as leaf #20 | Decompile FUN_006D3A90 / FUN_006D3B30 |
+| Encoded hex values | 15.0→0x50E3, 25.0→0x52AA, 273.0→0x6313, 2063.0→0x71E3 (all unique) | Arithmetic + encoder pseudocode |
+| round() match | 15/25/273 = YES, 2063 = NO (decodes to 2061.54 → rounds to 2062 not 2063) | Arithmetic on decoder pseudocode + Scale-7 step 2.198 |
+| Scale-7 mantissa collision | Mantissa 483 = both 2062 and 2063 | Arithmetic |
+| Sender + 2 replay-path callers | FUN_00595C60 called from MultiplayerGame__RequestObjHandler (0x006A02A0) + Handler_NewPlayerInGame_0x2A (0x006A1E70) | get_xrefs_to FUN_00595C60 |
+
+**One byte-size correction:**
+
+**C1 — CV4 position field is 5 bytes, NOT "~7 bytes".** The pre-v5 wire-format diagram
+labeled the position field as `CompressedVector4 (variable, ~7 bytes)`, which is internally
+inconsistent with its own 14-byte total: `1 + 4 + 7 + 2 + 2 = 16`, not 14. Binary truth:
+**5 bytes** for the explosion path.
+
+`CompressedVector4_WriteVirtual` at `0x006D2F10` dispatches on its `mag_as_cf16` / `param_5`
+argument:
+
+- `param_5 != 0` → 3 byte writes (vtable+0x54) + 1 short write (vtable+0x5C) = **5 bytes** (explosion path)
+- `param_5 == 0` → 3 byte writes + 1 float write (vtable+0x74) = **7 bytes** (other callers)
+
+`DamageableObject__SendExplosions_0x29` (FUN_00595C60) calls `CompressedVector4_WriteVirtual`
+with `1` → 5-byte path. The receiver `FUN_006A0080` calls `CompressedVector4_ReadVirtual`
+with `1` → matching 5-byte path. The 14-byte total `1 + 4 + 5 + 2 + 2 = 14` is consistent
+only with CV4=5. The position rendering is corrected to
+`CompressedVector4 (5 bytes: 3 direction bytes + CF16 magnitude)` with an explanatory note
+about the dispatch and a cross-link to `stream-primitives.md`.
+
+**Severity:** the C1 correction is HIGH severity for OpenBC wire-format implementation — a
+clean-room implementer reading the pre-v5 "~7 bytes" would produce a 16-byte opcode 0x29
+that no stock client can parse. The 14-byte total in the same diagram should have been the
+red flag; the pre-v5 doc was internally inconsistent. No change to algorithm or constants.
+
+**One clarification:**
+
+**Clar1 — ExplosionDamage 0x38-byte struct table cross-linked to sibling leaf #20.** The
+pre-v5 doc only mentioned three offsets in passing (`+0x14=radius, +0x18=radius^2,
++0x1C=damage`). Companion leaf #20 has the full 9-field table with bbox extents at +0x20
+and +0x2C. The full table is now rendered in both docs (each doc must be self-sufficient
+at the reader's chosen entry point) with explicit cross-link headers naming the sibling.
+
+**Cross-doc anchor reuse:**
+
+- **From stream-primitives (foundation #2):** CV4 dispatch on `param_5` (`mag_as_cf16`
+  flag) — body cross-link added.
+- **From game-opcodes (mid #4):** opcode 0x29 receiver at 0x006A0080 — confirmed.
+- **From sibling leaf #20:** ExplosionDamage 0x38-byte struct (canonical there; mirrored
+  here for in-context reading) and the `int()` truncation strategy column.
+
+**Cross-doc impacts (no in-this-pass modifications; batched at family close):**
+
+- `stream-primitives.md` (foundation #2) — same as leaf #20: document CV4 byte-size
+  dispatch on `param_5` explicitly.
+- `game-opcodes.md` (mid #4) — opcode 0x29 row should cross-link both CF16 leaves.
+- `stateupdate.md` (mid #8) — no change (this doc covers explosion path, not StateUpdate).
+- `pythonevent-wire-format.md` (leaf #14) — already cross-linked from this doc's Related
+  Documents; no change needed.
+- **OpenBC clean-room specs** — if any OpenBC wire-format spec for opcode 0x29 took the
+  pre-v5 "~7 bytes" rendering, alert the OpenBC docwriter to use 5 bytes (CV4 with
+  CF16 magnitude).
+
+**Open questions:** none specific to this doc. OQ1 (5th encoder caller identity) is shared
+with leaf #20.
+
+**Verification methods used:**
+
+- Shared evidence packet from game-archaeology-specialist (single Ghidra session covering
+  both #20 and #21).
+- `decompile_function` on FUN_006D2F10 (CV4 writer) for the param_5 dispatch confirmation.
+- Arithmetic verification of all 14 rows in the Extended Precision Reference table against
+  the decoder pseudocode.
+
+**Files touched:** `docs/protocol/cf16-explosion-encoding.md` (re-rendered with breadcrumb
+header preserved, v5 frontmatter added with 14 evidence rows, NOTE block with 1 byte-size
+correction + 1 clarification, C1 dedicated subsection under the wire-format diagram with
+CV4 byte-size dispatch table, Clar1 ExplosionDamage struct table rendered in full with
+sibling cross-link, [v5-validated 2026-05-28] tags on each algorithm section, Related
+Documents section refreshed); `docs/protocol/v5-validation-status.md` (§2 row #21 status
+flipped from `pending` to `verified`; this §6.21 entry added).
+
+**Header inputs for documentation-writer:**
+
+- validated: 2026-05-28
+- methodology: FUNCTION_DOC_WORKFLOW_V5
+- binary fingerprint: stbc.exe, image base 0x00400000, size 6182400 bytes
+- status: `verified`
+- companions: `cf16-precision-analysis.md`, `stream-primitives.md`, `game-opcodes.md`,
+  `wire-format-spec.md`, `pythonevent-wire-format.md`, `v5-validation-status.md`
+- supersedes: prior 2026-02-15 cf16-explosion-encoding.md
 
 ---
 

@@ -90,7 +90,7 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 | 12 | per-ship-subsystem-wire-format.md | Mid: 16 stock ship subsystem catalogs | stateupdate-subsystem-wire-format | **partial (2026-05-28)** — 4 sampled ships byte-exact (Sovereign 49 / Bird of Prey 32 / Galor 31 / Akira 47); ZERO material wire-format corrections; 3 refinements (R1 cycle-byte math is per-tick exact / per-cycle approximate due to bit packing; R2 "top-level" is post-link count; R3 silently-dropped templates like Probe Launcher / Shuttle Bay / Decoy Launcher); 11 remaining ships + Enterprise@37 at medium confidence via pattern extrapolation; foundation cross-anchor (mid #11 ship+0x2B0..+0x2DC slot table) re-confirmed; see §6.12 |
 | 13 | tgobjptrevent-class.md | Mid: TGObjPtrEvent class layout + 11 producers | (engine: TGEvent vtable 0x00895FF4) | **partial (2026-05-28)** — 0 wire-format / 0 producer corrections; 3 corrections (C1 0x101 is TGEvent itself not "TGSubsystemEvent" / C2 vtable slot 0 is dtor not 0x00403310 + 17 slots not 12-14 / C3 SWIG wrapper addresses unverified in current Ghidra DB); class layout 0x2C bytes confirmed byte-by-byte; all 11 game event types verified at producer sites; dual-fire and host-only gates confirmed; see §6.13 |
 | 14 | pythonevent-wire-format.md | Leaf: opcode 0x06 + 4 event factories | tgobjptrevent-class, game-opcodes | **partial (2026-05-28)** — class hierarchy correction (0x101 = TGEvent itself, not "TGSubsystemEvent"); ObjectExploding IsA-chain refinement (3 IDs not 2); source-vs-dest WriteObjectRef encoding asymmetry; wire-format dimensions for all 4 classes byte-by-byte CONFIRMED; both producers (HostEventHandler 0x006A1150 + ObjectExplodingHandler 0x006A1240) byte-by-byte confirmed but were undefined in DB (still are — disassembled raw); MpgameHandlePythonEvent renamed at 0x0069F880; see §6.14 |
-| 15 | collision-effect-protocol.md | Leaf: opcode 0x15 + CollisionEvent class + validation chain | game-opcodes, stream-primitives | pending |
+| 15 | collision-effect-protocol.md | Leaf: opcode 0x15 + CollisionEvent class + validation chain | game-opcodes, stream-primitives | **verified (2026-05-28)** — first protocol family doc to clear `verified`; all 110+ claims byte-by-byte confirmed; ZERO material wire-format changes; 1 byte-level typo (handler-table 0x005afab0 -> 0x005AFAD0) + 1 wording clarification (PostEvent __thiscall via TGEventManager singleton at 0x0097F838); critical OpenBC finding confirmed (stock dedi has NO server-side recomputation of contact points or force); see §6.15 |
 | 16 | set-phaser-level-protocol.md | Leaf: opcode 0x12 + TGCharEvent | game-opcodes, tgobjptrevent-class | pending |
 | 17 | delete-player-ui-wire-format.md | Leaf: opcode 0x17 + factory 0x866 | game-opcodes, pythonevent-wire-format | pending |
 | 18 | objnotfound-requestobj-enterset-wire-format.md | Leaf: opcodes 0x1D/0x1E/0x1F triad | game-opcodes, objcreate-serialization | pending |
@@ -3167,6 +3167,176 @@ not "CopyFrom"; same correction as doc #13 C2).
 **Files touched:** `docs/protocol/v5-validation-status.md` (this row
 added; §2 row #14 status flipped to partial; §3.14 inventory will be
 refreshed when documentation-writer renders the corrected doc).
+
+---
+
+### 6.15 collision-effect-protocol.md — 2026-05-28 (game-archaeology-specialist)
+
+**Status:** validated -> **`verified`**. **First protocol family doc to
+clear the `verified` bar** (and the first leaf doc in protocol family).
+All 110+ load-bearing claims confirmed byte-by-byte against the current
+Ghidra import. ZERO material wire-format changes. Just 1 byte-level typo
+(C1: handler-table line 293 had `0x005afab0` for `ShipClass::HostCollisionEffectHandler`,
+correct is `0x005AFAD0` — the doc's own main "Related Functions" table at
+line 318 already has it right) and 1 wording clarification (R1: PostEvent
+re-tag is __thiscall to TGEventManager singleton at 0x0097F838, not a
+"queue push to DAT_0097f838").
+
+**Critical OpenBC finding confirmed**: Stock dedi `CollisionEffectHandler`
+(0x006A2470) does NOT recompute collision contact points or force values.
+After 3 gates (ownership / self-collision / distance gap < 26.0f) it
+accepts the client-supplied `event.force` as-is and re-posts the event for
+`Ship_HostCollisionEffectHandler` (0x005AFAD0) to apply damage from the
+client-claimed value. This is the binary backing for CLAUDE.md's "Collision
+damage authority inverted" note. Negative-claim verified by full-body
+decompile of FUN_006A2470: no FMUL/FDIV on contact/force fields after
+deserialize, no STR writes to event+0x40 (force) or event+0x2C (contact
+array).
+
+**Methodology:** Phase 1-5 per v5 workflow. `program: STBC.exe` on every
+MCP call. Doc anchors against engine doc #8 (TGEvent vtable 0x00895FF4),
+doc #4 (game-opcodes opcode 0x15 dispatcher row), doc #14 (PythonEvent
+cross-anchor — collision feeds into the PythonEvent 0x06 damage cascade
+downstream via ADD_TO_REPAIR_LIST + ObjectExploding).
+
+**Functions touched (completeness):**
+
+| Function | Addr | effective_score | Plate? |
+|----------|------|-----------------|--------|
+| CollisionEffectHandler | 0x006A2470 | high | yes (added) |
+| Ship__HostCollisionEffectHandler | 0x005AFAD0 | high | yes (renamed) |
+| GetShipFromPlayerID | 0x006A1AA0 | high | yes (renamed) |
+| IsLocalPlayerShip | 0x005AE140 | high | yes (renamed) |
+| CastToShipClass | 0x005AB670 | high | yes (renamed) |
+| TGFactory_DeserializeObject | 0x006D6200 | high | yes (renamed) |
+| TGEventManager__PostEvent | 0x006DA2A0 | high | yes (renamed) |
+
+**Wire-format CONFIRMATION (byte-by-byte):**
+
+| Section | Claim | Verified via |
+|---------|-------|--------------|
+| Constant prefix | 13 bytes `15 24 81 00 00 50 00 80 00 00 00 00 00` | 3 example packets decoded vs class layout |
+| Total size | `22 + count*4` bytes | layout sum: opcode(1) + class(4) + code(4) + src(4) + tgt(4) + count(1) + n*4 + force(4) |
+| Class layout | 0x44 bytes, 18 fields | ctor 0x00586D00 decompile + vtable 0x0089395C dump |
+| Vtable | 17 slots at 0x0089395C | `read_memory` dump; every slot target matches doc |
+| Network serialization pair | WriteToStream 0x005871A0 / ReadFromStream 0x00587300 | vtable+0x34/+0x38 slots + raw disasm of prologue bytes |
+| Persistence pair | WriteStream 0x00586FB0 / ReadStream 0x00587030 | vtable+0x10/+0x14 slots |
+
+**Confirmed claims (high confidence):**
+
+- **Dispatcher route opcode 0x15** — jump-table at `0x0069F534` slot index
+  `(0x15 - 2) = 0x13`, offset 0x4C, byte address `0x0069F580` reads
+  `91 F4 69 00` -> thunk at **`0x0069F491`** -> `CALL 0x006A2470`. Cross-
+  anchor with doc #4 (game-opcodes dispatcher recovery).
+- **Distance gate constant = 26.0f** — `_DAT_008955C8` raw bytes
+  `00 00 D0 41` = 0x41D00000 = 26.0f. Compared via `FCOMP [0x008955C8]`
+  at 0x006A25DF; branched at JZ 0x006A25EA. The full algorithm:
+    `dist = sqrt((p1-p2).x^2 + (p1-p2).y^2 + (p1-p2).z^2)` via FSQRT at 0x006A25B7
+    `r1 = ship1->vtable[+0xE4]()[+0x0C]` (GetModelBound bbox radius)
+    `r2 = ship2->vtable[+0xE4]()[+0x0C]`
+    `gap = dist - r1 - r2`; reject if `gap >= 26.0f`.
+- **Damage cascade constants (all 4 byte-verified):**
+    - `_DAT_00888A78` = `0A D7 23 3C` = 0x3C23D70A = **0.01f** (dead-zone)
+    - `_DAT_008944BC` = `00 00 61 44` = 0x44610000 = **900.0f** (HP scale)
+    - `_DAT_008944B8` = `00 00 FA 43` = 0x43FA0000 = **500.0f** (HP base)
+    - Force-scale arg = `0x3FC00000` = **1.5f** (3rd param at call from
+      HostCollisionEffectHandler to SubsystemDamageDistributor 0x005AFD70)
+  Formula: `raw = (event.force / ship.mass) / contactCount; if (raw > 0.01f) damage = raw * 900 + 500`.
+- **Event re-tag + PostEvent disasm pattern** (0x006A25EC-0x006A25F9):
+    ```
+    PUSH ESI                       ; event
+    MOV  ECX, 0x97F838             ; this = g_pEventManager
+    MOV  [ESI+0x10], 0x008000FC    ; event->type = ET_HOST_OBJECT_COLLISION
+    CALL TGEventManager__PostEvent ; FUN_006DA2A0
+    ```
+  Confirms doc's "event manager at 0x0097F838" but the function is __thiscall
+  (ECX=this), not "post to DAT queue". `FUN_006DA2A0` thunks to `FUN_006DE330`
+  which is the dispatch loop.
+- **CompressedVec4_Byte read primitive** — `DecompressVec4_Byte` at 0x006D30E0
+  is the stream vtable+0x9C entry. Reads 4 bytes via vtable+0x50 (ReadByte)
+  then dispatches via vtable+0xBC for radius-scaled Vec3 reconstruction.
+  `CompressVec4_Byte_Direction` at 0x006D29A0 and `CompressVec4_Byte_Magnitude`
+  at 0x006D2D10 are vtable+0xA0 / +0xAC of the writer stream class.
+- **3 helper functions byte-verified:**
+    - `GetShipFromPlayerID` (0x006A1AA0): iterates `DAT_0097E9C8` game-set
+      list, matches `ship+0x2E4 == player_id`. __cdecl.
+    - `IsLocalPlayerShip` (0x005AE140): on host (`DAT_0097FA89 != 0`) returns
+      `ship+0x2E4 != 0`; off-host returns `FUN_004069B0() == ship`.
+    - `CastToShipClass` (0x005AB670): calls `ship->vtable[+8](0x8008)`
+      (NiObject::IsA-style check for ship class ID 0x8008).
+- **Vtable at 0x0089395C — 17 slots all match doc body table** byte-for-byte
+  via `read_memory` dump. No slot reassignment, no slot count delta.
+- **Trace cross-anchor** — 84/session frequency, C->S only confirmed via
+  relay-audit-20260224 (2 C->S / 0 S->C observed). Matches wire-format-spec
+  foundation #1 and the doc's "138,695 packets / 0 relays" claim.
+
+**Corrected claims:**
+
+1. **C1 — Handler-table line 293 byte-level typo.** Doc line 293 reads
+   `ET_HOST_OBJECT_COLLISION (0x008000FC) -> ShipClass::HostCollisionEffectHandler (0x005afab0)`.
+   Correct address is **`0x005AFAD0`**. The doc's own main "Related
+   Functions" table at line 318 already has `0x005afad0` for this function.
+   This is a 2-byte typo (the registration callout snippet had `b0` where
+   it should have `d0`).
+
+2. **R1 — PostEvent semantics clarification (refinement, not bug).** Doc
+   step 12 says "Post to event queue at DAT_0097f838". The actual pattern
+   is a __thiscall to TGEventManager singleton: `MOV ECX, 0x97F838; CALL
+   0x006DA2A0`. The function is `TGEventManager::PostEvent` taking this in
+   ECX and the event as 1st stack arg. The disasm pattern is the standard
+   MSVC __thiscall invocation. "Queue push" was the abstract effect, but
+   the binary signature is a virtual dispatch into a synchronous handler
+   loop. Doc text updated to reflect the singleton semantics.
+
+**Dropped claims:** None.
+
+**Open questions:** None blocking. The hash-cascade claim
+"DamageableObject::CollisionEffectHandler" -> Python "Effects.CollisionEffect"
+(string at 0x008E5CC8, dispatch via FUN_006D92D0) is downstream-scope and
+lives in `docs/gameplay/damage-system.md`. TGEvent vtable slot-count
+disagreement (open from leaf #14 cross-doc reconciliation) is not relevant
+here — this doc uses the 16-slot TGEvent base table consistent with
+engine doc #8.
+
+**Cross-doc anchor reuse:**
+
+- **From doc #4 (game-opcodes.md):** opcode 0x15 row (handler 0x006A2470,
+  total = 22 + count*4 bytes, wire layout) — confirmed.
+- **From doc #14 (pythonevent-wire-format.md):** ObjectExploding +
+  ADD_TO_REPAIR_LIST PythonEvents fire downstream from collision damage
+  — confirmed as the collision -> 0x06 cascade. The leaf #14 doc covers
+  the PythonEvent half of the chain; this doc covers the opcode 0x15
+  half.
+- **From engine doc #8 (event-system-architecture.md):** TGEvent base
+  vtable 0x00895FF4 (16 slots used here for reference). Consistent.
+- **From wire-format-spec foundation #1:** TGEventManager singleton at
+  0x0097F838, ET_OBJECT_COLLISION 0x00800050, ET_HOST_OBJECT_COLLISION
+  0x008000FC, ET_COLLISION_DAMAGE 0x00800053. All consumed; no overrides.
+
+**Verification methods used:**
+- `decompile_function` on CollisionEffectHandler (0x006A2470),
+  Ship__HostCollisionEffectHandler (0x005AFAD0), GetShipFromPlayerID
+  (0x006A1AA0), IsLocalPlayerShip (0x005AE140), CastToShipClass
+  (0x005AB670), CollisionEvent ctor (0x00586D00), GetPointInternal
+  (0x00595410), TGFactory_DeserializeObject (0x006D6200),
+  TGEventManager__PostEvent (0x006DA2A0).
+- `disassemble_bytes` for the undefined-in-DB cluster (WriteToStream
+  0x005871A0, ReadFromStream 0x00587300, ShipClass::CollisionEffectHandler
+  0x005AF9C0, CompressVec4_Byte primitives 0x006D29A0/0x006D2D10).
+- `read_memory` for CollisionEvent vtable @ 0x0089395C (68 bytes, 17 slots),
+  TGEvent base vtable @ 0x00895FF4 reference.
+- `inspect_memory_content` for the 4 damage constants
+  (0x008955C8 / 0x00888A78 / 0x008944BC / 0x008944B8) and the
+  `"Effects.CollisionEffect"` string at 0x008E5CC8.
+- `get_xrefs_to` for the 0x008000FC / 0x00800050 / 0x00800053 address-as-
+  constant pattern (xrefs are exclusively immediate-operand uses, no
+  data-reads, confirming the address-as-identifier semantics).
+
+**Files touched:** `docs/protocol/v5-validation-status.md` (this row added;
+§2 row #15 status flipped to `verified`); `docs/protocol/collision-effect-protocol.md`
+(rendered with v5 header, NOTE block, Server-Side Authority Note,
+Ghidra Annotations Applied section, C1 typo fix, R1 PostEvent clarification,
+all section tables tagged `[v5-validated 2026-05-28]`).
 
 ---
 

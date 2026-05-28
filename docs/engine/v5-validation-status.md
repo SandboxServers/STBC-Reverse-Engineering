@@ -53,7 +53,7 @@ Order reflects dependency direction: each row's evidence is consumed by all rows
 
 | Order | Doc | Layer | Pre-existing depends on | Current status |
 |-------|-----|-------|--------------------------|----------------|
-| 1 | function-map.md | Foundation: function totals + range partition | (none) | pending |
+| 1 | function-map.md | Foundation: function totals + range partition | (none) | partial (2026-05-28) — foundation verified, named-function lists carry confidence: low |
 | 2 | function-mapping-report.md | Foundation: coverage % + script outputs | function-map.md | pending |
 | 3 | rtti-class-catalog.md | Foundation: 670 class name strings | function-map.md | pending |
 | 4 | nirtti-factory-catalog.md | Foundation: 117 factory registrations | rtti-class-catalog.md | pending |
@@ -454,3 +454,17 @@ can grep and confirm.
 The most evidence-dense docs (function-map.md and rtti-class-catalog.md) should be
 processed first to surface any binary-level drift; everything else then validates against
 post-Pass-8C names.
+
+---
+
+## 6. Validation log
+
+### 2026-05-28 — function-map.md (foundation #1)
+
+- **Confirmed:** 8 claims — address range 0x004010e0-0x008879e0, Unwind@ count 4,692, Catch@ count 3, 18 of 20 category counts, all sampled boundaries non-overlapping, MpgameHandleMessage dispatcher address + opcode set + jump table base.
+- **Corrected:** 11 claims — total 18,247→18,249 (in-body) + 18,576 (incl. EXTERNAL), FUN_ 13,333→13,467, thunks 133→164, Cat 9 44→45 (the +1 is MpgameHandleMessage), Cat 17 1,619→1,620, dispatcher 0x0069f2a0 promoted from "handler addr" to function entry, header "18 categories" → "20", Cross-Reference dispatcher row updated, Summary table totals updated, parenthetical sub-range math dropped from Cat 4/6/18/20.
+- **Dropped:** 0.
+- **Pending (confidence: low):** ~75 entries across per-category "Named/Identified Functions" lists tagged `[v5: unnamed in current import]`. These retire progressively as per-function v5 passes name them.
+- **Open question:** Cat 17 +1 specific function not identified — flagged for later targeted xref hunt.
+- **Status:** `partial`. Foundation claims are verified; named-function lists carry `confidence: low` per convention (a) from `docs/guides/v5-evidence-header.md`. Doc reaches `verified` once all per-category named-function lists either reflect current Ghidra names or get dropped.
+- **Files touched:** `docs/engine/function-map.md`, `docs/engine/v5-validation-status.md` (this tracker). `docs/engine/README.md` row for function-map.md was checked and needs no update — it says "18K-function organized map" without committing to a specific total.

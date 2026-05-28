@@ -20,6 +20,7 @@
 - [subsystem-vtable-map.md](subsystem-vtable-map.md) - Phase 8E: subsystem class hierarchy, 19 vtable addresses, 30-slot map
 - [weapon-class-hierarchy.md](weapon-class-hierarchy.md) - Phase 8J: weapon/projectile class hierarchy (86 renames)
 - [ui-class-hierarchy.md](ui-class-hierarchy.md) - Phase 8D: UI system classes (135 renames)
+- [function-map-validation-20260528.md](function-map-validation-20260528.md) - v5 validation: doc partition is exact (+0 in 18/20 cats, +1 in Cat 9 & 17); 18,249 in-body funcs (doc:18,247); Unwind=4692 EXACT
 
 ## TGObjPtrEvent System (2026-02-21, COMPLETE)
 - See [docs/protocol/tgobjptrevent-class.md](../../docs/protocol/tgobjptrevent-class.md)
@@ -86,6 +87,7 @@
 - Flag 0x20 = round-robin subsystem health; linked list order (no fixed index)
 - 3 WriteState variants: Base(0x0056d320), PoweredSS(0x00562960), PowerSS(0x005644b0)
 - 10-byte budget per tick; Sovereign has 11 top-level (not 33)
+- OpenBC parity note (2026-02-26): `server_dispatch.c` relays client `0x1C` payload bytes unchanged (unreliable) except pure `dirty==0x20` is dropped; server-auth health `0x20` is regenerated via `bc_ship_build_health_update` from `ser_list`.
 
 ## Client Join Sequence
 - 0x00 (settings) -> 0x01 (GameInit) -> 0x35 (MISSION_INIT) -> 0x37 (SCORE)

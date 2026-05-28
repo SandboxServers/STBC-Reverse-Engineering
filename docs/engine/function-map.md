@@ -1,10 +1,86 @@
 > [docs](../README.md) / [engine](README.md) / function-map.md
 
+---
+title: stbc.exe Organized Function Map
+type: reference
+audience: re-engineer
+validated: 2026-05-28
+methodology: FUNCTION_DOC_WORKFLOW_V5
+binary:
+  name: STBC.exe
+  size: 6394712
+  base: 0x00400000
+status: partial
+evidence:
+  - claim: "Total in-body functions in stbc.exe is 18,249"
+    address: null
+    function: null
+    completeness: null
+    confidence: high
+    note: "From search_functions_enhanced total on STBC.exe; matches .text 0x00401000-0x00887fff. get_function_count returns 18,576 including 327 EXTERNAL import thunks."
+  - claim: "Function entry-address range is 0x004010e0 - 0x008879e0"
+    address: 0x004010e0
+    function: FUN_004010e0
+    confidence: high
+    note: "Lowest function 0x004010e0, highest 0x008879e0 (Unwind@008879e0). Exact match to prior claim."
+  - claim: "Unwind handler count is 4,692"
+    address: null
+    function: null
+    confidence: high
+    note: "search_functions_enhanced(name_pattern='Unwind@') total=4692 on STBC.exe."
+  - claim: "Catch handler count is 3"
+    address: 0x004168c8
+    function: Catch@004168c8
+    confidence: high
+    note: "Three addresses: 0x004168c8, 0x006f5a8a, 0x00721259."
+  - claim: "FUN_xxxxxxxx (unnamed) count is 13,467"
+    address: null
+    function: null
+    confidence: high
+    note: "search_functions_enhanced(name_pattern='FUN_') total=13467. +134 vs prior 13,333."
+  - claim: "Thunk count is 164"
+    address: null
+    function: null
+    confidence: high
+    note: "search_functions_enhanced(is_thunk=true) total=164. +31 vs prior 133, likely improved thunk recognition."
+  - claim: "20 address-range categories partition the binary exhaustively and non-overlappingly"
+    address: null
+    function: null
+    confidence: high
+    note: "All 18,249 in-body functions bin into exactly one category. Boundaries verified at Cat 9↔10 (0x006A3000), Cat 14↔15 (0x006E0000), Cat 19↔20 (0x00870000)."
+  - claim: "Category 9 MultiplayerGame: 45 functions in 0x0069E000-0x006A2FFF"
+    address: 0x0069f2a0
+    function: MpgameHandleMessage
+    confidence: high
+    note: "+1 vs prior count 44; the new function is MpgameHandleMessage at 0x0069f2a0 (created via v5 dispatcher recovery 2026-05-28). Prior doc qualifier 'handler addr, not function entry' is now stale."
+  - claim: "MultiplayerGame opcode dispatcher is MpgameHandleMessage at 0x0069f2a0, handling opcodes 0x02-0x2A via jump table at 0x0069F534"
+    address: 0x0069f2a0
+    function: MpgameHandleMessage
+    completeness: 69.94
+    confidence: high
+    note: "v5 dispatcher recovery: __thiscall(MultiplayerGame*, TGMessage*), body 0x0069F2A0-0x0069F530 (657 bytes). 41-entry jump table indexed by opcode-2. Opcodes 0x00 (Settings), 0x01 (GameInit), 0x16 (UICollisionSetting) are handled by MultiplayerWindow dispatcher (0x00504c10), not MultiplayerGame. Completeness score will rise once MultiplayerGame/TGMessage/TGBufferStream struct skeletons land (parallel work)."
+  - claim: "Per-category 'Named/Identified Functions' list entries reflect pre-v5 annotation-script output and are not currently applied to the Ghidra import"
+    address: null
+    function: null
+    confidence: low
+    note: "Sample of 6 functions confirmed: 5/6 exist as FUN_xxxxxxxx in Ghidra (unnamed); only 0x0069f2a0 has been v5-renamed. Per-function v5 documentation passes will progressively retire 'confidence: low' on these entries."
+companions:
+  - docs/engine/function-mapping-report.md
+  - docs/engine/decompiled-functions.md
+  - docs/engine/v5-validation-status.md
+  - docs/engine/README.md
+---
+
 # stbc.exe Organized Function Map
 
-Total: **18,247 functions** (13,333 FUN_, 133 thunks, 86 named imports/CRT, 4,692 Unwind handlers, 3 Catch handlers)
+> [!NOTE]
+> This doc is `status: partial`. The foundation claims — total counts, address-range partition, per-category sizes, the MultiplayerGame dispatcher — are v5-verified against the current Ghidra import (2026-05-28). The per-category **"Named/Identified Functions"** lists are pre-v5 annotation-script output and are **not currently applied to the Ghidra import**; addresses are still correct, but the names are aspirational pending per-function v5 documentation passes. Entries known to be unnamed in the current import are tagged `[v5: unnamed in current import]`. See [docs/guides/v5-evidence-header.md](../guides/v5-evidence-header.md) for the standard.
+
+Total: **18,249 functions** in-body (13,467 FUN_, 164 thunks, 86 named imports/CRT, 4,692 Unwind handlers, 3 Catch handlers). `get_function_count` returns **18,576** including 327 EXTERNAL import thunks.
 Address range: 0x004010e0 - 0x008879e0
 Complete flat listing: [function-map.txt](function-map.txt)
+
+The binary partitions into **20 address-range categories** (verified exhaustive and non-overlapping). Each category gets its own section below.
 
 ---
 
@@ -12,7 +88,7 @@ Complete flat listing: [function-map.txt](function-map.txt)
 
 ### MultiplayerGame Event Handlers (registered by FUN_0069efe0)
 ```
-0x0069f2a0  ReceiveMessageHandler        (opcode dispatch for game messages 0x00-0x1F)
+0x0069f2a0  MpgameHandleMessage          (opcode dispatch for game messages 0x02-0x2A, jump table at 0x0069F534)
 0x006a07d0  EnterSetHandler
 0x006a0a10  ExitedWarpHandler
 0x006a0a20  DisconnectHandler
@@ -75,6 +151,10 @@ Contains fundamental engine objects, base class vtable methods, TGString operati
 memory management wrappers, and core object hierarchy (BaseObjectClass and derivatives).
 
 ### Named/Identified Functions
+
+> [!NOTE]
+> Function names in this section are pre-v5 annotation-script output and are **not currently applied to the Ghidra import**. Addresses are correct (verified 2026-05-28); names are aspirational, pending per-function v5 documentation passes. The Catch handler at 0x004168c8 is the one exception — it is real Ghidra output.
+
 ```
 0x004028a0  thunk_FUN_006ff7b0           (-> Python/SWIG helper)
 0x00403350  thunk_FUN_006d5d70           (-> Stream/serialization)
@@ -112,23 +192,30 @@ The core application class (UtopiaApp) and module system (UtopiaModule). Contain
 initialization, main loop, multiplayer setup, and Python embedding entry points.
 
 ### Named/Identified Functions
+
+> [!NOTE]
+> Function names in this section are pre-v5 annotation-script output and are **not currently applied to the Ghidra import**. Addresses are correct (verified 2026-05-28); names are aspirational, pending per-function v5 documentation passes.
+
 ```
 0x00430230  thunk_FUN_007dad10           (-> NetImmerse)
 0x00430550  thunk_FUN_007dad10
 0x00437270  thunk_FUN_006d5d70           (-> Stream)
 0x00438280  thunk_FUN_006cdb10           (-> Serialization)
-0x0043b4f0  UtopiaApp_MainTick           (main game loop tick - __fastcall)
+0x0043b4f0  FUN_0043b4f0 (intended: UtopiaApp_MainTick)         [v5: unnamed in current import]
 0x0043eca0  thunk_FUN_0072de40           (-> File I/O)
 0x0043f870  thunk_FUN_006d5d70
 0x0043f980  thunk_FUN_006d5d70
 0x00441fa0  thunk_FUN_006d5d70
 0x00444460  thunk_FUN_006d2050           (-> TGObject base)
 0x00445bb0  thunk_FUN_006d5d70
-0x00445d90  UtopiaModule::InitMultiplayer (creates WSN + NetFile + GameSpy)
-0x00451ac0  SimulationPipelineTick       (calls TGNetwork::Update)
+0x00445d90  FUN_00445d90 (intended: UtopiaModule::InitMultiplayer) [v5: unnamed in current import]
+0x00451ac0  FUN_00451ac0 (intended: SimulationPipelineTick)      [v5: unnamed in current import]
 0x00455990  thunk_FUN_007949b0           (-> Renderer)
 0x0045f660  thunk_FUN_0045f8b0
 ```
+
+> [!NOTE]
+> The "Key addresses" block below is legacy patch tracking carried forward from pre-v5 docs. It records DLL-proxy patch target addresses (and their REMOVED predecessors). It is not function-catalog content and a future patch-changelog refactor may move it out of this doc. Addresses are correct as patch-target locations.
 
 Key addresses:
 - 0x0043B1D2: PatchInitAbort target (NOP abort jump) - ACTIVE
@@ -145,8 +232,12 @@ Widget base classes, button/list/text controls, layout management, and UI event 
 The game uses a custom widget toolkit built on top of the renderer.
 
 ### Named/Identified Functions
+
+> [!NOTE]
+> Function names in this section are pre-v5 annotation-script output and are **not currently applied to the Ghidra import**. Addresses are correct (verified 2026-05-28); names are aspirational, pending per-function v5 documentation passes.
+
 ```
-0x0046c280  CRect                        (rectangle utility)
+0x0046c280  FUN_0046c280 (intended: CRect)                      [v5: unnamed in current import]
 0x00468760  thunk_FUN_004657f0           (UI base class method)
 0x00488790  thunk_FUN_006d9060           (-> Timer/event)
 0x0048bc40  thunk_FUN_006d9060
@@ -157,12 +248,16 @@ The game uses a custom widget toolkit built on top of the renderer.
 ---
 
 ## Category 4: Windows / Dialogs / Screens
-**Range:** 0x004C0000 - 0x0051FFFF | **Count:** 1,112 functions (717 + 395)
+**Range:** 0x004C0000 - 0x0051FFFF | **Count:** 1,112 functions
 
 Concrete game windows: main menu, multiplayer lobby, options, ship selection, etc.
 Each window class has handler registration, button callbacks, and state management.
 
 ### Named/Identified Functions
+
+> [!NOTE]
+> Function names in this section are pre-v5 annotation-script output and are **not currently applied to the Ghidra import**. Addresses are correct (verified 2026-05-28); names are aspirational, pending per-function v5 documentation passes.
+
 ```
 0x004c89f0  thunk_FUN_004cbd60           (window base)
 0x004d53d0  thunk_FUN_007e3880           (-> NI renderer)
@@ -176,9 +271,9 @@ Each window class has handler registration, button callbacks, and state manageme
 0x004f2d10  thunk_FUN_007d9c10
 0x004f5510  thunk_FUN_007e3880
 0x004f8850  thunk_FUN_007e3880
-0x005046b0  RegisterMPWindowHandlers     (MultiplayerWindow handler setup)
-0x00504890  StartGameHandler             (Join/Host button click entry point)
-0x00504f10  SetupMultiplayerGame         (TopWindow_SetupMultiplayerGame)
+0x005046b0  FUN_005046b0 (intended: RegisterMPWindowHandlers)   [v5: unnamed in current import]
+0x00504890  FUN_00504890 (intended: StartGameHandler)            [v5: unnamed in current import]
+0x00504f10  FUN_00504f10 (intended: TopWindow_SetupMultiplayerGame) [v5: unnamed in current import]
 ```
 
 ---
@@ -191,8 +286,12 @@ decision-making, formation management, and combat logic. This is the largest
 contiguous game-logic section.
 
 ### Named/Identified Functions
+
+> [!NOTE]
+> Function names in this section are pre-v5 annotation-script output and are **not currently applied to the Ghidra import**. Addresses are correct (verified 2026-05-28); names are aspirational, pending per-function v5 documentation passes.
+
 ```
-0x005af390  CRect                        (rectangle utility, another instance)
+0x005af390  FUN_005af390 (intended: CRect)                      [v5: unnamed in current import]
 ```
 
 Sub-ranges (estimated by density):
@@ -204,7 +303,7 @@ Sub-ranges (estimated by density):
 ---
 
 ## Category 6: Sparse Code / Mission System / Large Objects
-**Range:** 0x005B0000 - 0x0065FFFF | **Count:** 201 functions (135 + 66)
+**Range:** 0x005B0000 - 0x0065FFFF | **Count:** 201 functions
 
 Very sparse - likely large mission/episode objects, cutscene system, or code that
 was compiled separately (possibly third-party libraries or auto-generated code).
@@ -234,12 +333,20 @@ feeds into MultiplayerGame. Likely contains single-player game session equivalen
 ---
 
 ## Category 9: MultiplayerGame (CRITICAL)
-**Range:** 0x0069E000 - 0x006A2FFF | **Count:** 44 functions
+**Range:** 0x0069E000 - 0x006A2FFF | **Count:** 45 functions
 
-The MultiplayerGame class - handles all multiplayer game state, player slots,
+The MultiplayerGame class — handles all multiplayer game state, player slots,
 event handling, and coordination between networking and game logic.
 
+The +1 vs the pre-v5 count of 44 is **MpgameHandleMessage at 0x0069f2a0**, which the
+v5 dispatcher-recovery pass (2026-05-28) promoted to a full function entry. It was
+previously listed as a handler address inside FUN_0069f250.
+
 ### All Functions in This Range
+
+> [!NOTE]
+> Function names in this section are pre-v5 annotation-script output and are **not currently applied to the Ghidra import**. Addresses are correct (verified 2026-05-28); names are aspirational, pending per-function v5 documentation passes. The dispatcher at 0x0069f2a0 (MpgameHandleMessage) is the one exception — it has been v5-validated and is the current Ghidra name.
+
 ```
 0x0069e0c0  FUN_0069e0c0                 (MP game class methods)
 0x0069e0d0  FUN_0069e0d0
@@ -253,9 +360,9 @@ event handling, and coordination between networking and game logic.
 0x0069edc0  FUN_0069edc0
 0x0069ee50  FUN_0069ee50
 0x0069efc0  FUN_0069efc0
-0x0069efe0  RegisterMPGameHandlers       (registers ALL MP event handlers)
+0x0069efe0  FUN_0069efe0 (intended: RegisterMPGameHandlers)      [v5: unnamed in current import]
 0x0069f250  FUN_0069f250
-    0x0069f2a0 = ReceiveMessageHandler   (handler addr, not function entry)
+0x0069f2a0  MpgameHandleMessage          (opcode dispatcher 0x02-0x2A, jump table at 0x0069F534, completeness 69.94) [v5-validated 2026-05-28]
 0x0069f620  FUN_0069f620
 0x0069f880  FUN_0069f880
 0x0069f930  FUN_0069f930
@@ -272,7 +379,7 @@ event handling, and coordination between networking and game logic.
     0x006a07d0 = EnterSetHandler         (handler addr within FUN_006a05e0 block)
     0x006a0a10 = ExitedWarpHandler       (handler addr)
     0x006a0a20 = DisconnectHandler       (handler addr)
-0x006a0a30  NewPlayerHandler             (assigns player slot, calls ChecksumRequestSender)
+0x006a0a30  FUN_006a0a30 (intended: NewPlayerHandler)             [v5: unnamed in current import]
 0x006a1360  FUN_006a1360                 (contains ObjectCreatedHandler, HostEventHandler, etc.)
 0x006a1420  FUN_006a1420
 0x006a17c0  FUN_006a17c0
@@ -280,7 +387,7 @@ event handling, and coordination between networking and game logic.
 0x006a19c0  FUN_006a19c0
 0x006a19fc  FUN_006a19fc
 0x006a1aa0  FUN_006a1aa0
-0x006a1b10  ChecksumCompleteHandler      (verifies + sends settings/map to client)
+0x006a1b10  FUN_006a1b10 (intended: ChecksumCompleteHandler)      [v5: unnamed in current import]
 0x006a1e70  FUN_006a1e70
 0x006a2470  FUN_006a2470
 0x006a2650  FUN_006a2650                 (contains KillGameHandler at 0x006a2640)
@@ -293,6 +400,9 @@ event handling, and coordination between networking and game logic.
 
 Note: Many handler addresses (e.g., 0x006a07d0 EnterSetHandler) are offsets within
 larger functions, not separate function entries. They are registered as callback addresses.
+The exception is 0x0069f2a0 (MpgameHandleMessage) — formerly listed as a handler offset
+inside FUN_0069f250, now confirmed as a separate function entry (its own __thiscall body
+spanning 0x0069F2A0-0x0069F530, 657 bytes).
 
 ---
 
@@ -303,26 +413,30 @@ The checksum/file-transfer system. NetFile serves triple duty: checksum manager,
 message opcode dispatcher, and file transfer manager.
 
 ### All Functions in This Range
+
+> [!NOTE]
+> Function names in this section are pre-v5 annotation-script output and are **not currently applied to the Ghidra import**. Addresses are correct (verified 2026-05-28); names are aspirational, pending per-function v5 documentation passes. Inline parenthetical descriptions reflect prior reverse-engineering notes from [decompiled-functions.md](decompiled-functions.md).
+
 ```
 0x006a3080  FUN_006a3080                 (NetFile utilities)
 0x006a3090  FUN_006a3090
-0x006a30c0  NetFile_Constructor          (creates hash tables A/B/C, registers handler)
+0x006a30c0  FUN_006a30c0 (intended: NetFile_Constructor)         [v5: unnamed in current import]
 0x006a3280  FUN_006a3280
 0x006a32b0  FUN_006a32b0
 0x006a3500  FUN_006a3500
-0x006a3560  RegisterNetFileHandler       (registers for event 0x60001)
+0x006a3560  FUN_006a3560 (intended: RegisterNetFileHandler)      [v5: unnamed in current import]
 0x006a3580  FUN_006a3580
 0x006a35b0  FUN_006a35b0
-0x006a3820  ChecksumRequestSender        (queues 4 requests, sends #0)
-0x006a39b0  ChecksumRequestBuilder       (builds individual request message)
-0x006a3cd0  NetFile::ReceiveMessageHandler (opcode dispatcher 0x20-0x27)
+0x006a3820  FUN_006a3820 (intended: ChecksumRequestSender)       [v5: unnamed in current import]
+0x006a39b0  FUN_006a39b0 (intended: ChecksumRequestBuilder)      [v5: unnamed in current import]
+0x006a3cd0  FUN_006a3cd0 (intended: NetFile::ReceiveMessageHandler — opcode dispatcher 0x20-0x27) [v5: unnamed in current import]
 0x006a3ea0  FUN_006a3ea0
 0x006a4140  FUN_006a4140
 0x006a4250  FUN_006a4250                 (opcode 0x27 handler)
-0x006a4260  ChecksumResponseEntry        (opcode 0x21 - routes to verifier)
-0x006a4560  ChecksumResponseVerifier     (hash compare, sends next request)
-0x006a4a00  ChecksumFail                 (fires event + sends 0x22/0x23)
-0x006a4bb0  ChecksumAllPassed            (fires ET_CHECKSUM_COMPLETE)
+0x006a4260  FUN_006a4260 (intended: ChecksumResponseEntry — opcode 0x21) [v5: unnamed in current import]
+0x006a4560  FUN_006a4560 (intended: ChecksumResponseVerifier)    [v5: unnamed in current import]
+0x006a4a00  FUN_006a4a00 (intended: ChecksumFail — fires event + sends 0x22/0x23) [v5: unnamed in current import]
+0x006a4bb0  FUN_006a4bb0 (intended: ChecksumAllPassed)           [v5: unnamed in current import]
 0x006a4c10  FUN_006a4c10                 (checksum fail notification handler)
 0x006a4d80  FUN_006a4d80                 (extract dir/filter from queued msg)
 0x006a4e70  FUN_006a4e70
@@ -333,8 +447,8 @@ message opcode dispatcher, and file transfer manager.
 0x006a5290  FUN_006a5290                 (checksum success handler)
 0x006a5570  FUN_006a5570
 0x006a5660  FUN_006a5660
-0x006a5860  FileTransferProcessor        (sends files or completion msg)
-0x006a5df0  Client_ChecksumRequestHandler (opcode 0x20 - computes + sends response)
+0x006a5860  FUN_006a5860 (intended: FileTransferProcessor)       [v5: unnamed in current import]
+0x006a5df0  FUN_006a5df0 (intended: Client_ChecksumRequestHandler — opcode 0x20) [v5: unnamed in current import]
 0x006a6190  FUN_006a6190
 0x006a62f0  FUN_006a62f0
 0x006a63b0  FUN_006a63b0
@@ -373,6 +487,10 @@ Hash table implementation, linked lists, and container utilities used by NetFile
 event system, and other subsystems. Also includes GetTickCount and WSACleanup imports.
 
 ### Named/Identified Functions
+
+> [!NOTE]
+> Win32/Winsock import names are correct (resolved by the loader). Other category content is FUN_xxxxxxxx.
+
 ```
 0x006acd90  GetTickCount                 (Win32 import)
 0x006acdd0  WSACleanup                   (Winsock import)
@@ -411,22 +529,26 @@ The entire networking stack: UDP socket management, peer tracking, message queui
 reliable delivery, packet serialization, and the Winsock implementation.
 
 ### Named/Identified Functions
+
+> [!NOTE]
+> Function names in this section are pre-v5 annotation-script output and are **not currently applied to the Ghidra import**. Addresses are correct (verified 2026-05-28); names are aspirational, pending per-function v5 documentation passes.
+
 ```
 0x006b2930  thunk_FUN_006b7720           (internal network method)
-0x006b3ec0  TGNetwork_HostOrJoin         (socket creation, state setup)
-0x006b4560  TGNetwork::Update            (main network tick - __thiscall)
-0x006b4c10  TGNetwork::Send              (queues message for sending)
+0x006b3ec0  FUN_006b3ec0 (intended: TGNetwork_HostOrJoin)        [v5: unnamed in current import]
+0x006b4560  FUN_006b4560 (intended: TGNetwork::Update — main network tick) [v5: unnamed in current import]
+0x006b4c10  FUN_006b4c10 (intended: TGNetwork::Send)             [v5: unnamed in current import]
 0x006b5080  FUN_006b5080                 (queue message to peer)
-0x006b55b0  SendOutgoingPackets          (iterates peers, sends via socket)
-0x006b5c90  ProcessIncomingPackets       (recvfrom loop)
-0x006b5f70  DispatchIncomingQueue        (sequence validation, delivery)
-0x006b61e0  ReliableACKHandler           (ACK tracking for reliable msgs)
-0x006b6ad0  DispatchToApplication        (sequence check, queue for app)
+0x006b55b0  FUN_006b55b0 (intended: SendOutgoingPackets)         [v5: unnamed in current import]
+0x006b5c90  FUN_006b5c90 (intended: ProcessIncomingPackets)      [v5: unnamed in current import]
+0x006b5f70  FUN_006b5f70 (intended: DispatchIncomingQueue)       [v5: unnamed in current import]
+0x006b61e0  FUN_006b61e0 (intended: ReliableACKHandler)          [v5: unnamed in current import]
+0x006b6ad0  FUN_006b6ad0 (intended: DispatchToApplication)       [v5: unnamed in current import]
 0x006b7070  FUN_006b7070                 (set address info)
 0x006b8670  FUN_006b8670                 (reset retry counter)
 0x006b9460  [vtable+0x60]               (socket creation - called by HostOrJoin)
 0x006b9870  [vtable+0x70]               (socket send - called by SendOutgoing)
-0x006b9b20  CreateUDPSocket              (bind + non-blocking)
+0x006b9b20  FUN_006b9b20 (intended: CreateUDPSocket)             [v5: unnamed in current import]
 0x006b9bb0  FUN_006b9bb0                 (stores port at WSN+0x338)
 ```
 
@@ -490,7 +612,9 @@ Key addresses:
 - WSN+0x10F: join-in-progress flag
 - WSN+0x194: UDP socket handle (shared with GameSpy)
 - WSN+0x338: port number
-- 0x6B467C: (was PatchHostDequeueLoop target - REMOVED)
+
+> [!NOTE]
+> Legacy patch-tracking entry: 0x6B467C was the PatchHostDequeueLoop target (REMOVED). Carried forward from pre-v5 docs for historical reference; future patch-changelog refactor may move it out.
 
 ---
 
@@ -501,6 +625,10 @@ TGStream, binary serialization, file I/O streams, and data marshalling used by
 save/load, network messages, and resource loading.
 
 ### Named/Identified Functions
+
+> [!NOTE]
+> Function names in this section are pre-v5 annotation-script output and are **not currently applied to the Ghidra import**. Addresses are correct (verified 2026-05-28); names are aspirational, pending per-function v5 documentation passes.
+
 ```
 0x006cdb10  (target of thunk_FUN from 0x00438280 - serialization base)
 ```
@@ -538,6 +666,10 @@ The entire event system: TGEventManager, TGEvent, TGTimer, handler registration,
 event dispatch, condition system, and timer management.
 
 ### Named/Identified Functions
+
+> [!NOTE]
+> Function names in this section are pre-v5 annotation-script output and are **not currently applied to the Ghidra import**. Addresses are correct (verified 2026-05-28); names are aspirational, pending per-function v5 documentation passes.
+
 ```
 0x006d2050  (target of thunk - TGObject base method)
 0x006d4b10  thunk_FUN_006d9060           (timer-related)
@@ -545,12 +677,12 @@ event dispatch, condition system, and timer management.
 0x006d9060  FUN_006d9060                 (timer base method, thunked from many places)
 0x006da040  FUN_006da040
 0x006da0b0  FUN_006da0b0
-0x006da130  RegisterHandlerFunction      (global handler registration)
+0x006da130  FUN_006da130 (intended: RegisterHandlerFunction)     [v5: unnamed in current import]
 0x006da160  FUN_006da160
-0x006da2c0  EventManager::ProcessEvents  (__fastcall - main event pump)
+0x006da2c0  FUN_006da2c0 (intended: EventManager::ProcessEvents — main event pump) [v5: unnamed in current import]
 0x006da300  FUN_006da300                 (dispatch single event)
 0x006da370  thunk_FUN_006de310
-0x006db380  RegisterEventHandler         (binds handler to event type)
+0x006db380  FUN_006db380 (intended: RegisterEventHandler)        [v5: unnamed in current import]
 0x006db620  FUN_006db620                 (dispatch to handler chain)
 ```
 
@@ -629,6 +761,10 @@ GameSpy SDK integration (query/response, heartbeat, server browser) and SWIG
 binding infrastructure for Python<->C++ interop.
 
 ### Named/Identified Functions
+
+> [!NOTE]
+> The `Catch@...` entry is real Ghidra output. Other category content is FUN_xxxxxxxx; descriptive text reflects pre-v5 RE notes pending per-function v5 documentation passes.
+
 ```
 0x006f5a8a  Catch@006f5a8a               (exception handler)
 0x006fd9f0  thunk_FUN_006ff210
@@ -672,18 +808,25 @@ binding infrastructure for Python<->C++ interop.
 ---
 
 ## Category 17: Python 1.5 / SWIG Method Tables / Scripting Engine
-**Range:** 0x00700000 - 0x0076FFFF | **Count:** 1,619 functions
+**Range:** 0x00700000 - 0x0076FFFF | **Count:** 1,620 functions
 
 Embedded Python 1.5 interpreter, SWIG-generated wrapper functions, module initialization
 (Py_InitModule4), Python object management, and the Appc/App module method tables.
 
+The +1 vs the pre-v5 count of 1,619 has not been individually traced; it is one of
+164 unidentified delta entries across the binary. Flagged as a campaign open question.
+
 ### Named/Identified Functions
+
+> [!NOTE]
+> The `Catch@...` entry is real Ghidra output. Other function names in this section are pre-v5 annotation-script output and are **not currently applied to the Ghidra import**. Addresses are correct (verified 2026-05-28); names are aspirational, pending per-function v5 documentation passes.
+
 ```
-0x0071f270  ComputeChecksum              (file hash computation for directories)
-0x007202e0  HashString                   (string/file hashing)
+0x0071f270  FUN_0071f270 (intended: ComputeChecksum — file hash computation) [v5: unnamed in current import]
+0x007202e0  FUN_007202e0 (intended: HashString)                  [v5: unnamed in current import]
 0x00721259  Catch@00721259               (exception handler)
 0x0072de40  (target of thunk - file I/O)
-0x00739e00  CRect                        (yet another CRect instance)
+0x00739e00  FUN_00739e00 (intended: CRect)                       [v5: unnamed in current import]
 ```
 
 ### Sample Functions (first 30 from 0x0070)
@@ -726,13 +869,17 @@ Key address:
 ---
 
 ## Category 18: NetImmerse 3.1 / Rendering Engine
-**Range:** 0x00770000 - 0x0084FFFF | **Count:** 2,915 functions (2,219 + 696)
+**Range:** 0x00770000 - 0x0084FFFF | **Count:** 2,915 functions
 
 The NetImmerse 3.1 rendering engine (predecessor to Gamebryo): scene graph traversal,
 NiNode/NiTriShape/NiTexture classes, Direct3D 7 interface, geometry processing,
 texture management, animation system, and particle effects.
 
 ### Named/Identified Functions
+
+> [!NOTE]
+> Win32/DirectInput import names are correct (resolved by the loader). The `CRect` entry is pre-v5 annotation-script output and is **not currently applied to the Ghidra import**. Addresses are correct (verified 2026-05-28); names are aspirational, pending per-function v5 documentation passes.
+
 ```
 0x0078c8a0  DirectInputCreateEx          (DirectInput import for input handling)
 0x007949b0  (target of thunks - renderer base method)
@@ -740,7 +887,7 @@ texture management, animation system, and particle effects.
 0x007dad10  (target of many thunks - NI base object method)
 0x007e3880  (target of thunks - NI renderer method)
 0x007ef280  (target of thunks - NI renderer method)
-0x00815920  CRect                        (rectangle utility)
+0x00815920  FUN_00815920 (intended: CRect)                       [v5: unnamed in current import]
 ```
 
 Sub-ranges (estimated):
@@ -750,9 +897,11 @@ Sub-ranges (estimated):
 - 0x0080-0x0082: Animation, keyframes, interpolation
 - 0x0083-0x0084: Particles, effects, misc NI utilities
 
-Key address:
-- 0x7CB322: (was PatchNullSurface target - REMOVED with VEH)
+Key addresses:
 - 0x0055c860: Crash site patched with RET (PatchHeadlessCrashSites) - ACTIVE
+
+> [!NOTE]
+> Legacy patch-tracking entry: 0x7CB322 was the PatchNullSurface target (REMOVED with VEH). Carried forward from pre-v5 docs for historical reference; future patch-changelog refactor may move it out.
 
 ---
 
@@ -852,7 +1001,7 @@ not actual code. They are jump thunks to the real DLL functions.
 ---
 
 ## Category 20: Exception Handling / Unwind Tables
-**Range:** 0x00870000 - 0x008879E0 | **Count:** 4,710 functions (3,210 + 1,500)
+**Range:** 0x00870000 - 0x008879E0 | **Count:** 4,710 functions
 
 MSVC compiler-generated exception handling: structured exception handling (SEH) unwind
 handlers, C++ exception infrastructure, and frame-based exception tables. Nearly all
@@ -867,8 +1016,7 @@ entries are small "Unwind@ADDR" stubs.
 0x008879e0  Unwind@008879e0              (last function in executable)
 ```
 
-These are not game logic - they are compiler-generated cleanup code for
-stack unwinding during C++ exception handling.
+`Unwind@`/`Catch@` are real Ghidra naming for compiler-generated SEH stubs. These are not game logic.
 
 ---
 
@@ -884,7 +1032,7 @@ stack unwinding during C++ exception handling.
 | 6 | Sparse/Mission | 0x005B-0x0065 | 201 | Mission framework, cutscenes |
 | 7 | Scene Graph/3D | 0x0066-0x0068 | 527 | Scene nodes, spatial objects |
 | 8 | Game Session | 0x0069-0x0069D | 159 | Session management |
-| 9 | **MultiplayerGame** | 0x0069E-0x006A2 | 44 | Handlers, player slots |
+| 9 | **MultiplayerGame** | 0x0069E-0x006A2 | 45 | Handlers, player slots, MpgameHandleMessage dispatcher |
 | 10 | **NetFile/Checksums** | 0x006A3-0x006A7 | 58 | Checksum protocol |
 | 11 | Containers/Hash | 0x006A8-0x006AF | 141 | Hash tables, utilities |
 | 12 | **TGNetwork** | 0x006B0-0x006BF | 225 | UDP stack, reliable delivery |
@@ -892,11 +1040,12 @@ stack unwinding during C++ exception handling.
 | 14 | **Events/Timers** | 0x006D0-0x006DF | 327 | EventManager, dispatch |
 | 15 | Config/VarMgr | 0x006E0-0x006EF | 226 | TGConfigMapping |
 | 16 | GameSpy/SWIG | 0x006F0-0x006FF | 273 | GameSpy SDK, bindings |
-| 17 | Python/SWIG | 0x0070-0x0076 | 1,619 | Python 1.5, Appc module |
+| 17 | Python/SWIG | 0x0070-0x0076 | 1,620 | Python 1.5, Appc module |
 | 18 | NetImmerse/Render | 0x0077-0x0084 | 2,915 | NI 3.1, D3D7, textures |
 | 19 | CRT/stdlib | 0x0085-0x0086 | 787 | malloc, strcmp, Winsock IAT |
 | 20 | Exception/Unwind | 0x0087-0x0088 | 4,710 | SEH unwind handlers |
-| | **TOTAL** | | **18,247** | |
+| | **TOTAL (in-body)** | | **18,249** | |
+| | **TOTAL (incl. EXTERNAL)** | | **18,576** | 327 import thunks |
 
 ---
 
@@ -919,7 +1068,7 @@ ADDRESS     IDENTIFIER                          CATEGORY
 0x00504f10  TopWindow_SetupMultiplayerGame       Window
 0x0055c860  [PatchHeadlessCrashSites target]     Game
 0x0069efe0  RegisterMPGameHandlers               MPGame
-0x0069f2a0  ReceiveMessageHandler (handler addr) MPGame
+0x0069f2a0  MpgameHandleMessage                  MPGame  [v5-validated 2026-05-28; opcodes 0x02-0x2A, jump table 0x0069F534]
 0x006a07d0  EnterSetHandler (handler addr)       MPGame
 0x006a0a10  ExitedWarpHandler (handler addr)     MPGame
 0x006a0a20  DisconnectHandler (handler addr)     MPGame

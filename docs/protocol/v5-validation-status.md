@@ -85,7 +85,7 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 | 7 | tgmessage-routing.md | Mid: relay-all + star topology + opaque payload | python-messages, transport-layer | **partial (2026-05-28)** — 3 material corrections (C1: FUN_006B63A0 is connect handler not type-0x00 relay; C2: `NoMe` created by C++ MultiplayerGame_Ctor not Python; C3: THREE routing mechanisms not two) + 2 minor (function name FUN_006B8530 = TGBufferStream_GetBufferAndSize; SendTGMessage pseudocode now covers targetID == -1); 15 anchors confirmed; 3 open questions including chat 1:2 mystery; see §6.7 |
 | 8 | stateupdate.md | Mid: opcode 0x1C dirty flags + 8 field formats + round-robin | game-opcodes, stream-primitives | **partial (2026-05-28)** — all 8 dirty-bit wire formats anchored byte-by-byte; ZERO material corrections; 5 clarifications (hash-flag-emit gate identity, wire-vs-validation conflation, weapon list shared with subsystems, CLIENT-side IsMultiplayer speculation should be dropped, PowerSubsystem WriteState created in Ghidra); see §6.8 |
 | 9 | object-replication.md | Mid: FUN_0069f620 thin index for ObjCreate | game-opcodes | **partial (2026-05-28)** — all 6 claims confirmed at high confidence; 2 wording refinements (R1 sender-side helper FUN_006A19A0; R2 vtable[+0x10C] sender / vtable[+0x118]+[+0x11C] receiver via FUN_005A1F50); MpgameHandleObjCreate renamed at 0x0069F620; see §6.9 |
-| 10 | objcreate-serialization.md | Mid: full ObjCreate chain + species map | object-replication, stream-primitives | pending |
+| 10 | objcreate-serialization.md | Mid: full ObjCreate chain + species map | object-replication, stream-primitives | **partial (2026-05-28)** — 3 material corrections (C1 velocity = CV4 3-dir + 4-mag, not f32-speed + 3-pad; C2 playerSlots base = +0x74 not +0x84; C3 vtable[+0x118] only does species+Python, body+subsystems is vtable[+0x11C]); orientation quaternion confirmed; species map byte-exact vs scripts; 11 functions renamed; see §6.10 |
 | 11 | stateupdate-subsystem-wire-format.md | Mid: subsystem linked list + 3 WriteState formats | stateupdate | pending |
 | 12 | per-ship-subsystem-wire-format.md | Mid: 16 stock ship subsystem catalogs | stateupdate-subsystem-wire-format | pending |
 | 13 | tgobjptrevent-class.md | Mid: TGObjPtrEvent class layout + 11 producers | (engine: TGEvent vtable 0x00895FF4) | pending |
@@ -2006,6 +2006,258 @@ R2. **`vtable[0x10C]` is a sender slot.** Doc says
 doc-under-review (`docs/protocol/object-replication.md`) NOT modified this pass
 — documentation-writer agent will apply R1 + R2 wording fixes and add the
 `[v5-validated 2026-05-28]` tag plus the v5 frontmatter header.
+
+### 6.10 objcreate-serialization.md — 2026-05-28 (game-archaeology-specialist)
+
+**Verdict:** `partial`. ~80 load-bearing claims. THREE material corrections
+(C1 velocity wire format, C2 playerSlots base offset, C3 vtable[+0x118] /
+[+0x11C] split labelling) plus 3 refinements. Foundation claims (handler,
+factory, dispatch chain, species map) are rock-solid; corrections are in
+specific sub-sections of the wire format.
+
+**Subject:** the full ObjCreate deserialization pipeline for the Ship class
+(class_id `0x00008008`) and Torpedo class (class_id `0x00008009`). The doc
+covers the wire format from after the 2- or 3-byte opcode prefix all the
+way through Python `SpeciesToShip.InitObject()` and subsystem health
+deserialization.
+
+**Cross-anchors verified:**
+
+- `MpgameHandleObjCreate` at `0x0069F620` (foundation #9) — caller of
+  `HandleObjCreateDeserialize`. Passes `buf+iVar7` and `len-iVar7` where
+  `iVar7 = 2 or 3` depending on opcode.
+- SWIG `TGBufferStream` at `0x006CEFE0` / vtable `0x00895C58`
+  (foundation #2) — used inside `HandleObjCreateDeserialize` and the
+  sister body writer. Read primitives confirmed:
+  ReadChar @ vtable[+0x50], ReadShort @ vtable[+0x58], ReadInt @ vtable[+0x78],
+  ReadFloat @ vtable[+0x70], ReadCV4 @ vtable[+0x94].
+- Ship vtable at `0x00894340` (foundation: engine doc #7 vtable map) —
+  slot offsets 0x10C / 0x110 / 0x114 / 0x118 / 0x11C verified by reading
+  raw vtable bytes. Targets: `0x005A1CF0` (slot 0x10C, sender entry),
+  `0x005A1D80` (slot 0x110, sender header), `0x005B0D80` (slot 0x114,
+  sender body+subsystems), `0x005B0E80` (slot 0x118, receiver species+Python),
+  `0x005B0DC0` (slot 0x11C, receiver body+subsystems).
+- `MultiplayerGame_Ctor` at `0x0069E590` (foundation #6) —
+  `FUN_00859d64(this+0x1d, 0x18, 0x10, ...)` definitively places the
+  playerSlots base at `this+0x74` with 16 slots × 24 bytes.
+
+**Functions touched (completeness):**
+
+| Function | Addr | effective_score | Used to verify |
+|----------|------|-----------------|----------------|
+| HandleObjCreateDeserialize | 0x005A1F50 | 32.6 / 92.5 max | Dispatch chain: ReadInt+ReadInt+ObjectLookup+TGFactoryCreate+vtable[0x118]+vtable[0x11C] |
+| ShipReadSpecies | 0x005A2030 | n/a | Species byte at vtable[+0x50] → ship+0xEC |
+| ShipReadStreamBody | 0x005A2060 | 14.5 / 80 max | Wire body: 3xReadFloat (pos) + 4xReadFloat (quat) + ReadCV4 (vel) + 2 length-prefixed strings |
+| ShipDeserializeStream_Slot118 | 0x005B0E80 | n/a (plate) | vtable[+0x118] = species + Python InitObject |
+| ShipPostDeserializeFixup_Slot11C | 0x005B0DC0 | n/a (created this pass) | vtable[+0x11C] = body + subsystem walk |
+| ShipSerializeForObjCreate_Slot10C | 0x005A1CF0 | n/a | Sender entry: opens stream, calls slots 0x110+0x114 |
+| ShipWriteHeader_Slot110 | 0x005A1D80 | n/a | Sender slot 0x110: WriteInt(class), WriteInt(obj), WriteChar(species) |
+| ShipWriteStreamBody | 0x005A1DC0 | n/a | Sender body: WriteFloat×3 (pos), WriteFloat×4 (quat from FUN_00816390 matrix-to-quat), WriteCV4 (vel from FUN_005A05A0), strings |
+| ShipSerializeStream_Slot114 | 0x005B0D80 | n/a (created this pass) | Sender slot 0x114: writes body + walks ship+0x284 for subsystem writes |
+| TGFactoryCreate | 0x006F13E0 | n/a | Factory: walks DAT_0099A578/DAT_0099A584, returns new TGObject instance |
+| ObjectLookupByID | 0x00430730 | n/a | DAT_0099A67C hash lookup; gates on class category 0x8002 |
+
+**Confirmed claims (high confidence):**
+
+- **Wire envelope** (off 0 opcode, off 1 owner_slot, off 2 team_id iff 0x03,
+  off 2|3 onwards = TGBufferStream payload) — see §6.9 receiver confirmation;
+  this doc's header section accurately mirrors it.
+- **Stream header** (4-byte class_id + 4-byte object_id) — both reads
+  happen explicitly in `HandleObjCreateDeserialize`. Confirmed.
+- **Factory class IDs 0x8008 / 0x8009** — match the trace examples. The
+  per-class branching (Ship gets Network controller; Torpedo skips) is
+  enforced by `if (iVar8 == 0x8009) return;` inside MpgameHandleObjCreate.
+- **Species byte at ship+0xEC** — `*(int *)(param_1 + 0xec) = (int)cVar1`
+  in ShipReadSpecies.
+- **Python SpeciesToShip.InitObject pipeline** — confirmed via string refs
+  `s_Multiplayer_SpeciesToShip_008e61ec` + `s_InitObject_008e5620` inside
+  `ShipDeserializeStream_Slot118`. The 5-step pipeline (SetupModel →
+  Hardpoints.LoadPropertySet → SetupProperties → UpdateNodeOnly + ship
+  stats lookup) is anchored in `reference/scripts/Multiplayer/SpeciesToShip.py`
+  (cross-source).
+- **SpeciesToShip 1..45** — byte-exact match against the script;
+  doc table accurate.
+- **SpeciesToTorp 1..15** — byte-exact match.
+- **SpeciesToSystem 1..9** — byte-exact match; the doc correctly lists
+  Multi1..7 + Albirea + Poseidon. MAX_SYSTEMS = 10 (with index 0 = UNKNOWN).
+- **Set/system name binary-search registry at DAT_0097E9C8 / size
+  DAT_0097E9CC** — confirmed in ShipReadStreamBody body.
+- **Object ID space (`0x3FFFFFFF + N*0x40000`)** — visible in trace
+  examples; not directly disproved but the doc-cited formula is consistent
+  with the trace evidence. Anchoring the ID-allocation site is out of
+  scope for this pass (it lives in the sender path).
+
+**Corrected claims:**
+
+1. **C1 — Velocity wire format is CV4 (3 dir bytes + 4-byte magnitude),
+   NOT "f32 speed + 3 padding bytes" (material).**
+   - Old (doc):
+     ```
+     37  4 f32   speed       Speed magnitude (usually 0.0 at spawn)
+     41  3 u8[3] padding     Always 0x00 0x00 0x00
+     ```
+   - **New (binary):**
+     ```
+     37  3 u8[3] velocity_dir Compressed normalized direction (signed bytes)
+     40  4 f32   velocity_mag Velocity magnitude (m/s)
+     ```
+   - Evidence: ShipReadStreamBody (0x005A2060) calls vtable[+0x94]
+     (`CompressedVector4_ReadVirtual` at `0x006D2FD0`) with param_5=0,
+     which executes vtable[+0x50] ReadChar × 3 FIRST, then vtable[+0x70]
+     ReadFloat × 1. Total 7 bytes. Doc had widths right (4+3=7) but
+     order/semantics inverted.
+   - Trace evidence: bytes 37-43 are observed as `00 00 00 00 00 00 00`
+     in spawn traces, which is consistent with EITHER interpretation
+     (zero velocity = both 3 dir bytes and 4 mag bytes are 0). The
+     binary settles the ambiguity.
+
+2. **C2 — `MultiplayerGame.playerSlots` base is at `+0x74`, NOT `+0x84` (material).**
+   - Old (doc): *"MultiplayerGame+0x84 contains a 16-entry array with
+     stride 0x18 (24 bytes per slot)."*
+   - **New: base at `MultiplayerGame+0x74`, 16 slots × 24 bytes.**
+   - Evidence: `MultiplayerGame_Ctor` (0x0069E590) line:
+     `FUN_00859d64(param_1 + 0x1d, 0x18, 0x10, FUN_006a7720, FUN_006a7760);`
+     `param_1 + 0x1d` (32-bit pointer indexed) = byte offset +0x74.
+   - The "MultiplayerGame+0x84" the doc cites is offset `+0x10` within
+     each PlayerSlot — the game-state pointer field. For slot 0 that
+     resolves to `+0x74 + 0*0x18 + 0x10 = +0x84`. The doc and the binary
+     describe the SAME table — but using different field anchors. Use
+     the slot-array base (`+0x74`) as canonical for clean-room implementers;
+     mention the `+0x84` only as the game-state pointer FIELD.
+   - PlayerSlot layout (24 bytes):
+     - +0x00 (?)
+     - +0x04 inUse byte (relay-loop gate)
+     - +0x08 peer/network ID (relay-loop key)
+     - +0x10 game-state pointer (= MultiplayerGame+0x84 for slot 0)
+     - +0x14 (?)
+   - Anchors `struct-skeletons-20260528` memory entry.
+
+3. **C3 — `vtable[+0x118]` reads ONLY the species byte; the wire BODY is
+   read by `vtable[+0x11C]` (material; structural).**
+   - Old (doc pipeline diagram):
+     ```
+     obj->vtable[0x118](stream) → ReadStream
+         ├─ FUN_005a2030: ReadByte → ship+0xEC (species)
+         ├─ Python: SpeciesToShip.InitObject(ship, species)
+         └─ Continue reading: position, orientation, velocity, name, set, subsystems
+     obj->vtable[0x11C](stream) → PostLoad
+     ```
+   - **New (binary):**
+     - vtable[+0x118] = `ShipDeserializeStream_Slot118` (0x005B0E80):
+       - Reads ONLY the 1-byte species (via `ShipReadSpecies`).
+       - Invokes Python `Multiplayer.SpeciesToShip.InitObject(self, species)`.
+       - Calls `stream->vtable[+0xD8]()` (bit-alignment finalize).
+       - Returns. Does NOT read position / quat / velocity / names.
+     - vtable[+0x11C] = `ShipPostDeserializeFixup_Slot11C` (0x005B0DC0):
+       - Calls `ShipReadStreamBody` (0x005A2060) which reads:
+         - 3 floats position (x, y, z)
+         - 4 floats quaternion (w, x, y, z) → matrix via FUN_008162B0
+         - CV4 velocity (3 dir + 4 mag = 7 bytes)
+         - u8 + bytes player_name string
+         - u8 + bytes set_name string (binary-searched in DAT_0097E9C8)
+       - Walks ship+0x284 subsystem linked list → vtable[+0x6c] per node
+       - Calls `stream->vtable[+0xD8]()` (finalize)
+   - This is structurally important. The two-pass scheme is FORCED by
+     data-dependency: subsystems don't exist until Python's
+     `SetupProperties()` runs inside vtable[+0x118], and the body data
+     needs the subsystem chain to deserialize subsystem state. The
+     labels "ReadStream" / "PostLoad" in the doc are misleading —
+     re-label to:
+     - vtable[+0x118] = "DeserializeIdentityAndInit" (species → ship type → NIF load)
+     - vtable[+0x11C] = "DeserializeBodyAndFixup" (position, quat, velocity,
+                       names, per-subsystem state)
+
+**Refinements (not binary corrections):**
+
+R1. **Two DAT_ globals conflate "factory registry" with "object hash table".**
+   - `DAT_0099A67C` = object hash table (by object_id)
+   - `DAT_0099A578` = factory registry vtable
+   - `DAT_0099A584` = factory bucket array
+   - `TGFactoryCreate` walks the FACTORY REGISTRY (by class_id key).
+     `ObjectLookupByID` walks the OBJECT HASH TABLE (by object_id key).
+   - The doc says "factory_class_id is looked up in the TG object factory
+     (DAT_0099a67c)" — confuses the two. Recommend split: "class_id
+     resolved via factory registry (DAT_0099A578); object_id resolved via
+     object hash (DAT_0099A67C)".
+
+R2. **Duplicate check `FUN_00430730(0, object_id)` is also a class-category gate.**
+   - The doc says "checked against the object hash table — if an object
+     with that ID already exists, deserialization aborts."
+   - Reality: the function returns the object IFF found AND its class
+     category equals 0x8002 (game object). Returns NULL for non-game-object
+     IDs (which the caller treats as "OK to create"). In practice this
+     doesn't change observable behavior — all ObjCreate'd objects are
+     game objects — but the wording should reflect the gate.
+
+R3. **Open question on quaternion vs Euler is RESOLVED — quaternion.**
+   - Doc's open question: *"Whether orientation is stored as quaternion
+     (4 floats) or Euler angles (3 floats) — quaternion is more likely
+     given 4 consecutive floats after position"*.
+   - Definitively CONFIRMED quaternion (w, x, y, z) via:
+     - FUN_00816390 (sender): matrix → quaternion (Shoemake algorithm
+       with SQRT + sign-handling)
+     - FUN_008162B0 (receiver): quaternion → 3×3 matrix expansion
+   - Wire offsets 21-37 = 16 bytes = 4 floats = (w, x, y, z).
+   - The open-question can be CLOSED.
+
+R4. **§4 #1 cross-doc disagreement: FUN_005A2030 identity.**
+   - `objcreate-serialization.md` calls it `ReadSpeciesByte`. ✓ CONFIRMED.
+     `cVar1 = stream->vtable[+0x50](); *(int *)(param_1 + 0xec) = (int)cVar1;`
+   - `objnotfound-requestobj-enterset.md` may call it `GetPlayerSlotFromObjID`.
+     **That doc has it wrong.** This pass settles the conflict in favor of
+     the objcreate-serialization claim. The objnotfound doc needs an
+     accompanying re-check (mid #11 or later).
+
+**Cross-doc consistency:**
+
+- `object-replication.md` (mid #9) — handler at 0x0069F620 + vtable[+0x118]
+  + vtable[+0x11C] + factory FUN_006F13E0 — all match.
+- `stream-primitives.md` (foundation #2) — SWIG TGBufferStream primitives
+  used inside the dispatch chain — all addresses + slot offsets match.
+- `game-opcodes.md` (mid #4) — 0x02 / 0x03 row maps to FUN_0069F620.
+- `multiplayer-decompiled-functions.md` / `decompiled-functions.md` — none
+  of the renames performed here conflict with the engine-family doc set.
+
+**Open questions (recorded for the next dig):**
+
+- Set/system registry contents at `DAT_0097E9C8` — the registration site
+  is unanchored. Likely registered during `Mission.LoadScript()` Python
+  sequence. Out of scope here.
+- Sender-side velocity COMPRESSION step in `ShipWriteStreamBody`
+  (vtable[+0x90] → vtable[+0xA0]) — direction vs magnitude separation
+  not byte-traced this pass. The receive path is byte-precise, so wire
+  format on the wire is anchored either way; only the sender's local
+  computation would change behavior for unusual velocity vectors.
+- Per-class wire payloads beyond Ship (Torpedo, Beam, Explosion if
+  applicable) — Torpedo's class_id 0x8009 is the only other observed
+  value. The Torpedo vtable[+0x118] / [+0x11C] pair (not Ship's) reads
+  different fields; deferred to per-class wire-format docs.
+- `MultiplayerGame.PlayerSlot+0x14` — relay loop pre-walks but field
+  semantics unexplored. Probably a per-peer send-sequence counter.
+
+**Annotations written to Ghidra (program: STBC.exe):**
+
+| Action | Target | Detail |
+|---|---|---|
+| rename_function | FUN_005a1f50 → `HandleObjCreateDeserialize` | + prototype `int * __cdecl (void *, uint)` + plate comment |
+| rename_function | FUN_005a2030 → `ShipReadSpecies` | benign warning re: "Ship" verb |
+| rename_function | FUN_005a2060 → `ShipReadStreamBody` | + plate comment with byte-precise wire layout |
+| rename_function | FUN_005a1cf0 → `ShipSerializeForObjCreate_Slot10C` | sender entry |
+| rename_function | FUN_005a1d80 → `ShipWriteHeader_Slot110` | header writer |
+| rename_function | FUN_005a1dc0 → `ShipWriteStreamBody` | body writer (FPU-confused decompile) |
+| rename_function | FUN_005b0d80 → `ShipSerializeStream_Slot114` | created this pass + renamed |
+| rename_function | FUN_005b0dc0 → `ShipPostDeserializeFixup_Slot11C` | created this pass + renamed |
+| rename_function | FUN_005b0e80 → `ShipDeserializeStream_Slot118` | + plate comment |
+| rename_function | FUN_006f13e0 → `TGFactoryCreate` | + prototype |
+| rename_function | FUN_00430730 → `ObjectLookupByID` | + prototype |
+| save_program | STBC.exe | |
+
+**Files touched:** docs/protocol/v5-validation-status.md (this row added;
+§2 row #10 status flipped to partial). The doc-under-review
+(`docs/protocol/objcreate-serialization.md`) NOT modified this pass —
+documentation-writer agent will apply C1+C2+C3 corrections and R1-R4
+refinements, close the orientation open question, add the v5 frontmatter
+header, and add the `[v5-validated 2026-05-28]` tag to confirmed rows.
 
 ---
 

@@ -52,12 +52,12 @@ evidence:
     completeness: 0.0
     confidence: high
     note: "Per-class payload format (Ship vs Torpedo vs Beam vs Explosion) is emitted by class-specific vtable+0x10C overrides — see objcreate-serialization.md. This doc only carries the dispatch chain identity."
-  - claim: "Receiver wraps FUN_005A1F50 in an active-slot SWAP so per-slot state is updated as if sender, not receiver, were the local player. DAT_0097FA84 is saved/restored, DAT_0097FA8C is swapped to the sender's slot, DAT_0095B07D is toggled 0 -> 1 around the call. On the host branch, a relay loop walks 16 PlayerSlots at MultiplayerGame+0x7C with stride 0x18, clones the message via TGMessage vtable+0x18, and SendTGMessages to every peer whose ID differs from BOTH the sender and our own. Network controller (88 bytes) is allocated via NiAlloc(0x58) + FUN_0047DAB0(controller, \"Network\") and attached via vtable+0x134 (AttachController)."
+  - claim: "Receiver wraps FUN_005A1F50 in an active-slot SWAP so per-slot state is updated as if sender, not receiver, were the local player. DAT_0097FA84 is saved/restored, DAT_0097FA8C is swapped to the sender's slot, DAT_0095B07D is toggled 0 -> 1 around the call. On the host branch, a relay loop walks 16 PlayerSlots at MultiplayerGame+0x74 with stride 0x18, clones the message via TGMessage vtable+0x18, and SendTGMessages to every peer whose ID differs from BOTH the sender and our own. Network controller (88 bytes) is allocated via NiAlloc(0x58) + FUN_0047DAB0(controller, \"Network\") and attached via vtable+0x134 (AttachController)."
     address: 0x0069f620
     function: MpgameHandleObjCreate
     completeness: 17.6
     confidence: high
-    note: "PlayerSlot array base/stride (+0x7C / 0x18) cross-checked against MultiplayerGame layout in objcreate-serialization.md (+0x84 there describes the same array but starting at the second element)."
+    note: "PlayerSlot array base at MultiplayerGame+0x74 with stride 0x18 confirmed via MultiplayerGame_Ctor (FUN_0069E590) line `FUN_00859d64(this+0x1d, 0x18, 0x10, ...)` — corrected from prior +0x7C and +0x84 references. Both prior numbers were intermediate field offsets within slots. See objcreate-serialization.md (mid #10) for full PlayerSlot layout and ctor evidence."
   - claim: "Authority is S -> C. Both senders (NewPlayerInGameHandler 0x006A1E70 and FUN_006A02A0) are server-side codepaths. Clients only receive and forward via the in-handler relay when acting as host. Client-observed C -> S traffic for opcode 0x03 in trace data is the host-relay echo (a peer running as host re-broadcasting), not authoritative client-initiated ObjCreate."
     address: null
     function: MpgameHandleObjCreate

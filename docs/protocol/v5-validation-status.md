@@ -86,7 +86,7 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 | 8 | stateupdate.md | Mid: opcode 0x1C dirty flags + 8 field formats + round-robin | game-opcodes, stream-primitives | **partial (2026-05-28)** — all 8 dirty-bit wire formats anchored byte-by-byte; ZERO material corrections; 5 clarifications (hash-flag-emit gate identity, wire-vs-validation conflation, weapon list shared with subsystems, CLIENT-side IsMultiplayer speculation should be dropped, PowerSubsystem WriteState created in Ghidra); see §6.8 |
 | 9 | object-replication.md | Mid: FUN_0069f620 thin index for ObjCreate | game-opcodes | **partial (2026-05-28)** — all 6 claims confirmed at high confidence; 2 wording refinements (R1 sender-side helper FUN_006A19A0; R2 vtable[+0x10C] sender / vtable[+0x118]+[+0x11C] receiver via FUN_005A1F50); MpgameHandleObjCreate renamed at 0x0069F620; see §6.9 |
 | 10 | objcreate-serialization.md | Mid: full ObjCreate chain + species map | object-replication, stream-primitives | **partial (2026-05-28)** — 3 material corrections (C1 velocity = CV4 3-dir + 4-mag, not f32-speed + 3-pad; C2 playerSlots base = +0x74 not +0x84; C3 vtable[+0x118] only does species+Python, body+subsystems is vtable[+0x11C]); orientation quaternion confirmed; species map byte-exact vs scripts; 11 functions renamed; see §6.10 |
-| 11 | stateupdate-subsystem-wire-format.md | Mid: subsystem linked list + 3 WriteState formats | stateupdate | pending |
+| 11 | stateupdate-subsystem-wire-format.md | Mid: subsystem linked list + 3 WriteState formats | stateupdate | **partial (2026-05-28)** — 2 material corrections (C1 ship+0x2C4 was HullSubsystem not PowerSubsystem + add missing 0x2C0/0x2C8; C2 EndMarker attribution corrected from 0x006CDAE0 to 0x006CF9B0); 10+ confirmed claims; 14 Ghidra renames + 1 created + 7 plates; see §6.11 |
 | 12 | per-ship-subsystem-wire-format.md | Mid: 16 stock ship subsystem catalogs | stateupdate-subsystem-wire-format | pending |
 | 13 | tgobjptrevent-class.md | Mid: TGObjPtrEvent class layout + 11 producers | (engine: TGEvent vtable 0x00895FF4) | pending |
 | 14 | pythonevent-wire-format.md | Leaf: opcode 0x06 + 4 event factories | tgobjptrevent-class, game-opcodes | pending |
@@ -2217,6 +2217,226 @@ R4. **§4 #1 cross-doc disagreement: FUN_005A2030 identity.**
 - `game-opcodes.md` (mid #4) — 0x02 / 0x03 row maps to FUN_0069F620.
 - `multiplayer-decompiled-functions.md` / `decompiled-functions.md` — none
   of the renames performed here conflict with the engine-family doc set.
+
+### 6.11 stateupdate-subsystem-wire-format.md — 2026-05-28 (game-archaeology-specialist)
+
+**Verdict:** `partial`. ~150 load-bearing claims. Wire formats and round-robin
+algorithm 100% confirmed; TWO material corrections in the named ship-slot table
+(C1: ship+0x2C4 mislabelled, C2: ship+0x2C0 ShieldGenerator missing); ONE
+function-attribution clarification (EndMarker call site identifies the wrong
+function); the Sovereign-class wire-byte example is unverifiable in this repo
+(hardpoint file absent — sovereign.py is on the client install only).
+
+**Subject:** the StateUpdate (0x1C) flag 0x20 payload — round-robin walk of the
+ship+0x284 subsystem linked list, with three polymorphic `WriteState` formats
+(base / Powered / Power) and recursive child writes. Doc also covers
+`SetupProperties` (which builds ship+0x284) and `LinkSubsystemToParent` (which
+prunes weapon/engine children and re-attaches them under parent systems).
+
+**Cross-anchors verified (foundation cascade):**
+
+- `Ship__WriteStateUpdate` at 0x005B17F0 (stateupdate.md mid #8) — round-robin
+  loop at flag 0x20 confirmed bytes-precise; 10-byte budget cap at offset
+  005B1EC0 (`CMP EAX, 0xA`).
+- `Ship__ReadStateUpdate` at 0x005B21C0 (mid #8) — receiver flag-0x20 walk
+  with `start_index` byte + linked-list traversal at offset 005B26B0
+  matches doc pseudocode lines 113-131.
+- SWIG TGBufferStream vtable @ 0x00895C58 (stream-primitives mid #2):
+  WriteChar @ vtable[+0x54], WriteBit @ vtable[+0x4C], GetPos @ vtable[+0xD8].
+  All three confirmed in WriteState bodies.
+- Subsystem vtable layout: WriteState at +0x70, ReadState at +0x74 — verified
+  by reading raw bytes of HullSubsystem vtable @ 0x00892D00 +0x70 = 0x0056D320.
+
+**Functions touched (completeness):**
+
+| Function | Addr | effective_score | Used to verify |
+|----------|------|-----------------|----------------|
+| Ship__WriteStateUpdate | 0x005B17F0 | 0.0 / 78.0 max | Round-robin loop (flag 0x20), 10-byte budget |
+| Ship__ReadStateUpdate | 0x005B21C0 | 5.8 / 85.0 max | Receiver round-robin (start_index + walk) |
+| ShipSubsystem__WriteState | 0x0056D320 | 10.5 / 87.8 max | Base format: condition byte + child recursion |
+| PoweredSubsystem__WriteState | 0x00562960 | 11.1 / 89.0 max | Powered format: base + hasData bit + powerPct byte |
+| PowerSubsystem__WriteState | 0x005644B0 | 25.9 / 89.0 max | Power format: base + 2 battery bytes (UNCONDITIONAL) |
+| ShipSubsystem__ReadState | 0x0056D390 | n/a | Receiver base: condition + child recursion |
+| PoweredSubsystem__ReadState | 0x005629D0 | n/a | Receiver Powered: base + bit + opt byte |
+| PowerSubsystem__ReadState | 0x00564530 | n/a (created this pass) | Receiver Power: base + 2 byte reads |
+| ShipSubsystem__GetMaxCondition | 0x0056C310 | n/a | property+0x20 (or 1.0f if no property) |
+| ShipSubsystem__GetChildSubsystem | 0x0056C570 | n/a | this+0x20 array, this+0x1C count, bounds-checked |
+| PowerSubsystem__GetMainBatteryLimit | 0x005634C0 | n/a | property+0x48 |
+| PowerSubsystem__GetBackupBatteryLimit | 0x005634D0 | n/a | property+0x4C |
+| ShipSubsystem__AddChildSubsystem | 0x0056C5C0 | n/a | Grows parent's +0x20 array, increments +0x1C |
+| Ship__SetupProperties | 0x005B3FB0 | n/a | Switch on property type IDs (0x812E-0x813F + 0x8145), populates named ship slots |
+| Ship__AddSubsystemToLists | 0x005B3E50 | n/a | Appends to ship+0x284 (always); 8 types are EXCLUDED from second list at ship+0x29C |
+| Ship__LinkSubsystemToParent | 0x005B5030 | n/a | Weapon/engine attach + remove from ship+0x284 |
+| Ship__LinkAllSubsystemsToParents | 0x005B3E20 | n/a | Iterates ship+0x284 calling LinkSubsystemToParent |
+
+**Confirmed claims (high confidence):**
+
+- **Linked list at ship+0x284** — confirmed via WriteStateUpdate `pShip2[0xa1]`
+  read (= ship+0x284) and receiver `*(int **)((int)this + 0x284)` access.
+  Node layout: `+0x00 data*, +0x04 next*, +0x08 prev*`. List manages count
+  at ship+0x280, head at +0x284, tail at +0x288, free list at +0x28C.
+- **3 WriteState vtable functions used at slot +0x70:**
+  - Base ShipSubsystem (0x0056D320) — referenced by 8 vtables.
+  - PoweredSubsystem (0x00562960) — referenced by 11 vtables.
+  - PowerSubsystem (0x005644B0) — referenced by 1 vtable @ 0x0088A260.
+- **Base format wire layout:** `condition_byte = ftol((this+0x30 /
+  GetMaxCondition()) * 255.0)` followed by recursive `vtable[+0x70](stream,
+  isOwnShip)` over `this+0x20[0..this+0x1C-1]`. Confirmed instruction-by-
+  instruction at 0x0056D320.
+- **Powered format wire layout:** if `isOwnShip == 0` then `WriteBit(1) +
+  WriteByte(ftol(this+0x90 * 100.0))`; else `WriteBit(0)`. Confirmed via
+  disassembly: `TEST BL,BL / JNZ skip_power_branch`.
+- **Power format wire layout:** `WriteByte(ftol((this+0xAC /
+  GetMainBatteryLimit()) * 255.0)) + WriteByte(ftol((this+0xB4 /
+  GetBackupBatteryLimit()) * 255.0))` — **UNCONDITIONAL** (no `TEST/JCC` on
+  isOwnShip between FUN_0056D320 and the two CALL [vtable+0x54] writes).
+  The doc's "ALWAYS regardless of isOwnShip" note holds.
+- **Property type ID → ship slot mapping in SetupProperties (FUN_005B3FB0):**
+  | Property ID | Type | Ship slot |
+  |-------------|------|-----------|
+  | 0x812F + iVar4==1 | CT_WEAPON_SYSTEM_PROPERTY (Phaser) | ship+0x2B8 |
+  | 0x812F + iVar4==3 | CT_WEAPON_SYSTEM_PROPERTY (Pulse) | ship+0x2BC |
+  | 0x812F + iVar4==4 | CT_WEAPON_SYSTEM_PROPERTY (Tractor) | ship+0x2D4 |
+  | 0x8133 | CT_TORPEDO_SYSTEM_PROPERTY | ship+0x2B4 |
+  | 0x8137 | CT_SHIELD_PROPERTY | ship+0x2C0 (DOC MISSING) |
+  | 0x8138 | CT_HULL_PROPERTY | ship+0x2C4 (DOC INCORRECTLY says PowerSubsystem) |
+  | 0x8139 | CT_SENSOR_PROPERTY | ship+0x2C8 (DOC MISSING) |
+  | 0x813A | CT_CLOAKING_SUBSYSTEM_PROPERTY | ship+0x2DC |
+  | 0x813B | CT_WARP_ENGINE_PROPERTY | ship+0x2D0 |
+  | 0x813C | CT_IMPULSE_ENGINE_PROPERTY | ship+0x2CC |
+  | 0x813E | CT_POWER_PROPERTY | ship+0x2B0 |
+  | 0x813F | CT_REPAIR_SUBSYSTEM_PROPERTY | ship+0x2D8 |
+- **Engine parent-child disambiguation:** property+0x48 holds EngineType enum
+  (0=EP_IMPULSE, 1=EP_WARP). FUN_005B5030 reads it and routes to ship+0x2CC
+  (impulse) or ship+0x2D0 (warp). Confirmed at 0x005B5097-0x005B50A0.
+- **Round-robin algorithm:** doc pseudocode lines 196-225 confirmed
+  instruction-for-instruction. Tracker layout `iVar5+0x30 pSubsysCursor /
+  iVar5+0x34 uSubsysIndex` per stateupdate.md mid #8.
+- **8 types excluded from second list (ship+0x29C/0x2A0):** 0x801F
+  PhaserSystem, 0x8021 TractorBeamSystem, 0x802C PhaserBank, 0x802F
+  TorpedoTube, 0x802E TractorBeamProjector, 0x802D PulseWeapon, 0x8025
+  WarpEngine, 0x8024 CloakDevice. Confirmed via 8-deep nested type-ID check
+  in FUN_005B3E50 lines 0x5B3EA0-0x5B3F40.
+- **Globals:**
+  - `_DAT_00888860 = 0x3F800000 = 1.0f` — confirmed via raw bytes; used as
+    GetMaxCondition fallback when property == NULL.
+  - `0x0088B9AC = 0x437F0000 = 255.0f` — byte-scale multiplier in condition
+    + battery + sender weapon-health computations.
+  - `0x0088CE78 = 0x42C80000 = 100.0f` — powerPct multiplier in
+    PoweredSubsystem WriteState.
+  - `0x0088D4E4 = 0x3C23D70A = ~0.01f` — powerPct decode scale in
+    PoweredSubsystem ReadState (byte 0-100 × 0.01 → 0-1.0 ratio).
+
+**Corrected claims:**
+
+1. **C1 — Named ship-slot table is materially wrong (ship+0x2C0 missing,
+   ship+0x2C4 mislabelled).**
+   - Old (doc table at lines 348-360):
+     ```
+     ship+0x2B0  Powered master (EPS) / Power distribution
+     ship+0x2C4  PowerSubsystem (reactor)
+     ```
+     (no ship+0x2C0 row; no ship+0x2C8 row)
+   - **New (binary, SetupProperties):**
+     ```
+     ship+0x2B0  PowerSubsystem        (case 0x813E)  — THE reactor/EPS
+     ship+0x2C0  ShieldGenerator       (case 0x8137)  — was missing
+     ship+0x2C4  HullSubsystem         (case 0x8138)  — doc had as Power
+     ship+0x2C8  SensorSubsystem       (case 0x8139)  — was missing
+     ```
+   - Evidence: `Ship__SetupProperties` (0x005B3FB0) switch on property type
+     ID 0x813E writes `*(undefined4 *)(param_1 + 0x2b0)`; 0x8137 writes
+     `+0x2c0`; 0x8138 writes `+0x2c4`; 0x8139 writes `+0x2c8`. There is no
+     case that writes to `+0x2c4` other than 0x8138 (Hull).
+   - Impact: the doc's "Powered master (EPS) / Power distribution" at
+     ship+0x2B0 is semantically OK (PowerSubsystem IS the EPS) but the
+     "(reactor)" gloss on ship+0x2C4 is flat wrong — that slot is Hull.
+
+2. **C2 — EndMarker (`vtable[+0xD8]`) function misattribution.**
+   - Old (doc lines 76-77, 90-93, 110):
+     *"EndMarker — No-op (function at 0x006cdae0 is just RET)"*
+   - **New:** The vtable slot called at the end of each WriteState is
+     `vtable[+0xD8]`. On the SWIG TGBufferStream (vtable @ 0x00895C58),
+     slot +0xD8 = `0x006CF9B0 = TGBufferStream_swig_GetPos` — reads the
+     cursor and returns it. The return value is discarded so it's
+     effectively a no-op on stream state, but the function address
+     (0x006CDAE0) the doc cites is NOT what's called from WriteState.
+     0x006CDAE0 IS a RET-only function, but it lives at slot +0xB0 of a
+     DIFFERENT vtable (0x00895B80, the non-SWIG TGStreamedObject vtable —
+     a separate class entirely).
+   - Impact: cosmetic — the wire behavior is unchanged (no bytes
+     written), but the doc identifies the wrong source function.
+
+**Refinements (not binary corrections):**
+
+R1. **Sovereign-class wire-byte example is observational, not anchored.**
+   - The 11-row table at doc lines 175-190 ("Sovereign-Class Example") is
+     based on `sovereign.py` LoadPropertySet order. That file is not
+     present in this repo's reference (only client install carries
+     hardpoint files), so the byte sizes per row are not binary-verified
+     here. The table is internally consistent with the WriteState format
+     rules — `cond + N children + bit + powerPct` arithmetic checks out.
+     Confidence: medium (algorithm-derived but not byte-traced).
+
+R2. **"List of 33 subsystems" debunked correctly.**
+   - The doc's section ("Total top-level subsystems: 11 — not 33") is
+     accurate: the round-robin walks only the top-level list; individual
+     weapons and engines appear as CHILDREN of their parent systems and
+     get visited via the recursive `vtable[+0x70](stream, isOwnShip)`
+     loop inside ShipSubsystem__WriteState. No mapping array exists.
+
+R3. **Ship+0x29C list naming is technically a head pointer.**
+   - Doc references "ship+0x29C list". Binary detail: the second list has
+     count at ship+0x298, HEAD at ship+0x29C, TAIL at ship+0x2A0. So
+     "ship+0x29C list" is the head pointer. Doc's intent is correct; no
+     correction needed, but documentation-writer may want to clarify.
+
+R4. **Vtable inheritance chain count holds.**
+   - Doc lists 7 base + 9 Powered + 1 Power = 17 types using these
+     WriteState functions. Binary shows xrefs: 8 base + 11 Powered + 1
+     Power = 20 vtables. The deltas (8 vs 7, 11 vs 9) likely correspond to
+     intermediate base-class vtables (ShipSubsystem itself + PoweredSubsystem
+     itself + one more) that the doc doesn't enumerate as "user-visible"
+     subsystem types. Not a correction — doc is listing leaf classes.
+
+**Open questions (recorded for the next dig):**
+
+- Sovereign-class per-row byte sizes (R1) — requires Sovereign hardpoint file
+  for cross-verification.
+- Property type ID 0x812E (Bridge) handler FUN_005B5240 not decoded —
+  whether the BridgeProperty hull goes into ship+0x284 or is special-cased.
+  Doc claims "BridgeProperty_Create creates HullSubsystem — actually IS in
+  the list" which suggests it goes through normal AddSubsystemToLists.
+  Unverified this pass.
+- Property type 0x8145 → FUN_005B5280 — also undecoded.
+
+**Annotations written to Ghidra (program: STBC.exe):**
+
+| Action | Target | Detail |
+|---|---|---|
+| rename_function | FUN_0056d320 → `ShipSubsystem__WriteState` | base format |
+| rename_function | FUN_0056d390 → `ShipSubsystem__ReadState` | base receiver |
+| rename_function | FUN_00562960 → `PoweredSubsystem__WriteState` | + plate |
+| rename_function | FUN_005629d0 → `PoweredSubsystem__ReadState` | base + bit + opt byte |
+| rename_function | FUN_005644b0 → `PowerSubsystem__WriteState` (already named) | + plate |
+| create_function + rename | 0x00564530 → `PowerSubsystem__ReadState` | was undefined (DATA xref only from vtable@0x0088a264) |
+| rename_function | FUN_0056c310 → `ShipSubsystem__GetMaxCondition` | property+0x20 or 1.0f |
+| rename_function | FUN_0056c570 → `ShipSubsystem__GetChildSubsystem` | this+0x20 array, bounds-checked |
+| rename_function | FUN_005634c0 → `PowerSubsystem__GetMainBatteryLimit` | property+0x48 |
+| rename_function | FUN_005634d0 → `PowerSubsystem__GetBackupBatteryLimit` | property+0x4C |
+| rename_function | FUN_0056c5c0 → `ShipSubsystem__AddChildSubsystem` | grows +0x20 array |
+| rename_function | FUN_005b3e20 → `Ship__LinkAllSubsystemsToParents` | iterates +0x284 |
+| rename_function | FUN_005b3e50 → `Ship__AddSubsystemToLists` | dual-list append (8 types excluded from second) |
+| rename_function | FUN_005b3fb0 → `Ship__SetupProperties` | + plate listing 12 named slot mappings |
+| rename_function | FUN_005b5030 → `Ship__LinkSubsystemToParent` | + plate documenting 3 classifications |
+| set_plate_comment | 0x0056d320 / 00562960 / 005644b0 / 00564530 / 005b3fb0 / 005b5030 | per-function wire-format / classification docs |
+
+**Files touched:** docs/protocol/v5-validation-status.md (this row added;
+§2 row for stateupdate-subsystem-wire-format.md status flipped to partial).
+The doc-under-review NOT modified this pass — documentation-writer agent
+will apply C1+C2 corrections to the named-slot table and EndMarker note,
+add ship+0x2C0/+0x2C8 rows, update the v5 frontmatter, and add
+`[v5-validated 2026-05-28]` tags to confirmed rows.
 
 **Open questions (recorded for the next dig):**
 

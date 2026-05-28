@@ -93,7 +93,7 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 | 15 | collision-effect-protocol.md | Leaf: opcode 0x15 + CollisionEvent class + validation chain | game-opcodes, stream-primitives | **verified (2026-05-28)** — first protocol family doc to clear `verified`; all 110+ claims byte-by-byte confirmed; ZERO material wire-format changes; 1 byte-level typo (handler-table 0x005afab0 -> 0x005AFAD0) + 1 wording clarification (PostEvent __thiscall via TGEventManager singleton at 0x0097F838); critical OpenBC finding confirmed (stock dedi has NO server-side recomputation of contact points or force); see §6.15 |
 | 16 | set-phaser-level-protocol.md | Leaf: opcode 0x12 + TGCharEvent | game-opcodes, tgobjptrevent-class | **verified (2026-05-28)** — second protocol-family doc to clear `verified`; 18-byte wire format byte-by-byte confirmed; ZERO material wire-format changes; 3 minor corrections (C1 hierarchy cascade — no TGSubsystemEvent, 0x101 IS TGEvent; C2 registration-string typography "MultiplayerGame :: SetPhaserLevelHandler" with spaces; C3 helper-fn rename FUN_006d6200 → TGFactory_DeserializeObject); 4 functions newly created (sender thunk, applier, TGCharEvent::Write/ReadFromStream) + 4 renamed + 4 plates; foundation cross-anchors (TGCharEvent 0x2C, IsA {0x105, 0x101, 0x02}, TGEvent base 16B) all hold; see §6.16 |
 | 17 | delete-player-ui-wire-format.md | Leaf: opcode 0x17 + factory 0x866 | game-opcodes, pythonevent-wire-format | **partial (2026-05-28)** — 3 corrections + 4 clarifications + MAJOR architectural finding (two-registry architecture closes wire-format-spec OQ #2); receiver/transport/authority all v5-validated; 0x866 located in TGFactory registry (DAT_0099a578) which is separate from NiRTTI; FUN_006a0ca0 corrected to opcode 0x18 sender (not 0x17); dst_obj_id semantic corrected (network singleton handle, not ship/player); see §6.17 |
-| 18 | objnotfound-requestobj-enterset-wire-format.md | Leaf: opcodes 0x1D/0x1E/0x1F triad | game-opcodes, objcreate-serialization | pending |
+| 18 | objnotfound-requestobj-enterset-wire-format.md | Leaf: opcodes 0x1D/0x1E/0x1F triad | game-opcodes, objcreate-serialization | **partial (2026-05-28)** — 3 material wire/value corrections (C1 setName is length-prefixed not null-terminated; C2 DAT_008d8ab8 is `"warp"` tunnel sentinel not `default space combat set`; C3 DAT_008e5c18 is FLT_MAX undamaged sentinel not low-HP threshold — strictly stricter gate) + 2 address-mapping corrections (C4 GetPlayerSlotFromObjID is at 0x006a19a0 not 0x005a2030; C5 0x006a7770 is MakeObjIDFromPlayerSlot the INVERSE and not called by triad) + 2 clarifications (Clar1 triad uses raw stream primitives only — bypasses TGFactory_DeserializeObject — these are command/RPC messages not event objects; Clar2 IsLocalPlayerShip is host-mode-aware so opcode 0x03 is selected for every team-bearing ship on a dedicated server); foundation cross-anchors all hold (dispatcher 0x0069F2A0, jump table 0x0069F534, TGNetwork singleton, "NoMe" group, "UNKNOWN" allocator); 5 functions renamed + 2 created in Ghidra + 5 plates; closes §4 #1 (FUN_005a2030 = ShipReadSpecies — binary sides with objcreate-serialization.md); closes §4 #15 (breadcrumb added); see §6.18 |
 | 19 | subsystem-integrity-hash.md | Leaf analysis: dead-code anti-cheat hash | stateupdate, per-ship-subsystem-wire-format | pending |
 | 20 | cf16-precision-analysis.md | Leaf analysis: CF16 encoder/decoder + precision tables | stream-primitives | pending |
 | 21 | cf16-explosion-encoding.md | Leaf analysis: opcode 0x29 + mod weapon ID round-trip | cf16-precision-analysis, game-opcodes | pending |
@@ -567,7 +567,7 @@ binary as authority.
 
 | # | Disagreement | Sources | Authority candidate |
 |---|--------------|---------|---------------------|
-| 1 | `FUN_005a2030` semantics: "ReadSpeciesByte" (reads species into ship+0xEC) vs "GetPlayerSlotFromObjID" | objcreate-serialization.md (key-functions table) vs objnotfound-requestobj-enterset-wire-format.md (function-addresses table) | Ghidra decompile of 0x005a2030 — one of them is wrong |
+| 1 | `FUN_005a2030` semantics: "ReadSpeciesByte" (reads species into ship+0xEC) vs "GetPlayerSlotFromObjID" | objcreate-serialization.md (key-functions table) vs objnotfound-requestobj-enterset-wire-format.md (function-addresses table) | **CLOSED (2026-05-28, leaf #18):** binary truth — `0x005a2030` IS `ShipReadSpecies` (a 2-vtable-call ship-setup function that reads a species value into ship+0xEC). The actual `GetPlayerSlotFromObjID` is at `0x006a19a0` (formula matches the body decompile). objnotfound-requestobj-enterset-wire-format.md table corrected this pass; objcreate-serialization.md was correct. See objnotfound-requestobj-enterset-wire-format.md "Critical Correction: Function Address Map" section (C4). |
 | 2 | TGBufferStream write primitives count | stream-primitives.md = 7 writes; python-messages.md = 8 writes (adds WriteBool / WriteLong / WriteCString) | python-messages.md (more complete); merge into stream-primitives.md |
 | 3 | TGMessage layout, fields +0x2C/+0x30/+0x34 | transport-layer.md table 1 vs table 2 within same file ("retry_strategy" vs "num_retries", "base_delay" vs "backoff_time", "delay_factor" vs "backoff_factor") | Ghidra decompile of TGMessage constructor FUN_006b82a0 |
 | 4 | Ship+0x2BC slot identity | wire-format-spec.md slot map says "(unused) NULL always"; subsystem-integrity-hash.md slot 11 says "Pulse Weapon System hashing at +0x40 / +0x2BC" | Ghidra decompile of ComputeSubsystemHash 0x005b5eb0 |
@@ -581,7 +581,7 @@ binary as authority.
 | 12 | Opcode 0x18 wire format | game-opcodes.md says "DeletePlayerAnim, Handler FUN_006A1420, plays animation" — no wire format | New leaf doc needed (delete-player-anim-wire-format.md exists in `OpenBC/docs/wire-formats/` already; mirror it on the BC side) |
 | 13 | Factory 0x866 family | delete-player-ui-wire-format.md says "0x866 = base TGEvent"; tgobjptrevent-class.md's factory-table top is 0x02 = TGEvent; the 0x8xx family is `0x8129 = ObjectExplodingEvent` | **CLOSED (2026-05-28, leaf #17):** 0x866 lives in the **TGFactory registry** (`DAT_0099a578` / `DAT_0099a584`), a **second class registry separate from NiRTTI** used exclusively by `TGFactory_DeserializeObject` (0x006D6200). 0x866 is a TGEvent subclass (vtable 0x00895848, size 0x2C), NOT base TGEvent. Confirmed siblings: 0x801, 0x865, 0x867. Full TGFactory enumeration deferred to downstream pass. See delete-player-ui-wire-format.md "Two-Registry Architecture" section. |
 | 14 | objnotfound-requestobj-enterset doc not indexed | The doc exists at `docs/protocol/objnotfound-requestobj-enterset-wire-format.md` but is not listed in `docs/protocol/README.md` (the README table has 18 docs; this is doc 19) | Add to README in v5 close batch |
-| 15 | Breadcrumb header inconsistency | objnotfound-requestobj-enterset-wire-format.md lacks the `> [docs](../README.md) / [protocol](README.md) /` breadcrumb header that all siblings have | Add on re-validation |
+| 15 | Breadcrumb header inconsistency | objnotfound-requestobj-enterset-wire-format.md lacks the `> [docs](../README.md) / [protocol](README.md) /` breadcrumb header that all siblings have | **CLOSED (2026-05-28, leaf #18):** breadcrumb added in v5 render pass. |
 | 16 | SpeciesToShip table duplication | game-opcodes.md (15 playable rows) and objcreate-serialization.md (45 rows) | objcreate-serialization.md canonical; game-opcodes.md keeps short list + link |
 | 17 | Opcode 0x06 worked-example accuracy | pythonevent-wire-format.md's "exactly 12-14 PythonEvents per collision" — 12-14 doesn't quite match either of the example breakdowns in the same doc | Re-derive from packet trace |
 | 18 | Receiver address for explosion in cf16 docs | Both cf16-precision-analysis.md and cf16-explosion-encoding.md cite Handler_Explosion_0x29 at 0x006A0080 (consistent across CF16 family); game-opcodes.md also = 0x006A0080. OK, this is consistent. (No disagreement; noted as positive cross-anchor.) |  | — |
@@ -3923,6 +3923,236 @@ with anchor to leaf doc; §8 spot-check #6 marked CLOSED).
 
 ---
 
+### 6.18 objnotfound-requestobj-enterset-wire-format.md — 2026-05-28 (game-archaeology-specialist)
+
+**Status:** validated -> `partial` (after 3 material wire/value corrections + 2 address-mapping
+corrections + 2 clarifications). **Eighteenth protocol doc** under v5 — fourth protocol leaf
+(after #15 collision-effect-protocol, #16 set-phaser-level-protocol, #17 delete-player-ui).
+Does NOT clear `verified` because three of the corrections (C1 length-prefixed string, C2
+"warp" sentinel re-interpretation, C3 FLT_MAX gate) are load-bearing for OpenBC implementation
+and the cross-doc §4 #1 conflict required binary arbitration this pass. Zero opcode-routing
+errors; the foundation jump-table thunks (0x1D / 0x1E / 0x1F at indices 27 / 28 / 29) all
+confirmed byte-by-byte.
+
+**Methodology:** Phase 1-5 per v5 workflow. `program: STBC.exe` on every MCP call. Doc anchors
+against engine doc #1 (MultiplayerGame dispatcher 0x0069F2A0 + jump table 0x0069F534),
+foundation doc #2 (stream-primitives.md — TGBufferStream cursor vtable at 0x00895C58, slots
++0x10 / +0x14 / +0x68 / +0x6c), foundation doc #3 (transport-layer.md — TGMessage +0x3a
+guaranteed flag, +0x3d no-notify), and protocol doc #10 (objcreate-serialization.md —
+authoritative on FUN_005a2030 = ShipReadSpecies).
+
+**Functions touched:**
+
+| Function | Addr | effective_score | Plate? |
+|----------|------|-----------------|--------|
+| MultiplayerGame__ObjNotFoundHandler (0x1D) | 0x006A0490 | high | yes |
+| MultiplayerGame__RequestObjHandler (0x1E) | 0x006A02A0 | high | yes |
+| MultiplayerGame__EnterSetHandler (0x1F) | 0x006A05E0 | high | yes |
+| MultiplayerGame__RequestObjEventHandler (sender for 0x1D / 0x1F) | 0x006A07D0 | high | yes (CREATED this pass — 575B body) |
+| MultiplayerGame__EnterSetEventHandler (stub) | 0x006A0A20 | high | yes (CREATED this pass — single RET) |
+| GetPlayerSlotFromObjID | 0x006A19A0 | high | anchored |
+| MakeObjIDFromPlayerSlot (INVERSE; not called by triad) | 0x006A7770 | high | anchored |
+| TGSceneGraph__GetObjectByID (factory 0x8003) | 0x00434E00 | high | anchored |
+| PhysicsObjectClass__FindByObjectID (factory 0x8006) | 0x0059FC60 | high | anchored |
+| CastToDamageableObject (IsA 0x8007) | 0x00590B20 | high | anchored |
+| CastToShipClass (IsA 0x8008) | 0x005AB670 | high | anchored |
+| IsLocalPlayerShip (host-mode dual) | 0x005AE140 | high | anchored |
+| TGSetManager__FindSetIndexByName (binary search) | 0x004055A0 | high | anchored |
+| DamageableObject__SendExplosions_0x29 (replay list at +0x13c) | 0x00595C60 | high | anchored |
+| TGBufferStream__ReadString_HeapAlloc (length-prefixed) | 0x006D2370 | high | anchored |
+| TGBufferStream__WriteString_LenPrefixed | 0x006D23C0 | high | anchored |
+| DamageableObject ctor (+0x14c = FLT_MAX) | 0x00590CB0 | medium | anchored |
+| DamageableObject damage application | 0x00592C00 | medium | anchored |
+
+**Wire-format CONFIRMATION (byte-by-byte, no changes to opcode-routing):**
+
+| Section | Claim | Verified via |
+|---------|-------|--------------|
+| Jump-table thunks | 0x1D index 27 → 0x0069F4F5 → 0x006A0490; 0x1E index 28 → 0x0069F51D → 0x006A02A0; 0x1F index 29 → 0x0069F509 → 0x006A05E0 | Bytes at jump-table+108..119 |
+| 0x1D wire | `[0x1D][int32 objectID]` (5 bytes) | ReadInt at 0x006a04ee; relay WriteChar(0x1E)+WriteInt at 0x006a0535/0x006a0540 |
+| 0x1E request wire | `[0x1E][int32 objectID]` (5 bytes) | ReadInt at 0x006a02dd cursor |
+| 0x1E response payload | `[byte: opcode 0x02 or 0x03][byte: playerSlot][byte: team if 0x03][... WriteToStream via vtable+0x10c ...]` | Disasm 0x006a0392/0x006a039e (opcode select); 0x006a03ab (playerSlot); 0x006a03b9 (team); 0x006a03d4 (WriteToStream) |
+| 0x1F wire | `[0x1F][int32 objectID][uint32 LE N][N bytes setName]` — length-prefixed, no trailing NUL | TGBufferStream__ReadString_HeapAlloc body — vtable+0x68 ReadInt then vtable+0x10 ReadBytes |
+| Send flags | 0x1D / 0x1E set msg+0x3a = 1 (guaranteed); 0x1E also sets msg+0x3d = 0 (no-notify) | Disasm 0x006a0592 (0x1D); 0x006a041a / 0x006a041e (0x1E) |
+| 0x1E response target | nTargetID (the requesting connection), unicast NOT broadcast | Disasm 0x006a0596: SendTGMessage(network, EDI=nTargetID, msg, 0) |
+| 0x1F transition slots | currentSet->vtable[+0x58] (ExitSet, slot 22, arg = ship+4); destSet->vtable[+0x54] (EnterSet, slot 21, args = (ship, ship+0x28)) | Decompile of FUN_006A05E0 |
+
+**Three material wire/value corrections:**
+
+**C1 — String encoding is LENGTH-PREFIXED, not null-terminated.** Pre-v5 doc described the
+0x1F setName field as "null-terminated string" and described the read as
+`TGBufferStream__ReadString(stream, -1)` heap-alloc. Binary truth: the helper at
+FUN_006D2370 (`TGBufferStream__ReadString_HeapAlloc`) reads `uint32 length` via vtable+0x68
+then `length` raw bytes via vtable+0x10 — **no null terminator on the wire**. Symmetric on
+send via FUN_006D23C0 (vtable+0x6c WriteInt + vtable+0x14 WriteBytes). Heap-alloc length
+matches wire-prefix exactly. **Severity HIGH** for OpenBC interop. Wire-format row updated
+in body (now 2 rows: 4 bytes length + N bytes payload). game-opcodes.md 0x1F row and
+wire-format-spec.md should reflect this at family close.
+
+**C2 — `DAT_008d8ab8` is the literal string `"warp"`, not "default space combat set name".**
+Pre-v5 doc described `0x008d8ab8` as "the name of the default space combat set — the set
+objects inhabit when NOT inside a named sub-region". Binary truth: `inspect_memory_content`
+at 0x008d8ab8 returns `77 61 72 70 00` = literal 5-byte `"warp\0"`. The next string in the
+rdata block is `"ShipClass"`, NOT `"DeleteAllMissionTimers"` as the pre-v5 doc claimed.
+**Semantic re-interpretation:** the sender's `strcmp(currentSetName, "warp")` gate identifies
+the in-warp-tunnel set; 0x1F is sent during warp transitions into named destination sub-sets
+(e.g., `"Multi1"`), NOT during normal space combat. The pre-v5 "Space Set" subsection is
+re-titled and rewritten as "the 'warp' tunnel set". Severity MEDIUM — wire format unchanged
+but the gate's meaning is inverted relative to the pre-v5 reading.
+
+**C3 — `DAT_008e5c18` is `FLT_MAX`, not "small positive HP threshold".** Pre-v5 doc described
+the constant as `~some small positive float`. Binary truth: bytes at 0x008e5c18 = `ff ff 7f 7f`
+= float `3.4028235e+38` = `FLT_MAX`. Used by DamageableObject as **undamaged sentinel**:
+ctor (FUN_00590cb0) initializes `dobj+0x14c = FLT_MAX`; damage application (FUN_00592c00)
+decrements that field. The 0x1E gate `FLT_MAX <= dobj[+0x14c] AND dobj[+0x150] == 0`
+therefore succeeds **only when the object has never been damaged AND is alive** — strictly
+stricter than the doc implied. **OpenBC implication:** 0x1E does not re-send damaged objects;
+a late-joining client requesting hydration of a damaged object will be silently dropped.
+Severity MEDIUM — gate semantics are stricter than a threshold reading suggests; mods that
+rely on RequestObj for late-join hydration of damaged objects need their own resync.
+
+**Two address-mapping corrections:**
+
+**C4 — `GetPlayerSlotFromObjID` is at `0x006A19A0`, NOT `0x005A2030`.** Pre-v5 Function
+Addresses table row `0x005a2030 | GetPlayerSlotFromObjID` is wrong. `0x005A2030` is
+`ShipReadSpecies` (2-vtable-call ship-setup, reads species into ship+0xEC); `0x006A19A0`
+is the actual `GetPlayerSlotFromObjID` (formula `(objID - 0x3FFFFFFF + ((objID -
+0x3FFFFFFF >> 31) & 0x3FFFF)) >> 18`). The 0x1E handler `CALL 0x006A19A0` at offset
+0x006A03AB matches. **CLOSES §4 #1** with binary authority siding with
+objcreate-serialization.md (which had the correct `ShipReadSpecies` mapping).
+
+**C5 — `0x006A7770` is `MakeObjIDFromPlayerSlot` (the INVERSE), and is NOT called by the
+triad.** Pre-v5 Function Addresses table row `0x006a7770 | MultiplayerGame__GetPlayerSlotFromObjID`
+is wrong. Body decompile: `*(int*)(this+0x10) = playerSlot * 0x40000 + 0x3FFFFFFF` — constructs
+an obj ID FROM a slot (inverse). Used in player-init context. The 0x1E handler does NOT call
+this address; it calls 0x006A19A0 via C4 path. Row relabeled in doc as `MakeObjIDFromPlayerSlot
+(INVERSE; not called by the triad)`.
+
+**Two clarifications:**
+
+**Clar1 — Command Messages vs Event Messages.** The 0x1D / 0x1E / 0x1F triad uses raw
+`TGBufferStream` primitives only (ReadInt / ReadString_HeapAlloc / WriteChar / WriteInt) and
+bypasses `TGFactory_DeserializeObject` (FUN_006D6200) entirely. Contrasts with opcodes 0x06
+(PythonEvent) / 0x12 (SetPhaserLevel) / 0x15 (CollisionEffect) / 0x17 (DeletePlayerUI) which
+all go through TGFactory. New doc section: "Command Messages vs Event Messages — Why the
+Triad Bypasses TGFactory" with a per-opcode style table. The triad are RPC-style requests
+and responses, not event-bearing transports — simpler to reimplement in OpenBC (no class-ID
+lookup, no TGFactory registry).
+
+**Clar2 — `IsLocalPlayerShip` is host-mode-aware.** Pre-v5 pseudocode read
+`if (ship != NULL && Ship__IsPlayerShip(ship)) opcode = 3;`. Binary truth: `IsLocalPlayerShip`
+(FUN_005AE140) branches on `DAT_0097FA89` (IsHost): on host it returns true for ANY ship with
+`ship+0x2e4 != 0` (i.e., team-bearing); on client it returns true only for the local player's
+ship. **OpenBC implication for dedicated servers:** opcode 0x03 is selected for every
+team-bearing ship, not one "local" ship. The body pseudocode is structurally correct;
+the doc adds an explicit note.
+
+**Refinements (R1 / R2, not promoted to body corrections):**
+
+- R1 — Cast helper naming: pre-v5 doc body line wrote `DamageableObject__Cast`; the actual
+  Ghidra-renamed helper is `CastToDamageableObject` (FUN_00590B20, IsA 0x8007). Cosmetic.
+- R2 — `"UNKNOWN"` allocator class name string at 0x008d858c is the LITERAL class name used
+  by the generic TGMessage pool — NOT a placeholder for "we don't know the class". Used by
+  0x1D / 0x1E / 0x1F / 0x29 / NewPlayerInGameHandler. Worth a one-line note in the doc
+  (added to data anchors table).
+
+**Non-corrections (verified, no change needed):**
+- Opcode 0x1D / 0x1E / 0x1F receiver addresses (0x006A0490 / 0x006A02A0 / 0x006A05E0) — correct.
+- Jump-table thunks (0x0069F4F5 / 0x0069F51D / 0x0069F509) — correct.
+- 0x1D relay-to-host(0) on local-miss — correct.
+- 0x1E unicast back to requestor (not broadcast) — correct.
+- 0x1F NULL-found fallback relays 0x1E to host(0) — correct.
+- 0x1F sender uses "NoMe" group — correct (NOT host(0); pre-v5 doc was already right here).
+- ExitSet (vtable+0x58, slot 22) / EnterSet (vtable+0x54, slot 21) — correct.
+- ExitSet args = (objID); EnterSet args = (ship, placement at ship+0x28) — correct.
+- WriteToStream via vtable[+0x10c] (slot 67) — correct.
+- DamageableObject__SendExplosions_0x29 walks list at dobj+0x13c — correct.
+- Empty stub at 0x006A0A20 (single RET, body 3 bytes) — correct.
+- Triad bypasses TGFactory — verified via full-body read of all three handlers.
+
+**Cross-doc anchor reuse:**
+
+- **From doc #1 (wire-format-spec.md):** opcode 0x1D / 0x1E / 0x1F handler addresses + jump-table
+  routing — confirmed. The 0x1F string-encoding row needs the C1 length-prefix correction at
+  family close.
+- **From foundation doc #2 (stream-primitives.md):** TGBufferStream cursor vtable @ 0x00895C58
+  with slots +0x10 / +0x14 / +0x68 / +0x6c — confirmed; this leaf is independent confirmation.
+- **From foundation doc #3 (transport-layer.md):** TGMessage +0x3a guaranteed flag, +0x3d
+  no-notify flag — confirmed via 0x1D / 0x1E send paths.
+- **From doc #4 (game-opcodes.md):** opcode 0x1F wire-format row needs the C1 length-prefix
+  fix at family close.
+- **From doc #10 (objcreate-serialization.md):** `FUN_005A2030 = ShipReadSpecies` — confirmed,
+  binary authority sides with this doc (closes §4 #1). `WriteToStream` chain via
+  vtable[+0x10c] for ObjCreate is also the chain used for 0x1E response — consistent.
+- **From engine doc #1 (function-map.md):** TGNetwork singleton at DAT_0097FA78 — confirmed.
+
+**Cross-doc impacts (no in-this-pass modifications; batched at family close):**
+
+- `wire-format-spec.md` — 0x1F row should reflect length-prefix wire (C1).
+- `game-opcodes.md` — 0x1F row should reflect length-prefix wire (C1); 0x1E row should
+  note the FLT_MAX gate (C3) and the "command-message-bypasses-TGFactory" distinction (Clar1).
+- `objcreate-serialization.md` — already correct on FUN_005A2030; no body change needed.
+  The 0x1E response uses the same WriteToStream chain; a cross-link from objcreate to this
+  leaf for the recovery-path companion would help readers.
+- `docs/engine/rtti-class-catalog.md` — confirm IsA tags 0x8003 / 0x8006 / 0x8007 / 0x8008
+  map to TGSceneGraph-anchored object / PhysicsObjectClass / DamageableObject / ShipClass.
+  (open question)
+- `docs/protocol/README.md` — doc already indexed (line 35 of README). §4 #14 still open
+  for the family-close README refresh.
+
+**Open questions:**
+
+- SWIG registration string for FUN_006A0A20 — the doc labels it "Enter game set" but the
+  actual string passed in FUN_0069efe0 (single DATA xref at 0x0069eff9) is not byte-for-byte
+  verified. Decompile FUN_0069efe0 and read the string argument.
+- IsA tag catalog mapping for 0x8003 / 0x8006 / 0x8007 / 0x8008 against
+  `docs/engine/rtti-class-catalog.md` — currently inferred from cast-helper naming.
+- 0x1F receiver uses `TGBufferStream__ReadString_HeapAlloc(stream, -1)` while sender uses
+  direct vtable+0x6c / vtable+0x14 — both encodings are symmetric (length-prefixed), but the
+  call-shape asymmetry is unexplained.
+
+**Verification methods used:**
+- `decompile_function` on FUN_006A0490, FUN_006A02A0, FUN_006A05E0, FUN_006A07D0, FUN_006A0A20,
+  FUN_006A19A0, FUN_006A7770, FUN_005A2030, FUN_005AE140, FUN_00590CB0, FUN_00592C00,
+  FUN_00595C60, FUN_006D2370, FUN_006D23C0, FUN_004055A0, FUN_00434E00, FUN_0059FC60,
+  FUN_00590B20, FUN_005AB670
+- `disassemble_bytes` for jump-table 0x0069F534 (offsets 108..119), and for the 0x006A0490 /
+  0x006A02A0 / 0x006A05E0 prologue + key call sites (0x006a04ee / 0x006a0535 / 0x006a0540 /
+  0x006a0551 / 0x006a058b / 0x006a0592 / 0x006a02dd / 0x006a032f / 0x006a034c / 0x006a036b /
+  0x006a0392 / 0x006a039e / 0x006a03ab / 0x006a03b9 / 0x006a03d4 / 0x006a041a / 0x006a041e /
+  0x006a042f / 0x006a0596)
+- `inspect_memory_content` for 0x008d8ab8 ("warp\0"), 0x008e5c18 (FLT_MAX bytes),
+  0x008d858c ("UNKNOWN"), 0x008e5528 ("NoMe")
+- `read_memory` for TGBufferStream cursor vtable @ 0x00895C58 slot validation
+- `get_xrefs_to` on FUN_006A0A20 (single DATA xref from FUN_0069efe0 at 0x0069eff9 confirms
+  SWIG registration site); on DAT_008d8ab8 (sender FUN_006A07D0 strcmp gate confirmed);
+  on DAT_008e5c18 (DamageableObject ctor + damage application + 0x1E gate)
+
+**Files touched:** `docs/protocol/objnotfound-requestobj-enterset-wire-format.md`
+(re-rendered with breadcrumb header, v5 frontmatter, NOTE block with 5 corrections + 2
+clarifications, new "Command Messages vs Event Messages" subsection, C1 length-prefix
+section under 0x1F wire format, C2 "warp" tunnel re-interpretation rewriting the prior
+"Space Set" subsection, C3 FLT_MAX gate subsection under 0x1E handler, C4 / C5
+"Critical Correction: Function Address Map" section, corrected Function Addresses table,
+new Data anchors table, new TGFactory class IDs table, Open Questions, refreshed Related
+Documents); `docs/protocol/v5-validation-status.md` (§2 row #18 status flipped from
+`pending` to `partial` with summary; §4 #1 marked CLOSED with anchor to leaf doc §C4;
+§4 #15 marked CLOSED (breadcrumb added); §8 spot-check #1 marked CLOSED with binary
+truth; §8 spot-check #8 marked CLOSED with FLT_MAX value; this §6.18 entry added).
+
+**Header inputs for documentation-writer:**
+- validated: 2026-05-28
+- methodology: FUNCTION_DOC_WORKFLOW_V5
+- binary fingerprint: stbc.exe, image base 0x00400000, size 6182400 bytes
+- status: `partial`
+- companions: `wire-format-spec.md`, `game-opcodes.md`, `transport-layer.md`,
+  `stream-primitives.md`, `objcreate-serialization.md`, `object-replication.md`,
+  `cf16-explosion-encoding.md`, `delete-player-ui-wire-format.md`, `v5-validation-status.md`,
+  `docs/engine/rtti-class-catalog.md`
+- supersedes: prior 2026-02-21 objnotfound-requestobj-enterset-wire-format.md
+
+---
+
 ## Notes for the archaeology specialist's snapshot
 
 When merging your protocol-family Ghidra snapshot, the per-doc rows should each gain
@@ -3934,9 +4164,10 @@ post-engine-campaign annotation state.
 Highest-priority spot-checks for the archaeology pass (load-bearing, cross-doc, or
 disputed):
 
-1. **0x005a2030** — confirm semantics. The §4 #1 conflict has objcreate-serialization.md
-   calling it `ReadSpeciesByte` and objnotfound-requestobj-enterset.md calling it
-   `GetPlayerSlotFromObjID`. Cannot both be true.
+1. **0x005a2030** — **CLOSED (2026-05-28, leaf #18):** binary truth — is `ShipReadSpecies`
+   (2-vtable-call ship-setup, reads species into ship+0xEC). The actual
+   `GetPlayerSlotFromObjID` lives at `0x006a19a0`. objnotfound-requestobj-enterset.md
+   corrected this pass (C4); objcreate-serialization.md was correct. See §4 #1 closure.
 2. **0x008958d0** vs **0x0089598c** — confirm the TGMessage base vs TGDataMessage vtable
    slot counts (transport-layer.md claims 8 slots for base, 5 slots for TGDataMessage).
 3. **0x00895FF4** — confirm TGEvent vtable slot count (§4 #7: 14 vs 16 vs 18 slot disagreement).
@@ -3951,7 +4182,13 @@ disputed):
    "Two-Registry Architecture" section and §4 #13 closure. Full TGFactory enumeration
    is still open — only 0x801, 0x865, 0x866, 0x867 confirmed.
 7. **DAT_00888860** — the force-update threshold — what's its value?
-8. **DAT_008e5c18** — RequestObj HP gate threshold — what's its value?
+8. **DAT_008e5c18** — **CLOSED (2026-05-28, leaf #18):** float `FLT_MAX`
+   (`0x7F7FFFFF` = 3.4028235e+38). NOT a "low HP threshold" — it is the DamageableObject
+   **undamaged** sentinel. DamageableObject ctor (FUN_00590cb0) initializes
+   `dobj+0x14c = FLT_MAX`; damage application (FUN_00592c00) decrements it. The 0x1E
+   gate `FLT_MAX <= dobj+0x14c AND dobj+0x150 == 0` therefore succeeds only when the
+   object has NEVER been damaged and is alive — strictly stricter than a threshold
+   reading. See objnotfound-requestobj-enterset-wire-format.md §C3.
 9. **DAT_008955c8** — collision distance threshold — what's its value?
 
 Anchor table §7 is the index — every entry there should appear in your snapshot so a

@@ -32,3 +32,10 @@ Wire formats, opcodes, and serialization for BC's multiplayer protocol.
 | [objcreate-serialization.md](objcreate-serialization.md) | Full object serialization chain |
 | [message-trace-vs-packet-trace.md](message-trace-vs-packet-trace.md) | Stock-dedi opcode cross-reference |
 | [tgmessage-routing.md](tgmessage-routing.md) | TGMessage routing: relay-all, no whitelist, star topology |
+| [objnotfound-requestobj-enterset-wire-format.md](objnotfound-requestobj-enterset-wire-format.md) | Opcodes 0x1D/0x1E/0x1F triad: object recovery + scene transition |
+
+## Campaign Tracker
+
+| Document | Contents |
+|----------|----------|
+| [v5-validation-status.md](v5-validation-status.md) | Protocol-family v5 re-validation tracker: 22-doc inventory, foundation→leaves order, cross-doc disagreements, engine-family anchor table |

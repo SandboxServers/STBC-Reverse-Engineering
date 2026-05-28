@@ -1,0 +1,891 @@
+> [docs](../README.md) / [protocol](README.md) / v5-validation-status.md
+
+---
+title: Protocol Docs V5 Validation Status
+type: reference
+audience: re-engineer
+status: partial
+validated: 2026-05-28
+methodology: FUNCTION_DOC_WORKFLOW_V5
+binary:
+  name: stbc.exe
+  size: 6182400
+  base: 0x00400000
+evidence_refs:
+  - docs/protocol/README.md
+  - docs/protocol/wire-format-spec.md
+  - docs/protocol/stream-primitives.md
+  - docs/protocol/transport-layer.md
+  - docs/protocol/game-opcodes.md
+  - docs/protocol/checksum-opcodes.md
+  - docs/protocol/python-messages.md
+  - docs/protocol/tgmessage-routing.md
+  - docs/protocol/stateupdate.md
+  - docs/protocol/object-replication.md
+  - docs/protocol/objcreate-serialization.md
+  - docs/protocol/stateupdate-subsystem-wire-format.md
+  - docs/protocol/per-ship-subsystem-wire-format.md
+  - docs/protocol/tgobjptrevent-class.md
+  - docs/protocol/pythonevent-wire-format.md
+  - docs/protocol/collision-effect-protocol.md
+  - docs/protocol/set-phaser-level-protocol.md
+  - docs/protocol/delete-player-ui-wire-format.md
+  - docs/protocol/objnotfound-requestobj-enterset-wire-format.md
+  - docs/protocol/subsystem-integrity-hash.md
+  - docs/protocol/cf16-precision-analysis.md
+  - docs/protocol/cf16-explosion-encoding.md
+  - docs/protocol/message-trace-vs-packet-trace.md
+companions:
+  - docs/engine/v5-validation-status.md
+  - docs/protocol/README.md
+  - docs/guides/v5-evidence-header.md
+  - docs/guides/v5-doc-validation-workflow.md
+---
+
+# Protocol Docs V5 Validation Status
+
+Tracker for the v5 evidence-standard re-validation campaign on `docs/protocol/`. This is the
+second family in the campaign (engine completed 2026-05-28, 10/10 docs). It inventories
+what the 22 existing protocol docs claim and how much of each claim is backed by
+Ghidra-anchored evidence. It does **not** validate or correct any claim — validation
+happens per-doc in subsequent phases. The archaeology specialist is producing a parallel
+protocol-specific Ghidra snapshot to be merged with this inventory.
+
+## 1. Campaign overview
+
+Protocol docs sit on top of two foundations: the engine family (already validated — vtables,
+TGEvent/TGBufferStream layouts, event manager) and the wire-format primitive layer
+(`stream-primitives.md`, `transport-layer.md`). The mid-tier groups the opcode tables
+(`game-opcodes.md`, `checksum-opcodes.md`, `python-messages.md`) and the heavy per-opcode
+references (`stateupdate.md`, `objcreate-serialization.md`); leaves are per-opcode RE docs
+(`collision-effect-protocol.md`, `set-phaser-level-protocol.md`, etc.) and analyses
+(`cf16-*.md`, `subsystem-integrity-hash.md`). Re-validating in foundation→leaves order means
+every opcode-handler address gets anchored once in the foundation and the leaves cite the
+foundation by reference instead of re-deriving.
+
+Expected outputs per doc: (1) every load-bearing claim either cites a hex address /
+`FUN_xxxx` confirmed by the archaeology snapshot, or is demoted to `confidence: low` / dropped;
+(2) v5 frontmatter (`status: verified | partial | disputed | stale`); (3) cross-links into
+the engine-family anchor table where applicable; (4) cross-doc disagreements (§4 below)
+resolved with the binary as authority. CLAUDE.md's Documentation Index and the section README
+will be batch-updated at end of family close.
+
+## 2. Validation order (foundation → leaves)
+
+Order reflects dependency direction. Each row's anchors are consumed by all rows below it.
+
+| # | Doc | Layer | Pre-existing depends on | Current status |
+|---|-----|-------|--------------------------|----------------|
+| 1 | wire-format-spec.md | Foundation / hub: opcode index + handler addresses + subsystem catalog | (engine: MpgameHandleMessage, vtable anchors) | pending |
+| 2 | stream-primitives.md | Foundation: TGBufferStream read/write + CF16 + CompressedVector3/4 | (engine: TGBufferStream vtable 0x008958D0) | pending |
+| 3 | transport-layer.md | Foundation: UDP framing + 7 transport types + TGMessage vtable + fragments | wire-format-spec, stream-primitives | pending |
+| 4 | game-opcodes.md | Mid: opcodes 0x00-0x2A handler addresses + per-opcode formats | wire-format-spec, transport-layer | pending |
+| 5 | checksum-opcodes.md | Mid: opcodes 0x20-0x28 NetFile dispatcher | wire-format-spec, transport-layer | pending |
+| 6 | python-messages.md | Mid: opcodes 0x2C+ MAX_MESSAGE_TYPES + SendTGMessage path | wire-format-spec, stream-primitives | pending |
+| 7 | tgmessage-routing.md | Mid: relay-all + star topology + opaque payload | python-messages, transport-layer | pending |
+| 8 | stateupdate.md | Mid: opcode 0x1C dirty flags + 8 field formats + round-robin | game-opcodes, stream-primitives | pending |
+| 9 | object-replication.md | Mid: FUN_0069f620 thin index for ObjCreate | game-opcodes | pending |
+| 10 | objcreate-serialization.md | Mid: full ObjCreate chain + species map | object-replication, stream-primitives | pending |
+| 11 | stateupdate-subsystem-wire-format.md | Mid: subsystem linked list + 3 WriteState formats | stateupdate | pending |
+| 12 | per-ship-subsystem-wire-format.md | Mid: 16 stock ship subsystem catalogs | stateupdate-subsystem-wire-format | pending |
+| 13 | tgobjptrevent-class.md | Mid: TGObjPtrEvent class layout + 11 producers | (engine: TGEvent vtable 0x00895FF4) | pending |
+| 14 | pythonevent-wire-format.md | Leaf: opcode 0x06 + 4 event factories | tgobjptrevent-class, game-opcodes | pending |
+| 15 | collision-effect-protocol.md | Leaf: opcode 0x15 + CollisionEvent class + validation chain | game-opcodes, stream-primitives | pending |
+| 16 | set-phaser-level-protocol.md | Leaf: opcode 0x12 + TGCharEvent | game-opcodes, tgobjptrevent-class | pending |
+| 17 | delete-player-ui-wire-format.md | Leaf: opcode 0x17 + factory 0x866 | game-opcodes, pythonevent-wire-format | pending |
+| 18 | objnotfound-requestobj-enterset-wire-format.md | Leaf: opcodes 0x1D/0x1E/0x1F triad | game-opcodes, objcreate-serialization | pending |
+| 19 | subsystem-integrity-hash.md | Leaf analysis: dead-code anti-cheat hash | stateupdate, per-ship-subsystem-wire-format | pending |
+| 20 | cf16-precision-analysis.md | Leaf analysis: CF16 encoder/decoder + precision tables | stream-primitives | pending |
+| 21 | cf16-explosion-encoding.md | Leaf analysis: opcode 0x29 + mod weapon ID round-trip | cf16-precision-analysis, game-opcodes | pending |
+| 22 | message-trace-vs-packet-trace.md | Leaf analysis: cross-trace opcode reconciliation | game-opcodes, stateupdate, tgmessage-routing | pending |
+| — | README.md | Index only — refreshed at end of family | all above | pending |
+
+A foundation doc must reach `status: verified` before docs that depend on it begin
+validation. This prevents wasted re-renders when a foundation correction cascades downward.
+Per the engine campaign's lesson: process-meta docs (this tracker) carry `status: partial`
+until the campaign concludes — it would be misleading to mark a tracker `verified` while
+its per-doc rows are still pending.
+
+## 3. Per-doc inventory
+
+### 3.1 wire-format-spec.md
+
+- **Size:** 12,842 bytes
+- **Doc type:** reference (hub / index over the protocol family)
+- **Load-bearing claims:** ~110 (3 MultiplayerWindow opcode rows + 28 game-opcode rows + 7 Python-message rows + 6 checksum rows + 29 event-handler registration rows + 15 vtable-to-subsystem rows + 13 ship-slot offset rows + 12 hash-order rows)
+- **Currently cited:** ~108 — every opcode row carries a handler address; every event handler has an address; every vtable + subsystem row has an address. Two rows are address-free (the 0x04/0x05 "dead" jump-table defaults).
+- **Top load-bearing claims:**
+  - "Game opcodes 0x02-0x2A dispatched by MultiplayerGame ReceiveMessageHandler at 0x0069F2A0 via 41-entry jump table at 0x0069F534"
+  - "MultiplayerWindow dispatcher FUN_00504c10 owns opcodes 0x00/0x01/0x16"
+  - "28 event-handler registration rows from FUN_0069efe0 with addresses 0x006a0a10 to 0x006a2a40"
+  - "ShipRef slot at ship+0x2E0 holds NiNode scene-graph backpointer (vtable 0x00895340)"
+  - "Anti-cheat hash iterates 12 slots from ship+0x27C in fixed order (Power, Shield, Powered, Cloak, Impulse, Sensor, Warp, Crew, Torpedo, Phaser, Pulse, Tractor)"
+- **Cross-references in:** README.md, message-trace-vs-packet-trace.md, all 6 sub-docs
+- **Cross-references out:** transport-layer, stream-primitives, checksum-opcodes, game-opcodes, stateupdate, object-replication, python-messages, plus 9 related-protocol docs, plus `../analysis/subsystem-trace-analysis.md` and `subsystem-integrity-hash.md`
+- **Visible debt:**
+  - Two distinct anti-cheat-hash tables (lines 188-208 and the per-ship slot map). Slot 11 says "Pulse Weapon System" hashing at `+0x40` / `+0x2BC` but the per-ship slot map shows `+0x2BC` is "always NULL / unused" — needs reconciliation against `subsystem-integrity-hash.md` which calls slot 11 "Pulse Weapon System" at ship+0x2BC.
+  - Subsystem-table vtable addresses (0x0088A1F0, 0x00892C98, …) overlap with TG/Ship hierarchy claims in `docs/engine/tg-hierarchy-vtables.md` and `docs/engine/rtti-class-catalog.md` but no cross-link is made.
+  - "Validated by JMP detour trace 2026-02-10" provenance lives in the body — should move to frontmatter on re-validation.
+  - Opcode 0x17 row in the hub table says factory `0x866`; `delete-player-ui-wire-format.md` also says `0x866`; needs verification — `0x866` is a `TGEvent`-family factory ID range and we should anchor it.
+- **Difficulty:** moderate (mechanical address-by-address re-check, but ~108 cited rows is a lot of surface area)
+
+### 3.2 stream-primitives.md
+
+- **Size:** 6,332 bytes
+- **Doc type:** reference
+- **Load-bearing claims:** ~50 (7 write-function rows + 7 read-function rows + 5 TGBufferStream offset rows + 4 CF16 constant rows + 1 CF16 encoder addr + 1 CF16 decoder addr + 2 CompressedVector3 addresses + 2 CompressedVector4 addresses + bit-packing format claim + 5 wire-format byte claims)
+- **Currently cited:** ~50 — every function has an address (FUN_006cf… range), every constant has a DAT_… address, every layout offset is given.
+- **Top load-bearing claims:**
+  - "TGBufferStream offsets: +0x1C buffer ptr, +0x20 capacity, +0x24 position, +0x28 bit-pack bookmark, +0x2C bit-pack state"
+  - "WriteByte FUN_006cf730, WriteShort FUN_006cf7f0, WriteInt32 FUN_006cf870, WriteFloat FUN_006cf8b0"
+  - "CF16 encoder FUN_006d3a90, decoder FUN_006d3b30; constants BASE=0.001 at DAT_00888b4c, MULT=10.0 at DAT_0088c548, ENC_SCALE=4095.0 at DAT_00895f50, DEC_SCALE=1/4095 at DAT_00895f54"
+  - "Bit packing format: [count:3][bits:5] in one byte, up to 5 booleans"
+  - "CompressedVector3 write FUN_006d2ad0, read FUN_006d2eb0, wire = 5 bytes (dirX/dirY/dirZ u8 + magnitude u16)"
+- **Cross-references in:** wire-format-spec.md, transport-layer.md (appendix), python-messages.md (WriteCString fn map)
+- **Cross-references out:** cf16-precision-analysis.md, cf16-explosion-encoding.md
+- **Visible debt:**
+  - Write function table at line 13 lists 7 writes; python-messages.md fn map lists 8 (it adds WriteBool/WriteLong/WriteCString). The two docs are not in sync — stream-primitives.md is missing WriteBool (vtable+0x58), WriteLong (vtable+0x6C), WriteCString (vtable+0x24). Same for reads.
+  - The TGBufferStream offsets section says "+0x2C = 0 means no active bit group" but the body's bit-packing section refers to `+0x2C` as the bookmark — needs disambiguation; transport-layer.md Appendix A treats `+0x28` as bookmark and `+0x2C` as bit-pack state. The two protocol docs already agree internally; the conflict is between the offsets paragraph and the bit-packing paragraph in this same file.
+  - No frontmatter / metadata. Doc type stated only by file location.
+  - Read vtable+0x80 = ReadInt32v (FUN_006cf6a0) is described as "Reads via vtable (variant read)" — collision-effect-protocol.md says it's a thunk to ReadU32 at +0x68. Conflicting wording.
+- **Difficulty:** trivial (each function/constant is a single Ghidra spot-check)
+
+### 3.3 transport-layer.md
+
+- **Size:** 15,989 bytes
+- **Doc type:** reference (with some explanation in fragment section)
+- **Load-bearing claims:** ~100 (1 encryption claim + 3 raw UDP layout rows + 7 transport-type factory rows + 1 type-0x32 wire format + 5 flags_len bit-field rows + 1 type-0x00 wire format + 1 type-0x01 ACK wire format + fragment reassembly description + reliable delivery sequence counter pair + TGMessage 22-field layout + TGMessage base vtable 8 slots + TGDataMessage vtable 5 slots + 4 message-dispatcher rows + flags_len high-byte 4 commonly-observed values + fragment example traces + TGBufferStream Appendix A layout + Network Object Tracker Appendix B layout)
+- **Currently cited:** ~100 — every factory has an address, every TGMessage offset is given, every vtable slot has an address.
+- **Top load-bearing claims:**
+  - "AlbyRules! cipher key at 0x0095abb4; SendPacket FUN_006b9870, ReceivePacket FUN_006b95f0; byte 0 NOT encrypted (cipher operates on buffer+1)"
+  - "Factory table at DAT_009962d4 has 256 slots, 7 populated (types 0x00-0x05 and 0x32)"
+  - "Type 0x32 = general game-payload TGMessage, vtable 0x008958d0, base factory FUN_006b83f0"
+  - "TGMessage constructor FUN_006b82a0 allocates 0x40 bytes from pool FUN_00717b70"
+  - "Two reliable sequence counters: peer+0x98 for types <0x32, peer+0xA8 for types >=0x32"
+- **Cross-references in:** wire-format-spec.md
+- **Cross-references out:** none explicit (refers to FUN_006b5c90, FUN_006b6cc0 internally)
+- **Visible debt:**
+  - Two TGMessage object-layout tables (lines 173-197 and 296-323). They mostly agree but differ on three fields: +0x2C ("retry_strategy" vs "num_retries"), +0x30 ("base_delay" vs "backoff_time"), +0x34 ("delay_factor" vs "backoff_factor"). The second table is more detailed; needs single source of truth.
+  - "Network Object Tracker Layout" Appendix B is for StateUpdate per-ship tracking, not really transport — belongs in `stateupdate.md` or its subsystem-format sibling.
+  - "Historical Note on flag 0x01" already does correction work (previous doc said "more fragments", correction says "bit 8 of length"). Mark these as `[v5-validated]` once re-confirmed; keep the historical note for context.
+  - No frontmatter.
+- **Difficulty:** moderate (TGMessage layout reconciliation is the only non-mechanical bit; factory addresses are mechanical)
+
+### 3.4 game-opcodes.md
+
+- **Size:** 14,689 bytes
+- **Doc type:** reference
+- **Load-bearing claims:** ~140 (2 jump-table claims + 25 per-opcode handler addresses + 25 per-opcode wire-format rows + 11 GenericEventForward event-code rows + 8 SpeciesToShip rows + collision-effect detail + sender/receiver event-code pairing list + torpedo flags1/flags2 observed values + beam flags observed values + opcode 0x14 stock-trace negative claim)
+- **Currently cited:** ~135 — handler addresses present for every opcode; ship+offset readers/writers given; event-code constants given. ~5 narrative observations (e.g. "ships die via 0x29+0x03 respawn") cite trace evidence, not Ghidra.
+- **Top load-bearing claims:**
+  - "MultiplayerGame ReceiveMessageHandler at 0x0069f2a0 with 41-entry jump table at 0x0069F534, opcodes 0x02-0x2A"
+  - "GenericEventForward FUN_0069FDA0 handles opcodes 0x07-0x0C, 0x0E-0x12, 0x1B with 11 event code mappings"
+  - "Sender/receiver event-code pairing: D8→D7 (StartFire), DA→D9, DC→DB, DD→6C, E2→E3, E4→E5, EC→ED, FE→FD; exception 0x12 has no pairing"
+  - "Opcode 0x15 CollisionEffect: typeClassId=0x00008124, eventCode=0x00800050, total = 22 + count*4 bytes"
+  - "Opcode 0x29 Explosion: 14 bytes total, radius written first by sender (from source+0x14), damage second (from source+0x1C)"
+- **Cross-references in:** wire-format-spec.md, README.md, message-trace-vs-packet-trace.md, plus every leaf wire-format doc
+- **Cross-references out:** pythonevent-wire-format, collision-effect-protocol, cf16-precision-analysis, set-phaser-level-protocol, ../gameplay/self-destruct-pipeline, ../gameplay/repair-system, delete-player-ui-wire-format
+- **Visible debt:**
+  - "Stock 15-min count" column on the event-forward table cites packet-trace counts (2282, 33, etc.) — fine but needs explicit trace-citation as `confidence: medium` since these are trace observations, not Ghidra-grounded.
+  - Opcodes 0x17, 0x18 each have only "Handler: FUN_006A1360 / FUN_006A1420" with no wire format — delete-player-ui-wire-format.md fills 0x17 in; nothing fills 0x18. Documentation debt: 0x18 has no companion doc.
+  - SpeciesToShip table here is a subset (15 IDs) — objcreate-serialization.md has the full 45-entry table. Either link or unify.
+  - Opcode 0x29 receiver name: "Handler_Explosion_0x29 at 0x006A0080" matches cf16-explosion-encoding.md. Consistent.
+- **Difficulty:** moderate (high address density; the event-code mapping is the trickiest part)
+
+### 3.5 checksum-opcodes.md
+
+- **Size:** 3,922 bytes
+- **Doc type:** reference
+- **Load-bearing claims:** ~35 (1 dispatcher claim + 6 per-opcode handler addresses + 6 wire formats + 5-round table (5 rows) + 2 0x21 routing branches + 0x22/0x23 sub-opcode split + 0x25 transfer-mode gate + 0x28 description + 0x24/0x26 negative claim)
+- **Currently cited:** ~32 — every handler has an address. The 5-round table has no per-row Ghidra address (it's derived from runtime trace).
+- **Top load-bearing claims:**
+  - "NetFile::ReceiveMessageHandler at FUN_006a3cd0 dispatches opcodes 0x20-0x28"
+  - "0x21 routing: byte[1]==0xFF → main path; else FUN_006a4560 (verify) or FUN_006a5570 (mismatch)"
+  - "5 checksum rounds: 0x00 scripts/App.pyc, 0x01 scripts/Autoexec.pyc, 0x02 scripts/ships/*.pyc recursive, 0x03 scripts/mainmenu/*.pyc, 0xFF Scripts/Multiplayer/*.pyc recursive"
+  - "0x25 file transfer entry gated on this+0x14: 0 = setup dialog, !=0 = data path"
+  - "0x24, 0x26 = unknown/unused: no handler, no packet trace evidence"
+- **Cross-references in:** wire-format-spec.md, README.md
+- **Cross-references out:** none
+- **Visible debt:**
+  - The 5-round table directories (`scripts/`, `scripts/ships`, `scripts/mainmenu`, `Scripts/Multiplayer`) come from observation, not Ghidra — they should be anchored to the actual string-literal addresses in the binary.
+  - "0x28 — No dedicated handler" needs a positive citation that the jump table does NOT have a 0x28 entry (it's a negative claim per v5 standard).
+  - No frontmatter.
+- **Difficulty:** trivial
+
+### 3.6 python-messages.md
+
+- **Size:** 11,170 bytes
+- **Doc type:** reference + how-to (mixed Diátaxis)
+- **Load-bearing claims:** ~80 (mechanism description (2) + MAX_MESSAGE_TYPES constant + 10 Python-constant rows + 8 SWIG vtable-slot rows for writes + Python TGMessage create/send pattern + SendTGMessage two-mode description + SendTGMessageToGroup spec + 2 built-in group names + CHAT_MESSAGE wire example + custom-mod wire example + 6-step receive-side dispatch + 6-row handler list + SetGuaranteed semantics)
+- **Currently cited:** ~70 — every SWIG vtable slot has an address (0x006cf… range), MAX_MESSAGE_TYPES constant has a value, group names have string addresses. The 6-step receive dispatch cites handler addresses.
+- **Top load-bearing claims:**
+  - "MAX_MESSAGE_TYPES = 43 (0x2B), registered at 0x00654f31 in SWIG init, stored at 0x0090b490"
+  - "SetDataFromStream at 0x006b8a00 calls stream GetBuffer (vtable+0xF4) and GetPos (vtable+0xD8), then BufferCopy at FUN_006b84d0"
+  - "SendTGMessage at FUN_006b4c10 (__thiscall, SWIG 'OiO|i'); targetID==0 broadcasts, >0 binary-searches peers, ==-1 special mode"
+  - "Built-in groups created by MultiplayerGame ctor FUN_0069e590: 'NoMe' at 0x008e5528, 'Forward' at 0x008d94a0"
+  - "Receive dispatch flow has 6 steps ending in TGMessageEvent created at FUN_006bfe80 (size 0x2C), posted as ET_NETWORK_MESSAGE_EVENT (0x60001)"
+- **Cross-references in:** wire-format-spec.md, README.md, tgmessage-routing.md (twice)
+- **Cross-references out:** stream-primitives.md (implicit — writes use TGBufferStream)
+- **Visible debt:**
+  - Diátaxis violation: mixes how-to ("Python Usage Pattern" code blocks) with reference (vtable slot tables). Splitting is plausible but not urgent.
+  - The 8-row SWIG write primitives table is more complete than stream-primitives.md's 7-row table. Sync needed.
+  - Wire example header byte 0x800F is decoded as "bit 15 = reliable" — fine, but also `bit 12-0 = length`; the bit layout description matches transport-layer.md. Cross-check the flags-len bit order across both docs.
+  - The "Receive Side Dispatch" step 4 says `TGMessageEvent` at FUN_006bfe80 size 0x2C — this is a class layout claim that belongs in the engine event-system-architecture doc.
+- **Difficulty:** moderate
+
+### 3.7 tgmessage-routing.md
+
+- **Size:** 17,296 bytes
+- **Doc type:** explanation + reference (mixed; lots of "why" plus address tables)
+- **Load-bearing claims:** ~90 (4 executive-summary Q&A claims + 2-system-types description (3 rows each) + factory-table 7-row catalog + factory-registration claim + 3-step receive path + type-0x00 factory pseudocode + host relay path + BroadcastToOthers pseudocode + SendTGMessage pseudocode + SendTGMessageToGroup pseudocode + NoMe group description + 3 C++ dispatcher analyses + Python message dispatch flow + 10 Python-allocation rows + Python receive pattern + chat relay description + star-topology 4-evidence list + 4-mode broadcast semantics table + Kobayashi Maru / BC Remastered compatibility analysis + PythonEvent 0x06 vs 0x0D 1:1 trace evidence (Valentines) + OpenBC parity bug note + 17-row Key Addresses table)
+- **Currently cited:** ~80 — every function in the Key Addresses table has an address; every factory in the factory table has an address; pseudocode functions are named with addresses.
+- **Top load-bearing claims:**
+  - "TGNetwork constructor at 0x006b3a00 initializes factory table at 0x009962d4 (256 slots, 7 populated)"
+  - "Type-0x00 factory FUN_006bc6a0 does opaque BufferCopy — no game-opcode inspection"
+  - "BroadcastToOthers (host relay) at FUN_006b51e0 iterates peer array unconditionally"
+  - "RegisterMessageType SWIG wrapper at 0x005e4860 uses (type & 0xFF) mask as only bounds check; stock Python never calls it"
+  - "PythonEvent 0x0D NOT relayed: 75 wire-count == 75 factory events in Valentine's Day 3-player 33.5min trace; only 1:1 opcode in trace data"
+- **Cross-references in:** wire-format-spec.md, README.md, python-messages.md (twice)
+- **Cross-references out:** ../networking/tgmessage-routing-cleanroom.md (clean-room sibling)
+- **Visible debt:**
+  - "OpenBC Parity Bug" section is implementation-status content in a behavioral-spec doc. Acceptable but should move to a separate parity tracker per the engine campaign's separation rule.
+  - The 0x0D 1:1 ratio claim is medium-confidence (trace-based, not Ghidra). Needs `confidence: medium` annotation.
+  - "The original developers left it open" (silent fallthrough enabling mod compat) is editorial; fine for explanation type.
+  - Receive path step 3.b reads `factory_table[transport_type * 4]` — confirm `* 4` (pointer table stride) against the engine RTTI-hash convention.
+- **Difficulty:** moderate
+
+### 3.8 stateupdate.md
+
+- **Size:** 12,318 bytes
+- **Doc type:** reference
+- **Load-bearing claims:** ~120 (serializer/receiver address pair + 9-byte fixed prefix layout + 8 dirty-flag rows + 7 per-flag wire-format sections (each with several sub-claims) + 3 WriteState implementation addresses + round-robin algorithm + receiver flag-0x20 pseudocode + flag direction-split observation (10,459 / 19,997 packet counts) + 5 top C→S flag combos + 5 top S→C flag combos + flag decision logic decompile with 3 conditions + complete receiver pseudocode (8 steps) + force-update timestamp explanation)
+- **Currently cited:** ~100 — every primary function has an address, every flag has its read/write pseudocode, every WriteState implementation has its address. ~20 narrative claims (e.g., "subsystem hash dead code in MP", "weapon scale factor at DAT_008944c4") cite addresses but the claims are derivative.
+- **Top load-bearing claims:**
+  - "Serializer FUN_005b17f0, receiver FUN_005b21c0; round-robin tracker fields iVar7+0x30 (cursor), iVar7+0x34 (index)"
+  - "8 dirty flags: 0x01 POS, 0x02 DELTA, 0x04 FWD, 0x08 UP, 0x10 SPEED, 0x20 SUB, 0x40 CLOAK, 0x80 WPN"
+  - "C→S uses 0x80 (WPN) only; S→C uses 0x20 (SUB) only; mutually exclusive (10,459 / 19,997 verified packets)"
+  - "Subsystem WriteState formats: Base FUN_0056d320, Powered FUN_00562960, Power FUN_005644b0"
+  - "10-byte round-robin budget per tick on flag 0x20; ~6-byte budget on flag 0x80"
+- **Cross-references in:** wire-format-spec.md, README.md
+- **Cross-references out:** subsystem-integrity-hash.md, stateupdate-subsystem-wire-format.md, ../analysis/empty-stateupdate-root-cause.md (implicit)
+- **Visible debt:**
+  - Decompiled flag-decision logic comments say `DAT_0097fa8a == 0` (SP mode) triggers 0x80, but packet traces show clients send 0x80 in MP. The doc itself flags this contradiction: "This suggests the CLIENT-side value of `DAT_0097fa8a` differs from the HOST-side". Needs a v5 evidence-grounded resolution — does the client REALLY have `DAT_0097fa8a == 0` at serialization time? Either decompile the client init path or accept as `confidence: low` mystery.
+  - "Force-Update Timing" cites `DAT_00888860` as a global threshold without a v5-grounded value.
+  - Some references to "uStack_494._3_1_" Ghidra raw names should be cleaned up per v5 voice rules.
+- **Difficulty:** hard (the DAT_0097fa8a vs trace discrepancy is a real open question)
+
+### 3.9 object-replication.md
+
+- **Size:** 1,050 bytes
+- **Doc type:** reference (very thin)
+- **Load-bearing claims:** ~6 (handler address + type_tag 2/3 split + owner_player_slot byte + team_id byte for type 3 + vtable[0x10C] serialization + 5-step receive-side flow with FUN_005a1f50 / FUN_0047dab0)
+- **Currently cited:** ~5 (FUN_0069f620, FUN_005a1f50, FUN_006a19a0, FUN_0047dab0 named).
+- **Top load-bearing claims:**
+  - "FUN_0069f620 receives opcodes 0x02 (no team) and 0x03 (team)"
+  - "Serialization via vtable[0x10C](buffer, maxlen)"
+  - "Receive: swap local player slot, FUN_005a1f50 deserialize, replicate to peers, attach Network controller via FUN_0047dab0"
+- **Cross-references in:** wire-format-spec.md, README.md
+- **Cross-references out:** objcreate-serialization.md (one link)
+- **Visible debt:**
+  - Doc is so thin it could be folded into objcreate-serialization.md or game-opcodes.md. Currently both objcreate-serialization.md and this doc cover overlapping material; this one is the lighter index.
+  - vtable slot 0x10C = WriteStream is a load-bearing claim that should anchor against the engine vtable maps.
+- **Difficulty:** trivial
+
+### 3.10 objcreate-serialization.md
+
+- **Size:** 12,194 bytes
+- **Doc type:** reference
+- **Load-bearing claims:** ~80 (envelope spec + 8-byte stream header + 2 factory class IDs + Ship ReadStream offsets (10 rows) + species_type field description + set_name → SpeciesToSystem 9-row table + torpedo ReadStream + 15 playable-ship rows (SpeciesToShip) + 30 non-playable rows + MAX_FLYABLE_SHIPS / MAX_SHIPS constants + handler pipeline detail (10+ steps) + player context slot table (MultiplayerGame+0x84, stride 0x18) + object ID range formula + 2 decoded trace examples + 10-row key functions table)
+- **Currently cited:** ~70 — every handler/factory/function has an address; species enum values are anchored to a script file (referenced by name, not in-binary address); 2 packet examples decoded.
+- **Top load-bearing claims:**
+  - "Handler FUN_0069f620; Ship deserialize FUN_005a1f50; species reader FUN_005a2030 stores at ship+0xEC"
+  - "Factory class IDs: 0x00008008 = ShipClass (creates network tracker), 0x00008009 = Torpedo (no tracker)"
+  - "MultiplayerGame+0x84 = 16-entry player slot array, stride 0x18; player N obj ID base = 0x3FFFFFFF + N*0x40000"
+  - "Quaternion at offset 21-37 is 4 floats (W,X,Y,Z); 3 padding bytes at 41-43 always 0x00"
+  - "set_name maps to Multiplayer.SpeciesToSystem (9 entries: Multi1-Multi7, Albirea, Poseidon)"
+- **Cross-references in:** wire-format-spec.md, README.md, object-replication.md
+- **Cross-references out:** none explicit (refers to Python script paths)
+- **Visible debt:**
+  - "Open Questions" section at end already lists 3 unknowns (padding bytes, subsystem_state blob, orientation quaternion vs Euler). Accept these as `confidence: low` rows on re-validation.
+  - Species tables are sourced from `scripts/Multiplayer/SpeciesToShip.py`, not stbc.exe — these are external-corpus claims and need the two-tag convention from the engine cross-source pattern (`[cross-source-YYYY-MM-DD]` for Python script content).
+  - SpeciesToSystem table partial — Multi8-Multi10 missing if they exist; needs grep.
+- **Difficulty:** moderate
+
+### 3.11 stateupdate-subsystem-wire-format.md
+
+- **Size:** 18,177 bytes
+- **Doc type:** reference (with explanation in Q&A section)
+- **Load-bearing claims:** ~150 (executive summary + 4 Q&A claims + flag 0x20 block structure + 3 WriteState format specs (Base/Powered/Power) with addresses + receiver pseudocode + 12-row "what's IN the list" table with runtime type IDs + 5-row "what's REMOVED" table + Sovereign-class 11-row layout example + round-robin algorithm + linked list node struct + ship subsystem fields at +0x280/+0x284/+0x288/+0x28C + 15-row key functions table + 22 CT_ type constants + 17 property type constants + engine parent-child linking mechanism (EP_IMPULSE / EP_WARP enum) + Python API usage examples + named ship subsystem slots + stock-ship verification claim + subsystem classification in FUN_005b3e50 (2 partition lists) + 6 implications for dedi server)
+- **Currently cited:** ~140 — every WriteState format function has an address, every runtime type ID has its hex value, every C++ function has an address.
+- **Top load-bearing claims:**
+  - "Round-robin over ship+0x284 doubly-linked list; 10-byte budget per tick"
+  - "Three WriteState formats: Base 0x0056d320 (cond+children), Powered 0x00562960 (base+bit+powerPct), Power 0x005644b0 (base+2 batteries)"
+  - "PowerSubsystem ALWAYS writes both battery bytes regardless of isOwnShip"
+  - "Ship_LinkAllSubsystemsToParents FUN_005b3e20 removes children from 0x284 by reading property+0x48 tag for engines (EP_IMPULSE=0, EP_WARP=1)"
+  - "Ship subsystem list fields: +0x280 count, +0x284 head, +0x288 tail, +0x28C free list"
+- **Cross-references in:** wire-format-spec.md, README.md, stateupdate.md, per-ship-subsystem-wire-format.md
+- **Cross-references out:** none
+- **Visible debt:**
+  - "Date: 2026-02-18 / Status: VERIFIED" — already claims verified status without v5 frontmatter. Move provenance to YAML, downgrade body claim until v5 re-validation.
+  - 22 CT_ type constants and 17 property constants are presented as SWIG-registered values without their stbc.exe registration addresses (in stock python-152 init code). Need anchoring.
+  - "Universal Subsystem Patterns" (7 always-present + 5 optional) is an extracted invariant — should be cross-checked against per-ship-subsystem-wire-format.md's claim that BoP is missing phasers (the only ship without PhaserSystem).
+- **Difficulty:** moderate
+
+### 3.12 per-ship-subsystem-wire-format.md
+
+- **Size:** 22,917 bytes
+- **Doc type:** reference (catalog)
+- **Load-bearing claims:** ~250 (species ID mapping (17 rows) + WriteState type reference (3 rows) + summary table (16 ships, ~8 columns each ≈ 128 cells) + 15-row hardpoint-vs-tracer verification + 16 per-ship sections (each ~10-row subsystem table) + universal patterns list + round-robin timing table + implications list)
+- **Currently cited:** ~30 — the addresses 0x005b17f0, 0x005b3e20, 0x005b3fb0, 0x0056d320, 0x00562960, 0x005644b0 anchor the algorithms. The per-ship subsystem counts/order come from hardpoint Python files (external corpus), verified against tracer count.
+- **Top load-bearing claims:**
+  - "Sovereign: 11 top-level / 22 children / 33 total; cycle 49 bytes"
+  - "Bird of Prey: 10 top-level / 6 children / 16 total; no PhaserSystem; only ship with PulseWeapon-only weapons"
+  - "All 15 hardpoint-derived counts match runtime function tracer exactly"
+  - "All ships complete a full subsystem health cycle in under 1 second at 10Hz"
+  - "Enterprise (species 37) inherits from Sovereign — identical layout, only HP/capacity differ"
+- **Cross-references in:** README.md
+- **Cross-references out:** stateupdate-subsystem-wire-format.md
+- **Visible debt:**
+  - This is fundamentally a **cross-source** doc (16 ship hardpoint scripts + stock-dedi tracer + stbc.exe addresses). Needs the two-tag convention. The stbc.exe-anchored claims are ~30; the rest are external-corpus claims.
+  - "Date: 2026-02-22 / Status: HIGH-CONFIDENCE" — same pattern as the sibling doc. Move to frontmatter.
+  - The 2026-02-22 collision test claim (15 species, 15 matches) lives in body — should be tagged `[cross-source-2026-02-22]`.
+  - Per-ship sections lack Ghidra anchors entirely — they cite Python script line counts only. This is fine for content (the Python scripts are the source of truth) but needs explicit two-tag annotation.
+- **Difficulty:** hard (lots of cells × 16 ships; bulk re-checks against the hardpoint files needed)
+
+### 3.13 tgobjptrevent-class.md
+
+- **Size:** 21,960 bytes
+- **Doc type:** reference (with usage-pattern how-to mixed in)
+- **Load-bearing claims:** ~180 (summary table (8 fields) + class layout 11 rows + difference vs TGCharEvent (6 comparison rows) + IsA chain (3 values) + class hierarchy diagram + wire-format spec (6 rows) + decoded packet example + 3-row serialization functions table + vtable map (7 slots) + 5-row Python API + Python usage pattern + 11-row C++ event type catalog + timer delivery row + dual-fire pattern (3 events) + ET_TARGET_WAS_CHANGED previous-target note + ET_STOP_FIRING_AT_TARGET_NOTIFY host-only gate + network-vs-local classification + Python script usage 27+ events (7-row most common) + 45% combat traffic stats + ET_ constant mapping formula + 12-row C++ event types with hex values + factory ID full table (5 rows) + ~10-row unanalyzed-code regions + 5-row vtable DATA references + infrastructure non-producer calls + complete Python event type table (27+ rows) + consolidated hex map 14 rows)
+- **Currently cited:** ~150 — every function has an address, every vtable slot has an address, every event type has a hex value, every Python xref has a script-file pointer.
+- **Top load-bearing claims:**
+  - "Factory ID 0x010C, vtable 0x0088869C, size 0x2C, constructor 0x00403290"
+  - "IsA chain: 0x10C → 0x101 (TGSubsystemEvent) → 0x02 (TGEvent)"
+  - "Wire size 21 bytes (17-byte base + 4-byte int32 obj_ptr at offset 17)"
+  - "WriteToStream 0x006D6DC0 calls stream vtable+0x84 (WriteInt32); ReadFromStream 0x006D6DF0 calls vtable+0x80 (ReadInt32)"
+  - "1,718 of 3,825 PythonEvents (45%) in 33.5-min battle use factory 0x010C; dual-fire pattern is the driver"
+- **Cross-references in:** wire-format-spec.md, README.md, pythonevent-wire-format.md
+- **Cross-references out:** pythonevent-wire-format.md, repair-event-object-ids.md, set-phaser-level-protocol.md, weapon-firing-mechanics.md, repair-system.md, stock-trace-analysis.md
+- **Visible debt:**
+  - "C++ Producers in Unanalyzed Code Regions" section has 10 rows of `LAB_xxxxxxxx` addresses with "likely function" prose — these are inherently `confidence: low` until Ghidra disassembles those regions. Mark as such on v5.
+  - "Vtable DATA References" lists 5 sites that WRITE the vtable into objects — 4 of them are in unanalyzed code. Need to anchor against `mcp__ghidra__get_xrefs_to` for the vtable.
+  - ET_ constant mapping formula `value = 0x00800001 + (line_number - 12835)` is an external-corpus claim about App.py — flag as `[cross-source-…]`.
+  - 27+ Python ET_ constants come from grep over script directory — bulk external-corpus.
+  - The 11-row C++ event types table and the 12-row consolidated hex map duplicate each other — needs deduplication.
+- **Difficulty:** hard (high address density + many cross-source rows + 10 unanalyzed-code claims)
+
+### 3.14 pythonevent-wire-format.md
+
+- **Size:** 31,241 bytes
+- **Doc type:** reference (large, near-comprehensive per-class layouts and producers)
+- **Load-bearing claims:** ~280 (overview + 0x0D shared-receiver claim + message structure 5 rows + 4-row factory catalog + object reference encoding rules + Ship/Subsystem ID encoding (DAT_0095B078, DAT_0099A67C) + 4 event-class sections (TGSubsystemEvent / TGCharEvent / TGObjPtrEvent / ObjectExplodingEvent), each with: wire layout 6 rows, class layout 11 rows, IsA chain, serialization function pair, decoded example + 3 producer descriptions (HostEventHandler 0x006A1150, ObjectExplodingHandler 0x006A1240, GenericEventForward 0x006A17C0) + 2 receiver paths (FUN_0069f880, FUN_0069fda0) + event-type override table (12 rows) + collision damage chain 7 steps + ~14 message count + worked example trace (14-row table) + 3 event registration tables (RepairSubsystem 4 events, MultiplayerGame 4 events, ShipClass 2 events) + TGEvent base vtable 18 slots + ObjectExplodingEvent vtable 9 slots + TGCharEvent vtable 14 slots + traffic stats (3 directions) + 25-row related-functions table + 10-row event-type constants table + collision chain event count breakdown)
+- **Currently cited:** ~250 — every function has an address, every vtable has an address, every event type has hex value, every class layout has offsets.
+- **Top load-bearing claims:**
+  - "Opcode 0x06 polymorphic event transport; 4 event classes registered: 0x0101 / 0x0105 / 0x010C / 0x8129"
+  - "Subsystem IDs from global counter DAT_0095B078, NOT derived from ship base"
+  - "Hash table at DAT_0099A67C resolves IDs on receive"
+  - "HostEventHandler FUN_006A1150 serializes opcode 0x06 to 'NoMe' group; gated on g_IsMultiplayer"
+  - "ObjectExplodingEvent constructor 0x0043F8B0; WriteToStream 0x0043F990; ReadFromStream 0x0043F9C0"
+- **Cross-references in:** wire-format-spec.md, README.md, game-opcodes.md
+- **Cross-references out:** tgobjptrevent-class.md (twice), collision-effect-protocol.md, collision-detection-system.md, set-phaser-level-protocol.md, damage-system.md, cf16-explosion-encoding.md, repair-tractor-analysis.md, combat-mechanics-re.md
+- **Visible debt:**
+  - The 11-row TGObjPtrEvent event types table here is a subset of tgobjptrevent-class.md's tables — sync needed.
+  - "Collision Chain Event Count" section says "12-14 PythonEvents per collision" with 1 ObjectExploding + 11 ADD_TO_REPAIR_LIST + 2 delayed. The "Worked Example" above lists 14 with 1 ObjectExploding + 13 ADD_TO_REPAIR_LIST. The math doesn't quite reconcile (11 + 2 = 13 vs 13 from the worked example). Flag for resolution.
+  - "Event Type Constants" table at end has 10 rows; the consolidated hex map in tgobjptrevent-class.md has 14 rows. Sync.
+  - TGEvent base vtable here lists 18 slots (0-17); engine-family vtable docs use 14-slot baseline. Need to verify whether TGEvent really has 18 virtuals or whether 15-17 are inherited from a higher base.
+- **Difficulty:** hard (very dense; multiple sub-class layouts; sync to siblings)
+
+### 3.15 collision-effect-protocol.md
+
+- **Size:** 18,560 bytes
+- **Doc type:** reference (with explanation)
+- **Load-bearing claims:** ~110 (overview claim of 138,695 packets / 33.5min / 0 server-relayed instances + wire format (10 rows) + constant prefix (13 bytes) + contact point compression algorithm + 2 serialization paths (network vs persistence) + 3 example decoded packets + CollisionEvent class layout (18 fields) + constructor + destructor + SWIG API + receive handler logic 12 steps + 3 validation checks + send-side flow 4 steps + host-side damage processing (2 sub-handlers + Python) + event registration (ShipClass + DamageableObject) + related functions 27 rows + CollisionEvent vtable 16 slots + TGEvent base vtable 16 slots + Stream Reader vtable 8 slots)
+- **Currently cited:** ~105 — every function has an address, every vtable slot has an address, contact-compression chain references stream vtable slots.
+- **Top load-bearing claims:**
+  - "Opcode 0x15 C→S only, server never relays (138,695 packets, 0 relays verified)"
+  - "Handler FUN_006a2470; CollisionEvent::WriteToStream FUN_005871a0; ReadFromStream FUN_00587300"
+  - "Wire size = 22 + count*4 bytes; force is raw f32, contacts are 4-byte CompressedVec4_Byte"
+  - "3 validations: ownership (sender must own source or target), self-collision filter (rejects if target is local player), distance gap < DAT_008955c8 threshold"
+  - "Event type transformation: arrives 0x00800050 (ET_OBJECT_COLLISION), re-posted as 0x008000FC (ET_HOST_OBJECT_COLLISION)"
+- **Cross-references in:** wire-format-spec.md, README.md, game-opcodes.md, pythonevent-wire-format.md
+- **Cross-references out:** none
+- **Visible debt:**
+  - Per-contact damage scaling formula "raw * 900.0 + 500.0" cites "constants verified from binary" but no specific DAT_ addresses for 900.0 / 500.0 / 0.01 — needs anchoring.
+  - "DAT_008955c8 threshold" cited without value — needs anchoring.
+  - "Effects.CollisionEffect (Python handler)" — external-corpus, needs cross-source tag.
+  - 16-slot CollisionEvent vtable has 4 "(unknown)" slots — accept as `confidence: low` or anchor.
+  - Two TGEvent vtable maps appear in this doc and pythonevent-wire-format.md with slightly different slot descriptions — reconcile.
+- **Difficulty:** moderate
+
+### 3.16 set-phaser-level-protocol.md
+
+- **Size:** 16,159 bytes
+- **Doc type:** reference (with explanation)
+- **Load-bearing claims:** ~80 (overview + wire-format spec (6 rows) + serialization detail with TGCharEvent WriteToStream chain + object reference encoding + 3-row phaser power level values + 2 example decoded packets + TGCharEvent class layout (11 rows) + class hierarchy + constructor + SWIG factory + IsA chain + sender flow (PhaserSystem::SetPowerLevel 8 steps) + multiplayer bridge thunk (3 steps) + SendEventMessage flow (8 steps) + receive jump-table dispatch + GenericEventForward analysis (host relay + local dispatch) + applier 3 steps + critical asymmetry claim + event-type-code table + shared-handler group 12-row table + 2 event registrations + 14-row related functions + TGCharEvent vtable 14 slots)
+- **Currently cited:** ~75 — every function has an address, every vtable slot has an address, every step in the flows is anchored.
+- **Top load-bearing claims:**
+  - "Opcode 0x12; wire size 18 bytes fixed; TGCharEvent factory 0x105"
+  - "Sender thunk MultiplayerGame::SetPhaserLevelHandler at 0x006A1970"
+  - "Applier PhaserSystem::SetPhaserLevelHandler at 0x00574180; PhaserSystem+0xF0 stores phaser level"
+  - "0x12 uses generic forward override=0 (no event-code pairing); event keeps 0x008000E0 on both sides"
+  - "Shared handler group (12 opcodes); 0x12 is in the override=0 subgroup with 0x0B, 0x0C, 0x11"
+- **Cross-references in:** wire-format-spec.md, README.md, game-opcodes.md, pythonevent-wire-format.md, tgobjptrevent-class.md
+- **Cross-references out:** none
+- **Visible debt:**
+  - "Critical asymmetry" claim ("receiver does NOT call SetPowerSetting on child weapons; level applies via StateUpdate") is partially speculative — phrased as "either the Update tick reads +0xF0 and applies it, or individual weapon intensity values are carried in StateUpdate". This is a `confidence: low` claim that needs decompile evidence one way or the other.
+  - TGCharEvent vtable here matches the one in pythonevent-wire-format.md and tgobjptrevent-class.md (after re-check) — confirm in v5 pass.
+  - SWIG factory registration "in the event factory hash table" cited without address.
+- **Difficulty:** moderate (the "critical asymmetry" question is genuinely unresolved)
+
+### 3.17 delete-player-ui-wire-format.md
+
+- **Size:** 7,261 bytes
+- **Doc type:** reference (with explanation)
+- **Load-bearing claims:** ~30 (overview + wire format (6 rows) + factory ID 0x00000866 = TGEvent + 2 event codes (0x008000F1, 0x00060005) + 2 context field-value sets (join vs disconnect) + decoded join-time packet + 3-row trace frequency table + handler chain (5 steps with addresses) + scoreboard population 2-condition requirement + naming clarification + 5-row related docs)
+- **Currently cited:** ~25 — handler FUN_006a1360, FUN_006d6200, FUN_006da2a0, NewPlayerInGameHandler 0x006a1590, DeletePlayerHandler FUN_006a0ca0 all anchored.
+- **Top load-bearing claims:**
+  - "Opcode 0x17 handler FUN_006a1360; factory 0x00000866 (base TGEvent) deserialized via FUN_006d6200"
+  - "Join event code 0x008000F1 (ET_NEW_PLAYER_IN_GAME); disconnect event code 0x00060005 (ET_NETWORK_DELETE_PLAYER)"
+  - "Wire size 18 bytes: opcode + factory_id + event_code + src_obj_id + tgt_obj_id + wire_peer_id"
+  - "Scoreboard requires both TGPlayerList entry (from 0x17) AND score dict entry (from 0x37/0x36)"
+- **Cross-references in:** wire-format-spec.md, README.md, game-opcodes.md
+- **Cross-references out:** wire-format-spec.md, pythonevent-wire-format.md, ../networking/disconnect-flow.md, ../networking/multiplayer-flow.md
+- **Visible debt:**
+  - Factory ID 0x866 anchoring: the factory-ID range claim ("0x866 is a TGEvent-family factory ID") needs cross-reference to the factory table in tgobjptrevent-class.md, which lists factories 0x02 / 0x101 / 0x105 / 0x10C / 0x8129. Where does 0x866 fit? Likely a different factory family — needs Ghidra hash-table lookup.
+  - "Zero 0x17 instances at disconnect time" is a negative claim — the doc admits insufficient trace coverage. Mark as `confidence: low` until a disconnect trace appears.
+  - Mission1Menus.py reference is external-corpus.
+- **Difficulty:** moderate (factory 0x866 is the key unknown)
+
+### 3.18 objnotfound-requestobj-enterset-wire-format.md
+
+- **Size:** 15,679 bytes
+- **Doc type:** reference (with explanation)
+- **Load-bearing claims:** ~70 (overview of triad + 3 per-opcode sections, each with: handler address + wire format + handler pseudocode with decompiled C + dispatch behavior + key observations + send-side analysis + 4-row relationship diagram + ObjNotFound to RequestObj round-trip + EnterSet warp scenario + Set Name "Space" set with string address 0x008d8ab8 + RequestObjEventHandler client-side sender at 0x006a07d0 + Set transition vtable[0x58/4] vs vtable[0x54/4] + OpenBC implementation notes + 7-row function address table)
+- **Currently cited:** ~60 — every handler has an address, every key function has an address, the "Space" set string has an address.
+- **Top load-bearing claims:**
+  - "0x1D handler FUN_006a0490; sends 0x1E if also not found locally"
+  - "0x1E handler FUN_006a02a0; host gates on object networked (+0x3b), HP threshold DAT_008e5c18, dead_flag; sends full ObjCreate (0x02 or 0x03) + replays explosions via DamageableObject__SendExplosions_0x29"
+  - "0x1F handler FUN_006a05e0; reads null-terminated string, allocates with TGBufferStream__ReadString(-1), frees with NiFree_Wrapper"
+  - "RequestObjEventHandler at 0x006a07d0 is client-side sender for both 0x1D and 0x1F; branches on warp state (ship+0xb4 + 0xb4)"
+  - "Set Name 'Space' constant at 0x008d8ab8 — the default space combat set"
+- **Cross-references in:** README.md (under \"Detailed Protocol Documents\" — verify wire-format-spec.md links to it; the protocol README does NOT currently list this doc as separate entry — see §4)
+- **Cross-references out:** none explicit
+- **Visible debt:**
+  - **Missing from README.md table!** The protocol README only lists 18 specific docs (excluding this one + the v5-validation-status.md being created). Adding this to README is one of the campaign-close actions.
+  - Doc has NO breadcrumb header `> [docs](...) / [protocol](...)`. Inconsistent with siblings.
+  - No frontmatter.
+  - "RequestObjEventHandler" is referenced as `MultiplayerGame__RequestObjEventHandler @ 0x006a07d0` but later as just "0x006a07d0". Naming consistent.
+  - "GetPlayerSlotFromObjID" at 0x005a2030 — this address is ALSO claimed in objcreate-serialization.md as `FUN_005a2030 = ReadSpeciesByte`. Conflict! Two docs claim the same address for different functions. Resolution: probably one of them is wrong; objcreate-serialization.md's claim seems more strongly supported (it cites the species byte read into ship+0xEC). Flag for v5 binary check.
+  - vtable slot computations use `/4` (e.g., "vtable[0x58/4]") — Ghidra-style byte-offset notation. House style prefers slot numbers.
+- **Difficulty:** moderate (the 0x005a2030 conflict is real)
+
+### 3.19 subsystem-integrity-hash.md
+
+- **Size:** 16,204 bytes
+- **Doc type:** reference + explanation (mixed; lots of "why dead")
+- **Load-bearing claims:** ~120 (overview + dead-code-in-MP claim + 7-row function table + hash_fold pseudocode + base_subsystem_hash pseudocode + 7-property hash order + 4 boolean sentinels + ordering rule + ComputeSubsystemHash subsystem slot table (12 rows × ~5 columns) + corrections from prior analysis (2 misidentifications) + weapon_system_hash pseudocode + torpedo mirror convolution + individual_weapon_hash pseudocode + 5 type-dispatch sections (0x802B / 0x802C / 0x802D / 0x802E / 0x802F) each with property offset list + boolean sentinel constants table (6 entries) + sender pseudocode + receiver pseudocode + kick chain ET_BOOT_PLAYER 0x8000F6 + wire encoding XOR fold + dead-code proof + decompiled source line references)
+- **Currently cited:** ~110 — every function has an address (0x005b6c10 hash_fold, 0x005b6170 base_subsystem_hash, 0x005b5eb0 ComputeSubsystemHash, etc.); every property offset is given; every magic constant has hex float bit-pattern.
+- **Top load-bearing claims:**
+  - "Dead code: sender writes only when isMultiplayer==0, receiver checks only when isMultiplayer==1 — never both"
+  - "12 subsystem slots hashed in fixed order at ship+0x27C; corrected from prior analysis (Shield was misidentified as Repair, Torpedo as Shield)"
+  - "Repair subsystem NOT in the hash (corrected from earlier docs)"
+  - "Boolean sentinels use specific float constants: 64.0002f/76.6f, 98.6f/100.0f, 14.3f/456.1f, 27.3f/16.1f for base; 0.4f/99.1f, 32.6f/487.1f for weapon"
+  - "Kick path: ET_BOOT_PLAYER 0x8000F6 → BootPlayerHandler 0x00506170 → TGBootPlayerMessage reason=4"
+- **Cross-references in:** wire-format-spec.md, README.md, stateupdate.md (twice via subsystem-integrity-hash link)
+- **Cross-references out:** none
+- **Visible debt:**
+  - The 12-slot subsystem table here partially overlaps with wire-format-spec.md's Anti-Cheat Hash table (which has the same 12 rows). Two sources of truth on the same data. Reconcile to one.
+  - "Corrections from prior analysis" section at line 129 already explicitly flags 2 misidentifications. Carry these forward into the v5 frontmatter under the `supersedes:` field.
+  - Decompiled source line numbers (~56151, ~56253, etc.) cite `reference/decompiled/05_game_mission.c` — these are derived-corpus refs (Ghidra-output text), should use the two-tag convention but the underlying claims are stbc.exe-grounded.
+- **Difficulty:** moderate
+
+### 3.20 cf16-precision-analysis.md
+
+- **Size:** 7,785 bytes
+- **Doc type:** explanation + reference (mixed)
+- **Load-bearing claims:** ~70 (format bit layout + 5 constants table + encoder algorithm pseudocode + decoder algorithm pseudocode + 8-row scale table + precision characteristics + explosion-packet 0x29 wire format (8-byte description) + ExplosionDamage 9-field layout + mod weapon-type ID round-trip (4 rows) + integer-survival analysis (4 scales) + 4-row CF16 callers list)
+- **Currently cited:** ~60 — every constant has a DAT_… address, every key function has an address (encoder FUN_006d3a90, decoder FUN_006d3b30, FUN_00595c60, FUN_006A0080, FUN_005b1e38). ExplosionDamage vtable at 0x0088c6c4 anchored. 4 xref sites cited but not enumerated.
+- **Top load-bearing claims:**
+  - "16-bit format: [sign:1][scale:3][mantissa:12]; 8 logarithmic decades 0 to 10000"
+  - "Decoder uses 1/4095 (NOT 1/4096) — mantissa 4095 decodes to exactly range_hi"
+  - "Encoder uses x87 __ftol (truncate toward zero, always rounds down)"
+  - "Mod values 15.0/25.0/273.0/2063.0 all FAIL exact int round-trip but produce unique uint16 encodings"
+  - "All float fields in opcode 0x29 are CF16 — no raw float32"
+- **Cross-references in:** stream-primitives.md, README.md, game-opcodes.md, cf16-explosion-encoding.md (sibling)
+- **Cross-references out:** cf16-explosion-encoding.md
+- **Visible debt:**
+  - Calculation tables (round-trip values) are deterministic from the algorithm + constants. They could be regenerated. Carry forward.
+  - "ExplosionDamage struct" 9-field layout is partially in scope of game-opcodes.md too (different doc, same struct). Sync.
+  - "4 CF16 callers confirmed via xref" doesn't enumerate the 4 callers — needs the actual address list.
+- **Difficulty:** trivial
+
+### 3.21 cf16-explosion-encoding.md
+
+- **Size:** 9,637 bytes
+- **Doc type:** explanation + reference (heavily overlaps cf16-precision-analysis.md)
+- **Load-bearing claims:** ~80 (5-row constants table + bit layout + 8-row scale table + encoder pseudocode + decoder pseudocode + explosion 0x29 wire layout + sender FUN_00595c60 detail (explosion list at this+0x13C, radius at +0x14, damage at +0x1C) + receiver Handler_Explosion_0x29 + ExplosionDamage struct + BC Remastered weapon-type values + round-trip table (4 rows) + uniqueness check + round-match analysis + 3-row integer-collision-at-scale-7 + 3 recommended matching strategies + 14-row extended precision reference + 5-point assessment)
+- **Currently cited:** ~70 — every constant has a DAT_… address, every function has an address. Same constants as cf16-precision-analysis.md.
+- **Top load-bearing claims:**
+  - Same constants as cf16-precision-analysis.md (BASE 0.001, MULT 10.0, ENC_MULT 4095.0, DEC_MULT 1/4095)
+  - "Sender FUN_00595c60 iterates explosion list at this+0x13C; called from FUN_006a02a0 (RequestObj) and NewPlayerInGame handler"
+  - "Receiver Handler_Explosion_0x29 at 0x006A0080"
+  - "2063.0 fails round-trip (decodes to 2061.54 → rounds to 2062, not 2063); integer step at scale 7 is ~2.2"
+  - "4 BC Remastered values produce unique uint16 encodings (0x50E3, 0x52AA, 0x6313, 0x71E3)"
+- **Cross-references in:** stream-primitives.md, README.md, cf16-precision-analysis.md (sibling), pythonevent-wire-format.md (related)
+- **Cross-references out:** cf16-precision-analysis.md
+- **Visible debt:**
+  - **Major overlap** with cf16-precision-analysis.md. Both docs have: same constants, same algorithm pseudocode, same scale table, same mod-value round-trip analysis. One should be the source of truth; the other should be a thin cross-reference. Resolution candidate: precision-analysis.md = the algorithm/constants reference; explosion-encoding.md = the explosion-specific wire format and mod-compatibility analysis only.
+  - "BC Remastered" weapon-type values are external-corpus claims about a mod.
+- **Difficulty:** trivial (after the merge decision is made)
+
+### 3.22 message-trace-vs-packet-trace.md
+
+- **Size:** 7,862 bytes
+- **Doc type:** explanation + reference (cross-trace reconciliation analysis)
+- **Load-bearing claims:** ~50 (key discovery: message_trace = receive path only + StateUpdate SUB/WPN direction split (10,459 / 19,997) + S→C flag-distribution top 5 + C→S flag-distribution top 5 + flags_len LE u16 bit layout + packet decoder bug for fragments + 13-row corrected opcode cross-reference table + 10-row S→C-only opcodes list + 5-row newly-identified opcodes + post-ObjCreate SUB cycling pattern + 5-row timing example + implications-for-proxy summary)
+- **Currently cited:** ~5 — this doc is fundamentally trace-derived. The flag bit layout and StateUpdate cross-reference rely on stateupdate.md for grounding, but no addresses are cited here.
+- **Top load-bearing claims:**
+  - "message_trace.log captures only the RECEIVE path (TGMessage factory deserialization); all S→C messages absent"
+  - "C→S uses WPN (0x80) always, SUB (0x20) never — 10,459 packets; S→C inverse — 19,997 packets"
+  - "Type 0x32 flags_len: bits 12-0 length, bit 13 fragment, bit 14 ordered, bit 15 reliable"
+  - "Bit 0 of flags_len high byte is NOT 'more fragments' — it is bit 8 of the 13-bit length"
+  - "Packet trace decoder bug: misdecodes fragment_index as game opcode for fragmented checksum responses"
+- **Cross-references in:** wire-format-spec.md (top), README.md
+- **Cross-references out:** none
+- **Visible debt:**
+  - This is a **cross-source** doc (packet trace + message trace + stbc.exe-derived format). Should use the two-tag convention. All trace-derived claims are `[cross-source-2026-02-10]`.
+  - The corrected opcode cross-reference table has counts that match stateupdate.md's direction-split claim. Both docs cite the same evidence; they should agree on which is canonical (stateupdate.md is the more reference-style location for the SUB/WPN finding).
+  - "Implications for Our Proxy" section is implementation-status content — belongs in CLAUDE.md or a separate proxy-progress tracker.
+  - No frontmatter.
+- **Difficulty:** trivial (this doc is observational; few stbc.exe claims, mostly trace cross-referencing)
+
+## 4. Cross-doc disagreements and documentation debt
+
+Each row is a pre-existing inconsistency to surface; the v5 sweep should resolve to the
+binary as authority.
+
+| # | Disagreement | Sources | Authority candidate |
+|---|--------------|---------|---------------------|
+| 1 | `FUN_005a2030` semantics: "ReadSpeciesByte" (reads species into ship+0xEC) vs "GetPlayerSlotFromObjID" | objcreate-serialization.md (key-functions table) vs objnotfound-requestobj-enterset-wire-format.md (function-addresses table) | Ghidra decompile of 0x005a2030 — one of them is wrong |
+| 2 | TGBufferStream write primitives count | stream-primitives.md = 7 writes; python-messages.md = 8 writes (adds WriteBool / WriteLong / WriteCString) | python-messages.md (more complete); merge into stream-primitives.md |
+| 3 | TGMessage layout, fields +0x2C/+0x30/+0x34 | transport-layer.md table 1 vs table 2 within same file ("retry_strategy" vs "num_retries", "base_delay" vs "backoff_time", "delay_factor" vs "backoff_factor") | Ghidra decompile of TGMessage constructor FUN_006b82a0 |
+| 4 | Ship+0x2BC slot identity | wire-format-spec.md slot map says "(unused) NULL always"; subsystem-integrity-hash.md slot 11 says "Pulse Weapon System hashing at +0x40 / +0x2BC" | Ghidra decompile of ComputeSubsystemHash 0x005b5eb0 |
+| 5 | Subsystem hash table duplication | wire-format-spec.md has its own 12-row hash order table; subsystem-integrity-hash.md is the dedicated doc | Make subsystem-integrity-hash.md canonical; wire-format-spec hub keeps a 1-line summary + link |
+| 6 | Per-collision PythonEvent count | pythonevent-wire-format.md says "12-14 messages: 1 ObjectExploding + 11 ADD_TO_REPAIR_LIST + 2 delayed" but worked example shows "14: 1 ObjectExploding + 13 ADD_TO_REPAIR_LIST" | Re-derive from trace |
+| 7 | TGEvent base vtable slot count | pythonevent-wire-format.md = 18 slots (0-17); engine family vtable doc baseline = 14 slots; collision-effect-protocol.md TGEvent vtable = 16 slots (ends at +0x40) | Ghidra vtable boundary check at 0x00895FF4 |
+| 8 | CF16 doc overlap | cf16-precision-analysis.md and cf16-explosion-encoding.md duplicate algorithm + constants + scale table + mod round-trip analysis | Merge: precision-analysis = algorithm/constants; explosion-encoding = wire-format + mod ID only |
+| 9 | Per-ship subsystem catalog cross-source | per-ship-subsystem-wire-format.md and stateupdate-subsystem-wire-format.md both list subsystem types but with different inventories | Use stateupdate-subsystem-wire-format as the type catalog; per-ship as per-class catalog |
+| 10 | Direction-split claim location | stateupdate.md, stateupdate-subsystem-wire-format.md, and message-trace-vs-packet-trace.md all assert the SUB-vs-WPN by direction split with the same packet counts | stateupdate.md (canonical); others link |
+| 11 | Subsystem field offsets at ship+0x280 family | stateupdate-subsystem-wire-format.md says +0x280 count, +0x284 head, +0x288 tail, +0x28C free list; stateupdate.md says subsystem list at +0x284 (head only) | Ghidra decompile of Ship_AddSubsystemToLists FUN_005b3e50 |
+| 12 | Opcode 0x18 wire format | game-opcodes.md says "DeletePlayerAnim, Handler FUN_006A1420, plays animation" — no wire format | New leaf doc needed (delete-player-anim-wire-format.md exists in `OpenBC/docs/wire-formats/` already; mirror it on the BC side) |
+| 13 | Factory 0x866 family | delete-player-ui-wire-format.md says "0x866 = base TGEvent"; tgobjptrevent-class.md's factory-table top is 0x02 = TGEvent; the 0x8xx family is `0x8129 = ObjectExplodingEvent` | Need a factory-id catalog: 0x02 vs 0x101 / 0x105 / 0x10C / 0x866 / 0x8124 / 0x8129. Where does 0x866 live? |
+| 14 | objnotfound-requestobj-enterset doc not indexed | The doc exists at `docs/protocol/objnotfound-requestobj-enterset-wire-format.md` but is not listed in `docs/protocol/README.md` (the README table has 18 docs; this is doc 19) | Add to README in v5 close batch |
+| 15 | Breadcrumb header inconsistency | objnotfound-requestobj-enterset-wire-format.md lacks the `> [docs](../README.md) / [protocol](README.md) /` breadcrumb header that all siblings have | Add on re-validation |
+| 16 | SpeciesToShip table duplication | game-opcodes.md (15 playable rows) and objcreate-serialization.md (45 rows) | objcreate-serialization.md canonical; game-opcodes.md keeps short list + link |
+| 17 | Opcode 0x06 worked-example accuracy | pythonevent-wire-format.md's "exactly 12-14 PythonEvents per collision" — 12-14 doesn't quite match either of the example breakdowns in the same doc | Re-derive from packet trace |
+| 18 | Receiver address for explosion in cf16 docs | Both cf16-precision-analysis.md and cf16-explosion-encoding.md cite Handler_Explosion_0x29 at 0x006A0080 (consistent across CF16 family); game-opcodes.md also = 0x006A0080. OK, this is consistent. (No disagreement; noted as positive cross-anchor.) |  | — |
+
+## 5. Cross-family disagreements (engine vs protocol)
+
+The engine campaign produced an anchor table covering 6 NI vtables, 9 TG/Ship vtables, ~30
+function anchors, and 12 constant/offset anchors (engine tracker §5.1–§5.8). The protocol
+family will lean on these. Cross-checks identified so far:
+
+| # | Engine anchor | Protocol claim | Notes |
+|---|---------------|----------------|-------|
+| 1 | TGMessage base vtable @ 0x008958d0 (engine `nirtti-factory-catalog` and decompiled-functions infrastructure) | transport-layer.md cites the same address 0x008958d0 for TGMessage vtable. **Agreement.** | Cross-anchor verified at survey time |
+| 2 | TGEvent base vtable @ 0x00895FF4 (engine event-system-architecture.md) | pythonevent-wire-format.md uses 0x00895FF4 as TGEvent base vtable; collision-effect-protocol.md uses 0x00895ff4 (lowercase). **Agreement.** | Same address |
+| 3 | TGEvent slot count | Engine event-system-architecture.md baseline implies ~14 slots; protocol pythonevent-wire-format.md table lists 18 slots (0-17). **Possible disagreement.** | §4 #7. May reflect engine doc's baseline being incomplete OR pythonevent's table being inferred. v5 pass needs the boundary check. |
+| 4 | TGCallback vtable @ 0x008960f4 (engine event-system-architecture.md) | No protocol doc references this; protocol docs use TGEvent + factory IDs. No conflict. | — |
+| 5 | TGConditionHandler vtable @ 0x00896104 (engine) | No protocol doc references this. No conflict. | — |
+| 6 | MultiplayerGame dispatcher @ 0x0069f2a0 (engine function-map.md / decompiled-functions.md) | wire-format-spec.md, game-opcodes.md, tgmessage-routing.md, transport-layer.md, set-phaser-level-protocol.md, pythonevent-wire-format.md all cite 0x0069F2A0 (or 0x0069f2a0). **Agreement.** Engine campaign #1 result documented dispatcher at this address, function-map.md row corrected. | Strong cross-anchor |
+| 7 | Jump table @ 0x0069F534 (engine function-map.md) | wire-format-spec.md and game-opcodes.md both cite this with 41 entries. **Agreement.** | Strong cross-anchor |
+| 8 | UtopiaModule globals (0x0097FA78 WSN, etc., engine decompiled-functions.md) | pythonevent-wire-format.md cites WSN at 0x0097FA78; collision-effect-protocol.md uses g_IsHost at 0x0097FA89; objnotfound-requestobj-enterset uses g_IsMultiplayer indirectly. **Agreement.** | Strong cross-anchor |
+| 9 | TGBufferStream vtable + offsets (engine decompiled-functions.md describes constructor FUN_006cefe0; protocol stream-primitives.md gives layout) | Protocol stream-primitives.md describes +0x1C buffer, +0x20 capacity, +0x24 position, +0x28 bookmark, +0x2C bit-pack state. transport-layer.md Appendix A has slightly different offsets (mentions +0x08 and +0x0C base-class fields). **Possible disagreement.** | Resolution: protocol stream-primitives.md is the canonical layout; engine has not yet documented TGBufferStream layout — engine campaign may need a follow-up. |
+| 10 | NiRTTI factory @ DAT_009a2b98 (engine) | tgmessage-routing.md cites factory table @ 0x009962d4 for transport types (256 slots). These are different tables (NiRTTI vs transport factory). No conflict. | Engine table is for NI classes; protocol table is for transport-message types — independent registries |
+| 11 | Event manager @ 0x0097F838 (engine decompiled-functions.md) | pythonevent-wire-format.md cites `&DAT_0097f838` as the event-manager global for AddEvent calls in subsystem-integrity-hash.md. **Agreement.** | Strong cross-anchor |
+| 12 | TG hierarchy claim: TGStreamedObject etc. (engine tg-hierarchy-vtables.md) | No direct conflict surfaced in protocol docs; protocol docs reference factory IDs (0x101 TGSubsystemEvent etc.) but don't drill into TGStreamedObject's vtable. | Indirect dependency only |
+| 13 | "Two-RTTI-Systems" disclosure (engine — leaf doc pattern) | Protocol docs use factory_id (0x101, 0x105, 0x10C, 0x866, 0x8129) for events. This is the **TG RTTI** registry (not NiRTTI). Per the engine pattern, every protocol doc that introduces factory IDs should disclose which RTTI system it uses. None currently do. | Universal documentation debt across the protocol family |
+
+The engine campaign's anchor table is the single biggest gift to the protocol campaign:
+the dispatcher, jump table, base vtables, and UtopiaModule globals are all already v5-locked.
+Protocol docs cite-by-reference rather than re-anchoring.
+
+## 6. Validation log
+
+(Per-doc validation entries will be appended here as the family campaign proceeds.)
+
+---
+
+## 7. Anchor table
+
+Cross-doc anchor points the protocol-family Ghidra snapshot should pin. Many are inherited
+from the engine campaign (marked `[engine v5-validated 2026-05-28]`); the rest are new in
+the protocol family.
+
+### 7.1 Engine-inherited anchors (already v5-validated)
+
+| Anchor | Address / Value | First cited in | Reused by (protocol) |
+|--------|-----------------|----------------|-----------------------|
+| MultiplayerGame dispatcher | 0x0069f2a0 | engine function-map.md | wire-format-spec, game-opcodes, transport-layer, tgmessage-routing, set-phaser-level-protocol, pythonevent-wire-format |
+| Jump table for game opcodes 0x02-0x2A | 0x0069F534 (41 entries) | engine function-map.md | wire-format-spec, game-opcodes |
+| TGMessage base vtable | 0x008958d0 | engine decompiled-functions.md (implicit) | transport-layer.md |
+| TGEvent base vtable | 0x00895FF4 | engine event-system-architecture.md | pythonevent-wire-format.md, collision-effect-protocol.md |
+| TGCallback vtable | 0x008960f4 | engine event-system-architecture.md | (unused in protocol) |
+| Event manager | 0x0097F838 | engine decompiled-functions.md | pythonevent-wire-format.md, subsystem-integrity-hash.md |
+| UtopiaModule base | 0x0097FA00 | engine decompiled-functions.md | (used implicitly everywhere) |
+| WSN pointer | 0x0097FA78 | engine decompiled-functions.md | pythonevent-wire-format.md, set-phaser-level-protocol.md |
+| NetFile ptr / dispatcher | 0x006a3cd0 | engine decompiled-functions.md | checksum-opcodes.md, transport-layer.md |
+| IsClient byte | 0x0097FA88 | CLAUDE.md | implicit in stateupdate.md |
+| IsHost byte | 0x0097FA89 | CLAUDE.md | collision-effect-protocol.md |
+| IsMultiplayer byte | 0x0097FA8A | CLAUDE.md | stateupdate.md, subsystem-integrity-hash.md, pythonevent-wire-format.md |
+| TGNetwork::Update | 0x006b4560 | engine decompiled-functions.md | python-messages.md, tgmessage-routing.md |
+| TGNetwork::Send / SendTGMessage | 0x006b4c10 | engine decompiled-functions.md | python-messages.md, tgmessage-routing.md, objnotfound-requestobj-enterset |
+| ProcessIncomingPackets | 0x006b5c90 | engine decompiled-functions.md | tgmessage-routing.md, transport-layer.md |
+| SendOutgoingPackets | 0x006b55b0 | engine decompiled-functions.md | implicit |
+| ComputeChecksum | 0x0071f270 | engine decompiled-functions.md | (used indirectly by checksum-opcodes flow) |
+
+### 7.2 Protocol-new globals and tables
+
+| Anchor | Address / Value | Cited in |
+|--------|-----------------|----------|
+| Transport factory table | DAT_009962d4 (256 slots, 7 populated) | transport-layer, tgmessage-routing |
+| AlbyRules cipher key | 0x0095abb4 | transport-layer |
+| SendPacket | 0x006b9870 | transport-layer |
+| ReceivePacket | 0x006b95f0 | transport-layer |
+| Subsystem-ID counter | DAT_0095B078 | pythonevent-wire-format |
+| TGObject hash table for ID resolution | DAT_0099A67C | pythonevent-wire-format, objcreate-serialization (FUN_006f13c0 ResolveReferences) |
+| CF16 BASE constant | DAT_00888b4c = 0.001f | stream-primitives, cf16-precision-analysis, cf16-explosion-encoding |
+| CF16 MULT constant | DAT_0088c548 = 10.0f | (same three) |
+| CF16 ENC_SCALE | DAT_00895f50 = 4095.0f | (same three) |
+| CF16 DEC_SCALE | DAT_00895f54 = float32(1/4095) | (same three) |
+| CF16 ZERO | DAT_00888b54 = 0.0f | cf16-explosion-encoding |
+| Force-update threshold | DAT_00888860 | stateupdate.md (currently uncited value) |
+| Settings byte 1 / collisionDamage | DAT_008e5f59 | game-opcodes.md (opcode 0x00 wire format) |
+| Settings byte 2 / friendlyFire | DAT_0097faa2 | game-opcodes.md, stateupdate.md |
+| Object lookup threshold | DAT_008e5c18 (RequestObj HP gate) | objnotfound-requestobj-enterset |
+| Collision distance threshold | DAT_008955c8 | collision-effect-protocol.md |
+| "NoMe" group name string | 0x008e5528 | python-messages, tgmessage-routing |
+| "Forward" group name string | 0x008d94a0 | python-messages, tgmessage-routing |
+| MAX_MESSAGE_TYPES SWIG constant | 43 (registered 0x00654f31, value at 0x0090b490) | python-messages, tgmessage-routing |
+| Sentinel value for object refs | 0x0095ADFC | pythonevent-wire-format, set-phaser-level-protocol |
+| "Space" set name string | 0x008d8ab8 | objnotfound-requestobj-enterset |
+| Anti-cheat sentinel constants (8 float bit patterns) | 0x42800083 / 0x42993333 / 0x42c53333 / 0x42c80000 / 0x4164cccd / 0x43e40ccd / 0x41da6666 / 0x4180cccd | subsystem-integrity-hash |
+
+### 7.3 Protocol-new function anchors (game opcodes 0x02-0x2A handlers)
+
+| Address | Name | Opcode | Cited in |
+|---------|------|--------|----------|
+| 0x0069f620 | Handler_ObjCreate_0x02_0x03 | 0x02, 0x03 | game-opcodes, object-replication, objcreate-serialization |
+| 0x0069f880 | Handler_PythonEvent | 0x06, 0x0D | game-opcodes, tgmessage-routing, pythonevent-wire-format |
+| 0x0069fda0 | Handler_GenericEventForward | 0x07-0x0C, 0x0E-0x12, 0x1B | game-opcodes, set-phaser-level-protocol, pythonevent-wire-format |
+| 0x006A01B0 | Handler_HostMsg | 0x13 | game-opcodes |
+| 0x006a01e0 | Handler_DestroyObject | 0x14 | game-opcodes |
+| 0x006a2470 | Handler_CollisionEffect | 0x15 | wire-format-spec, game-opcodes, collision-effect-protocol |
+| 0x006a1360 | Handler_DeletePlayerUI | 0x17 | wire-format-spec, game-opcodes, delete-player-ui-wire-format |
+| 0x006a1420 | Handler_DeletePlayerAnim | 0x18 | wire-format-spec, game-opcodes |
+| 0x0069F930 | Handler_TorpedoFire | 0x19 | game-opcodes |
+| 0x0069FBB0 | Handler_BeamFire | 0x1A | game-opcodes |
+| 0x0069FF50 | Ship_WriteStateUpdate dispatch | 0x1C (sender FUN_005b17f0) | wire-format-spec |
+| 0x006a0490 | Handler_ObjNotFound | 0x1D | game-opcodes, objnotfound-requestobj-enterset |
+| 0x006a02a0 | Handler_RequestObj | 0x1E | game-opcodes, objnotfound-requestobj-enterset |
+| 0x006a05e0 | Handler_EnterSet | 0x1F | game-opcodes, objnotfound-requestobj-enterset |
+| 0x006A0080 | Handler_Explosion | 0x29 | game-opcodes, cf16-precision-analysis, cf16-explosion-encoding |
+| 0x006A1E70 | Handler_NewPlayerInGame | 0x2A | game-opcodes, wire-format-spec |
+| 0x00504c10 | MultiplayerWindow dispatcher | 0x00, 0x01, 0x16 | wire-format-spec, transport-layer, tgmessage-routing |
+| 0x00504d30 | Handler_Settings | 0x00 | game-opcodes |
+| 0x00504f10 | Handler_GameInit | 0x01 | game-opcodes |
+| 0x00504c70 | Handler_UICollisionSetting | 0x16 | game-opcodes |
+| 0x006a5df0 | Handler_ChecksumRequest | 0x20 | checksum-opcodes |
+| 0x006a4260 | Handler_ChecksumResponse | 0x21 | checksum-opcodes |
+| 0x006a4c10 | Handler_ChecksumFail | 0x22, 0x23 | checksum-opcodes |
+| 0x006a3ea0 | Handler_FileTransfer | 0x25 | checksum-opcodes |
+| 0x006a4250 | Handler_FileTransferACK | 0x27 | checksum-opcodes |
+
+### 7.4 Stream-primitives function anchors
+
+| Address | Name | Cited in |
+|---------|------|----------|
+| 0x006cefe0 | TGBufferStream constructor | stream-primitives, collision-effect-protocol |
+| 0x006cf180 | TGBufferStream::Init (set buf/offset/size) | objcreate-serialization, collision-effect-protocol |
+| 0x006cf230 | ReadBytes | stream-primitives |
+| 0x006cf2b0 | WriteBytes / memcpy | stream-primitives, python-messages |
+| 0x006cf460 | WriteCString | python-messages |
+| 0x006cf540 | ReadByte | stream-primitives |
+| 0x006cf580 | ReadBit | stream-primitives |
+| 0x006cf5e0 | ReadByte (alt — collision-effect-protocol vtable +0x50) | collision-effect-protocol |
+| 0x006cf600 | ReadShort / ReadU16 | stream-primitives, collision-effect-protocol |
+| 0x006cf640 | ReadU32 (class type ID — vtable +0x60) | collision-effect-protocol |
+| 0x006cf670 | ReadInt32 / ReadU32 (general — vtable +0x68) | stream-primitives, objcreate-serialization, collision-effect-protocol |
+| 0x006cf6a0 | ReadInt32v / ReadObjID thunk | stream-primitives, collision-effect-protocol |
+| 0x006cf6b0 | ReadFloat | stream-primitives, collision-effect-protocol |
+| 0x006cf730 | WriteByte | stream-primitives, python-messages |
+| 0x006cf770 | WriteBit | stream-primitives |
+| 0x006cf7a0 | WriteBool | python-messages |
+| 0x006cf7f0 | WriteShort | stream-primitives, python-messages |
+| 0x006cf830 | WriteInt | python-messages |
+| 0x006cf870 | WriteInt32 / WriteLong | stream-primitives, python-messages |
+| 0x006cf8b0 | WriteFloat | stream-primitives, python-messages |
+| 0x006cf9b0 | GetPosition | stream-primitives |
+| 0x006d29a0 | CompressVec4_Byte_Direction | collision-effect-protocol |
+| 0x006d2ad0 | WriteCompressedVector3 | stream-primitives |
+| 0x006d2d10 | CompressVec4_Byte_Magnitude | collision-effect-protocol |
+| 0x006d2eb0 | ReadCompressedVector3 | stream-primitives |
+| 0x006d2f10 | WriteCompressedVector4 | stream-primitives, stateupdate |
+| 0x006d2fd0 | ReadCompressedVector4 | stream-primitives |
+| 0x006d30e0 | DecompressVec4_Byte | collision-effect-protocol |
+| 0x006d3a90 | CF16 encoder | stream-primitives, cf16-precision-analysis, cf16-explosion-encoding |
+| 0x006d3b30 | CF16 decoder | stream-primitives, cf16-precision-analysis, cf16-explosion-encoding |
+
+### 7.5 Transport / TGMessage / message-routing anchors
+
+| Address | Name | Cited in |
+|---------|------|----------|
+| 0x006b3a00 | TGNetwork constructor (initializes factory table) | tgmessage-routing |
+| 0x006b4c10 | SendTGMessage | python-messages, tgmessage-routing, objnotfound-requestobj-enterset |
+| 0x006b4de0 | SendTGMessageToGroup | python-messages, tgmessage-routing |
+| 0x006b4ec0 | SendToGroupMembers | python-messages, tgmessage-routing |
+| 0x006b51e0 | BroadcastToOthers (host relay) | tgmessage-routing |
+| 0x006b5080 | QueueForSend | tgmessage-routing, transport-layer (seq counter set) |
+| 0x006b52b0 | DequeueCompletedMessages | python-messages |
+| 0x006b61e0 | ReliableACK | transport-layer |
+| 0x006b63a0 | HandleConnection / auto-relay | tgmessage-routing |
+| 0x006b6ad0 | Fragment dispatch | transport-layer |
+| 0x006b6cc0 | FragmentReassembly | transport-layer |
+| 0x006b82a0 | TGMessage constructor (size 0x40) | transport-layer, python-messages |
+| 0x006b8340 | TGMessage::WriteToBuffer | transport-layer, python-messages |
+| 0x006b83f0 | TGMessage factory (type 0x32) | transport-layer, tgmessage-routing |
+| 0x006b84d0 | BufferCopy | python-messages |
+| 0x006b8530 | TGMessage::GetData / GetBuffer | tgmessage-routing, collision-effect-protocol, objcreate-serialization |
+| 0x006b8550 | TGMessage copy constructor | transport-layer |
+| 0x006b8610 | TGMessage::Clone (vtable[6]) | transport-layer |
+| 0x006b8640 | TGMessage::GetSize (vtable[5]) | transport-layer |
+| 0x006b8720 | FragmentMessage (vtable[7]) | transport-layer |
+| 0x006b89a0 | Replace message buffer (post-reassembly) | transport-layer |
+| 0x006b8a00 | SetDataFromStream | python-messages |
+| 0x006b9430 | GetType (returns 0x32, vtable[0]) | transport-layer |
+| 0x006bc6a0 | TGDataMessage factory (type 0x00) | transport-layer, tgmessage-routing |
+| 0x006bd1f0 | TGHeaderMessage factory (type 0x01 ACK) | transport-layer |
+| 0x006bdd10 | TGConnectMessage factory (type 0x02) | transport-layer |
+| 0x006be860 | TGConnectAckMessage factory (type 0x03) | transport-layer |
+| 0x006badb0 | TGBootMessage factory (type 0x04) | transport-layer |
+| 0x006bf410 | TGDisconnectMessage factory (type 0x05) | transport-layer |
+| 0x006bfe80 | TGMessageEvent constructor (size 0x2C) | python-messages |
+| 0x006bff30 | TGMessageEvent::AttachMessage | python-messages |
+| 0x005e4860 | RegisterMessageType SWIG wrapper | tgmessage-routing |
+
+### 7.6 StateUpdate, ObjCreate, subsystem anchors
+
+| Address | Name | Cited in |
+|---------|------|----------|
+| 0x005b17f0 | Ship_WriteStateUpdate (sender) | stateupdate, stateupdate-subsystem-wire-format, subsystem-integrity-hash |
+| 0x005b21c0 | Ship_ReadStateUpdate (receiver) | stateupdate, stateupdate-subsystem-wire-format, subsystem-integrity-hash |
+| 0x005b1e38 | (CF16 caller in StateUpdate writer) | cf16-precision-analysis |
+| 0x005b3e20 | Ship_LinkAllSubsystemsToParents | stateupdate-subsystem-wire-format |
+| 0x005b3e50 | Ship_AddSubsystemToLists | stateupdate-subsystem-wire-format |
+| 0x005b3fb0 | Ship_SetupProperties | stateupdate-subsystem-wire-format |
+| 0x005b5030 | Ship_LinkSubsystemToParent (engine type tag) | stateupdate-subsystem-wire-format |
+| 0x005b5eb0 | ComputeSubsystemHash (12-slot iterator) | wire-format-spec, subsystem-integrity-hash |
+| 0x005b6170 | base_subsystem_hash | subsystem-integrity-hash |
+| 0x005b6330 | weapon_system_hash | subsystem-integrity-hash |
+| 0x005b6560 | individual_weapon_hash | subsystem-integrity-hash |
+| 0x005b6c10 | hash_fold (XOR + rotate accumulator) | subsystem-integrity-hash |
+| 0x0056d320 | ShipSubsystem WriteState (Base) | stateupdate, stateupdate-subsystem-wire-format |
+| 0x0056d390 | ShipSubsystem ReadState (Base) | stateupdate-subsystem-wire-format |
+| 0x00562960 | PoweredSubsystem WriteState | stateupdate, stateupdate-subsystem-wire-format |
+| 0x005629d0 | PoweredSubsystem ReadState | stateupdate-subsystem-wire-format |
+| 0x005644b0 | PowerSubsystem WriteState (reactor — battery bytes) | stateupdate, stateupdate-subsystem-wire-format |
+| 0x00564530 | PowerSubsystem ReadState | stateupdate-subsystem-wire-format |
+| 0x0056c310 | GetMaxCondition | stateupdate-subsystem-wire-format |
+| 0x0056c570 | GetChildSubsystem | stateupdate-subsystem-wire-format |
+| 0x0056c5c0 | AddChildSubsystem | stateupdate-subsystem-wire-format |
+| 0x005a1f50 | Ship_Deserialize | objcreate-serialization, object-replication |
+| 0x005a2030 | (disputed: ReadSpeciesByte vs GetPlayerSlotFromObjID — §4 #1) | objcreate-serialization, objnotfound-requestobj-enterset |
+| 0x005b0e80 | InitObject (Ship field deserialization) | objcreate-serialization |
+| 0x00430730 | ObjectLookupByID hash | objcreate-serialization |
+| 0x006f13e0 | TGFactoryCreate / TGEventFactory::Lookup | objcreate-serialization, collision-effect-protocol, pythonevent-wire-format |
+| 0x006f13c0 | ResolveReferences (object ID → ptr) | collision-effect-protocol, pythonevent-wire-format |
+
+### 7.7 Event-class anchors (factory IDs and class layouts)
+
+| Anchor | Address / Value | Cited in |
+|--------|-----------------|----------|
+| TGEvent factory | 0x0002 / size 0x28 / vtable 0x00895FF4 | pythonevent-wire-format, set-phaser-level-protocol, collision-effect-protocol |
+| TGSubsystemEvent factory | 0x0101 / size 0x28 / vtable 0x008932A4 | pythonevent-wire-format |
+| TGCharEvent factory | 0x0105 / size 0x2C / vtable 0x008932DC / ctor 0x00574C20 | pythonevent-wire-format, set-phaser-level-protocol |
+| TGObjPtrEvent factory | 0x010C / size 0x2C / vtable 0x0088869C / ctor 0x00403290 | tgobjptrevent-class, pythonevent-wire-format |
+| ObjectExplodingEvent factory | 0x8129 / size 0x30 / vtable 0x0088A178 / ctor 0x0043F8B0 | pythonevent-wire-format |
+| CollisionEvent factory | 0x8124 / size 0x44 / vtable 0x0089395c / ctor 0x00586d00 | collision-effect-protocol |
+| DeletePlayerUI factory (disputed family — §4 #13) | 0x0866 | delete-player-ui-wire-format |
+| TGEvent::WriteToStream / ReadToStream | 0x006D6130 / 0x006D61C0 | pythonevent-wire-format, set-phaser-level-protocol, collision-effect-protocol |
+| TGCharEvent::WriteToStream / ReadFromStream | 0x006D6940 / 0x006D6960 | pythonevent-wire-format, set-phaser-level-protocol |
+| TGObjPtrEvent::WriteToStream / ReadFromStream | 0x006D6DC0 / 0x006D6DF0 | tgobjptrevent-class, pythonevent-wire-format |
+| ObjectExplodingEvent::WriteToStream / ReadFromStream | 0x0043F990 / 0x0043F9C0 | pythonevent-wire-format |
+| CollisionEvent::WriteToStream / ReadFromStream (network) | 0x005871a0 / 0x00587300 | collision-effect-protocol |
+| ReadObjectFromStream (factory dispatch) | 0x006d6200 | game-opcodes, collision-effect-protocol, pythonevent-wire-format, delete-player-ui-wire-format |
+
+### 7.8 Event types (constants used across protocol docs)
+
+| Constant | Value | Cited in |
+|----------|-------|----------|
+| ET_NETWORK_MESSAGE_EVENT | 0x60001 | python-messages, transport-layer |
+| ET_NETWORK_DELETE_PLAYER | 0x60005 | delete-player-ui-wire-format |
+| ET_OBJECT_COLLISION | 0x00800050 | wire-format-spec, game-opcodes, collision-effect-protocol, pythonevent-wire-format |
+| ET_HOST_OBJECT_COLLISION | 0x008000FC | collision-effect-protocol, pythonevent-wire-format |
+| ET_COLLISION_DAMAGE | 0x00800053 | collision-effect-protocol, pythonevent-wire-format |
+| ET_OBJECT_EXPLODING | 0x0080004E | pythonevent-wire-format |
+| ET_SUBSYSTEM_HIT | 0x0080006B | pythonevent-wire-format, tgobjptrevent-class |
+| ET_SUBSYSTEM_STATUS_CHANGED | 0x0080006C | game-opcodes (opcode 0x0A) |
+| ET_SUBSYSTEM_DAMAGED | 0x00800070 | pythonevent-wire-format |
+| ET_REPAIR_COMPLETED | 0x00800074 | pythonevent-wire-format |
+| ET_REPAIR_CANNOT_BE_COMPLETED | 0x00800075 | pythonevent-wire-format |
+| ET_REPAIR_INCREASE_PRIORITY | 0x00800076 | game-opcodes, tgobjptrevent-class |
+| ET_WEAPON_FIRED | 0x0080007C | tgobjptrevent-class, pythonevent-wire-format |
+| ET_TRACTOR_BEAM_STARTED_FIRING | 0x0080007D | tgobjptrevent-class |
+| ET_PHASER_STARTED_FIRING | 0x00800081 | tgobjptrevent-class |
+| ET_PHASER_STOPPED_FIRING | 0x00800083 | tgobjptrevent-class |
+| ET_START_FIRING (received) | 0x008000D7 | game-opcodes (opcode 0x07) |
+| ET_STOP_FIRING (received) | 0x008000D9 | game-opcodes (opcode 0x08) |
+| ET_STOP_FIRING_AT_TARGET (received) | 0x008000DB | game-opcodes (opcode 0x09) |
+| ET_STOP_FIRING_AT_TARGET_NOTIFY | 0x008000DC | tgobjptrevent-class (host-only gate) |
+| ET_ADD_TO_REPAIR_LIST | 0x008000DF | game-opcodes, pythonevent-wire-format |
+| ET_SET_PHASER_LEVEL | 0x008000E0 | game-opcodes, set-phaser-level-protocol |
+| ET_START_CLOAK | 0x008000E3 | game-opcodes |
+| ET_STOP_CLOAK | 0x008000E5 | game-opcodes |
+| ET_START_WARP | 0x008000ED | game-opcodes |
+| ET_NEW_PLAYER_IN_GAME | 0x008000F1 | delete-player-ui-wire-format |
+| ET_BOOT_PLAYER | 0x008000F6 | subsystem-integrity-hash |
+| ET_TORP_TYPE_CHANGE | 0x008000FD | game-opcodes |
+
+---
+
+## Notes for the archaeology specialist's snapshot
+
+When merging your protocol-family Ghidra snapshot, the per-doc rows should each gain
+two additional fields: (1) **evidence-state** — for each load-bearing claim, whether the
+Ghidra state agrees (verified / partial / disputed / not-found); (2) **renamed-since-doc** —
+addresses where the doc cites `FUN_xxxxxxxx` but Ghidra now has a real name from the
+post-engine-campaign annotation state.
+
+Highest-priority spot-checks for the archaeology pass (load-bearing, cross-doc, or
+disputed):
+
+1. **0x005a2030** — confirm semantics. The §4 #1 conflict has objcreate-serialization.md
+   calling it `ReadSpeciesByte` and objnotfound-requestobj-enterset.md calling it
+   `GetPlayerSlotFromObjID`. Cannot both be true.
+2. **0x008958d0** vs **0x0089598c** — confirm the TGMessage base vs TGDataMessage vtable
+   slot counts (transport-layer.md claims 8 slots for base, 5 slots for TGDataMessage).
+3. **0x00895FF4** — confirm TGEvent vtable slot count (§4 #7: 14 vs 16 vs 18 slot disagreement).
+4. **ship+0x2BC slot** — §4 #4: is it "always NULL" (wire-format-spec slot map) or
+   "Pulse Weapon System hash slot 11" (subsystem-integrity-hash)?
+5. **DAT_009962d4** — confirm 256-slot transport factory table; confirm only 7 populated.
+6. **Factory 0x866** — find it in the factory hash table. Where does it live in the
+   factory-ID space (0x02 base / 0x101 / 0x105 / 0x10C / 0x866 / 0x8124 / 0x8129)?
+7. **DAT_00888860** — the force-update threshold — what's its value?
+8. **DAT_008e5c18** — RequestObj HP gate threshold — what's its value?
+9. **DAT_008955c8** — collision distance threshold — what's its value?
+
+Anchor table §7 is the index — every entry there should appear in your snapshot so a
+downstream pass can grep and confirm. Tables §7.4 (stream primitives) and §7.7 (event
+class anchors) are the densest cross-reference clusters and yield the most leverage if
+spot-checked first.

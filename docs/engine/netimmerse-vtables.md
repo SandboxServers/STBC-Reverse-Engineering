@@ -598,10 +598,11 @@ constructor field-write offsets and carry medium confidence.
 |-------|-----------|------------|------------|-------|
 | NiObject | 0x08 | 8 | medium | Derived from ctor field writes (2 fields). Abstract base, no factory allocation. |
 | NiObjectNET | 0x14 | 20 | medium | Derived from ctor field writes (4 fields). Abstract base. |
-| NiAVObject | 0xC4 | 196 | medium | Ctor FUN_007dc0c0 writes up to field at offset 0xBC. Abstract base, no factory allocation to confirm directly. |
+| NiAVObject | 0xC8 | 200 | high | [v5-validated 2026-05-28; refined by gamebryo-cross-reference doc #7]: derived from NiNode 0xE8 minus NiNode-specific 0x20. Ctor FUN_007dc0c0 writes up to byte 0xC0 with helper FUN_008136c0 completing layout. The +0x38 delta vs MWSE 4.0 (which gives 0x90) lives in V3.1-only fields (Velocity + Has Bounding Volume + Bounding Volume) per nif.xml. Previously listed as 0xC4 medium-confidence (ctor field-write only); refined to 0xC8 via NiNode subtraction + helper-call accounting. |
 | NiNode | 0xE8 | 232 | high | [v5-validated 2026-05-28]: confirmed via FUN_007e5450 NiAlloc(0xE8). |
-| NiGeometry | 0xE0 | 224 | medium | Unverified — abstract base. |
-| NiTriShape | 0xE4 | 228 | high | [v5-validated 2026-05-28]: confirmed via FUN_007f31f0 NiAlloc(0xE4). |
+| NiGeometry | 0xE0 | 224 | high | [v5-validated 2026-05-28; refined by doc #7]: derived from NiTriShape 0xE4 minus NiTriBasedGeom field. Ctor FUN_007edd10 writes 6 fields ending at byte 0xDE. |
+| NiTriBasedGeom | 0xE4 | 228 | high | [v5-validated 2026-05-28; added by doc #7]: NiGeometry +4 (adds 1 field at byte 0xE0 over NiGeometry). |
+| NiTriShape | 0xE4 | 228 | high | [v5-validated 2026-05-28]: confirmed via FUN_007f31f0 NiAlloc(0xE4). No fields beyond NiTriBasedGeom. |
 
 ## Open Questions and Documentation Debt
 
@@ -616,9 +617,12 @@ cycle:
    a valid pointer that the current count excludes. Inspect `FUN_007e4150` to determine
    whether it is a 44th NiNode-specific virtual or padding before the child-list helper
    sub-vtable at `0x00898fdc`.
-3. **NiAVObject object size 0xC4** is derived from ctor field writes (ctor writes up to
-   offset 0xBC), not factory allocation. As an abstract base with a RET-stub factory, no
-   direct allocation size is observable.
+3. **NiAVObject object size** was previously listed as 0xC4 (medium confidence) derived from
+   ctor field writes alone. **Refined 2026-05-28 to 0xC8** via the gamebryo-cross-reference
+   v5 validation (doc #7): NiNode 0xE8 minus NiNode-specific 0x20 = 0xC8. The +4 vs the
+   earlier ctor-only estimate is accounted for by the helper call FUN_008136c0 at the end of
+   NiAVObject ctor. NiGeometry and NiTriBasedGeom sizes (0xE0 and 0xE4) added in the same
+   pass; see Object Sizes table above.
 4. **Suspected additional RTTI ptr at 0x009a14b8** (from early notes) is not yet classified.
    Possibly an additional core-class RTTI ptr that should be enumerated.
 5. **226 of 238 vtable slot entries are pattern-extrapolated** by inheritance. A per-slot

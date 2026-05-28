@@ -168,7 +168,9 @@ Then opcode 0x01 (single byte).
 | 0x0097FA8A | IsMultiplayer (BYTE) |
 | 0x008e5f59 | Settings byte 1 (sent in opcode 0x00, currently 0x01) |
 | 0x0097faa2 | Settings byte 2 (sent in opcode 0x00, currently 0x00) |
-| 0x0097e238 | TopWindow/MultiplayerGame ptr |
+| 0x0097e238 | PlayWindow / Game state ptr (NOT TopWindow — corrected 2026-05-28 per docs/engine/ui-class-hierarchy.md) |
+| 0x009878cc | TopWindow (root scene/window container — owns 5 MainWindow children) |
+| 0x00991438 | TGEventManager singleton (zero in image, populated at boot) |
 | 0x009a09d0 | Clock object ptr (+0x90=gameTime, +0x54=frameTime) |
 
 ## Python 1.5 Quirks (CRITICAL)
@@ -263,7 +265,7 @@ Then opcode 0x01 (single byte).
 - [docs/engine/event-system-architecture.md](docs/engine/event-system-architecture.md) - TGEventManager dispatch, handler tables, TGCallback/TGConditionHandler internals
 - [docs/engine/ui-class-hierarchy.md](docs/engine/ui-class-hierarchy.md) - UI inheritance tree, MainWindow type IDs, event constants, TGDialogWindow buttons
 - [docs/engine/function-map.md](docs/engine/function-map.md) - 18K-function organized map
-- [docs/engine/function-mapping-report.md](docs/engine/function-mapping-report.md) - ~15,134 functions named/excluded (83%), annotation script docs
+- [docs/engine/function-mapping-report.md](docs/engine/function-mapping-report.md) - Annotation script reference (currently unapplied); current Ghidra naming = 25.8% (4,797/18,581, auto-analysis only)
 - [docs/engine/decompiled-functions.md](docs/engine/decompiled-functions.md) - Key function analysis
 
 ### Guides
@@ -304,18 +306,21 @@ Then opcode 0x01 (single byte).
 - **OpenBC**: `../OpenBC/docs/game-systems/ai-system.md` - Clean-room AI behavior tree spec: node types, conditions, compound behaviors, difficulty, fleet commands
 - **OpenBC**: `../OpenBC/docs/game-systems/ship-movement.md` - Clean-room ship movement spec: targeting, impulse model, turn computation, in-system warp, network authority
 
-## Ghidra Annotation Scripts
-Bulk annotation scripts in `tools/`. Run from Ghidra Script Manager with stbc.exe loaded.
-Run order: globals → nirtti → swig → python_capi → pymodules → vtables → swig_targets → discover_strings
-- `tools/ghidra_annotate_globals.py` - Labels 19 globals, 2,355 key RE'd functions (361 classes), 22 Python module tables (2,396 total)
-- `tools/ghidra_annotate_nirtti.py` - Labels 117 NiRTTI factory + 117 registration functions (234 total)
-- `tools/ghidra_annotate_swig.py` - Names 3,990 SWIG wrapper functions from PyMethodDef table
-- `tools/ghidra_annotate_python_capi.py` - Names 113 Python C API functions, 10 module inits, type objects, globals (137 total)
-- `tools/ghidra_annotate_pymodules.py` - Walks 21 Python module method tables, names 266 C implementations
-- `tools/ghidra_annotate_vtables.py` - Auto-discovers 97 vtables from NiRTTI factories: 1,090 virtuals + 96 ctors + 84 dtors (1,270 total)
-- `tools/ghidra_annotate_swig_targets.py` - Traces SWIG wrappers to C++ targets (4 named; 3,986 are inline field accessors)
-- `tools/ghidra_discover_strings.py` - Names 33 functions from debug strings + adds 515 comments (runs last)
-- See [docs/engine/function-mapping-report.md](docs/engine/function-mapping-report.md) for full coverage (~15,134 functions named/excluded, 83% of 18,247)
+## Ghidra Annotation Scripts (REFERENCE ONLY — NOT CURRENTLY APPLIED)
+
+> **v5 policy**: The 8 annotation scripts in `tools/` are NOT run against the current Ghidra import (created 2026-05-28). Prior runs produced known-wrong function names that caused downstream RE churn. Under v5, naming happens function-by-function via `FUNCTION_DOC_WORKFLOW_V5` with `analyze_function_completeness` scoring. See [docs/guides/v5-doc-validation-workflow.md § "Why no annotation scripts"](docs/guides/v5-doc-validation-workflow.md) for the policy.
+
+The scripts below describe what each WOULD produce if run (script intent verified during v5 doc #6 validation; counts not currently applied):
+- `tools/ghidra_annotate_globals.py` - Would label 19 globals, ~2,355 key RE'd functions, 22 Python module tables (~2,396 total)
+- `tools/ghidra_annotate_nirtti.py` - Would label 117 NiRTTI factory + 117 registration functions (234 total)
+- `tools/ghidra_annotate_swig.py` - Would name 3,990 SWIG wrapper functions from PyMethodDef table
+- `tools/ghidra_annotate_python_capi.py` - Would name 113 Python C API functions, 10 module inits, type objects, globals (137 total)
+- `tools/ghidra_annotate_pymodules.py` - Would walk 21 Python module method tables, name 266 C implementations
+- `tools/ghidra_annotate_vtables.py` - Would auto-discover ~97 vtables from NiRTTI factories: 1,090 virtuals + 96 ctors + 84 dtors (1,270 total)
+- `tools/ghidra_annotate_swig_targets.py` - Would trace SWIG wrappers to C++ targets (4 named; 3,986 are inline field accessors)
+- `tools/ghidra_discover_strings.py` - Would name 33 functions from debug strings + add 515 comments
+
+**Current Ghidra state** (2026-05-28): 4,797 custom-named (25.8%), all Ghidra auto-analysis artifacts (Catch@, Unwind@, library imports, STL templates). Only project-applied rename: `MpgameHandleMessage` at 0x0069f2a0 (from v5 dispatcher recovery). See [docs/engine/function-mapping-report.md](docs/engine/function-mapping-report.md) for current coverage details.
 
 ## Knowledge Preservation
 

@@ -80,7 +80,7 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 | 2 | stream-primitives.md | Foundation: TGBufferStream read/write + CF16 + CompressedVector3/4 | (engine: TGBufferStream vtable 0x008958D0) | **partial (2026-05-28)** — see §6.2; one CV3 correction + restructure for two-class disambiguation |
 | 3 | transport-layer.md | Foundation: UDP framing + 7 transport types + TGMessage vtable + fragments | wire-format-spec, stream-primitives | **partial (2026-05-28)** — 4 corrections, AlbyRules cipher anchored, TGMessage cascade absorbed; see §6.3 |
 | 4 | game-opcodes.md | Mid: opcodes 0x00-0x2A handler addresses + per-opcode formats | wire-format-spec, transport-layer | **partial (2026-05-28)** — opcode table fully anchored from dispatcher recovery; one column-header clarification + small wire-format anchorings; see §6.4 |
-| 5 | checksum-opcodes.md | Mid: opcodes 0x20-0x28 NetFile dispatcher | wire-format-spec, transport-layer | pending |
+| 5 | checksum-opcodes.md | Mid: opcodes 0x20-0x28 NetFile dispatcher | wire-format-spec, transport-layer | **partial (2026-05-28)** — 2 material corrections (dialog swap + 5-round fabrication); 32 anchors confirmed; 1 open question on round-0xFF sender; see §6.5 |
 | 6 | python-messages.md | Mid: opcodes 0x2C+ MAX_MESSAGE_TYPES + SendTGMessage path | wire-format-spec, stream-primitives | pending |
 | 7 | tgmessage-routing.md | Mid: relay-all + star topology + opaque payload | python-messages, transport-layer | pending |
 | 8 | stateupdate.md | Mid: opcode 0x1C dirty flags + 8 field formats + round-robin | game-opcodes, stream-primitives | pending |
@@ -1214,6 +1214,173 @@ status flipped to partial). docs/protocol/game-opcodes.md NOT modified this pass
 the documentation-writer agent will re-render with the v5 frontmatter, column-header
 clarification, two-tag annotations on session-frequency claims, and explicit
 cross-links to each leaf wire-format doc.
+
+### 6.5 checksum-opcodes.md — 2026-05-28 (game-archaeology-specialist)
+
+**Status:** validated -> `partial` (2 material corrections + 3 refinements applied;
+1 open question on the round-0xFF sender keeps the doc from promoting to verified).
+
+**Methodology:** Per-doc workflow Phases 1-3 with `program: STBC.exe` on every MCP call.
+~35 load-bearing claims; the NetFile dispatcher and its 11 helper functions were
+walked end-to-end. Many anchors inherited from
+[decompiled-functions.md](../engine/decompiled-functions.md) — the cross-anchor density
+made this pass fast.
+
+**Headline:** the doc had two **material errors** plus several refinements. The
+0x22/0x23 dialog mapping was SWAPPED in the prior doc; the "5th round at index 0xFF
+for Scripts/Multiplayer" was a fabrication that conflated a real wire observation
+(the 0xFF round IS sent in production traces) with a non-existent in-binary sender.
+Scripts/Multiplayer IS checksummed during the handshake — but as part of round 0's
+reference-hash bundle via `FUN_006A6630`, not a separate round.
+
+**Functions touched (completeness):**
+
+| Function | Addr | effective_score | Used to verify |
+|----------|------|-----------------|----------------|
+| NetFile dispatcher | 0x006A3CD0 | 0.6 / 83.1 max | Non-contiguous opcode catalog {0x20, 0x21, 0x22, 0x23, 0x25, 0x27}; 0x24/0x26 absent; 0x28 outbound-only |
+| ChecksumRequestSender | 0x006A3820 | 0.0 / 81.9 | 4-iteration loop bound (`while uVar9 < 4`); 4 round directories on stack |
+| ChecksumRequestBuilder | 0x006A39B0 | 0.0 / 81.9 | Wire format `[0x20][idx][u16 dir_len][dir][u16 fil_len][fil][bit recursive]`; reliable flag msg+0x3A=1 |
+| 0x21 response router | 0x006A4260 | 0.0 / 83.1 | `byte[1] != 0xFF` -> FUN_006A4560; 0xFF inline branch is reserved |
+| Per-round verifier | 0x006A4560 | 0.0 / 81.9 | Two-arm dispatch into FUN_006A4A00 (param_4=0 file mismatch / param_4=1 ref mismatch); success arm posts via FUN_006A4BB0 |
+| Fail-message sender | 0x006A4A00 | 0.0 / 81.9 | param_4==0 -> WriteChar(0x22) + filename; param_4!=0 -> WriteChar(0x23) + PTR_DAT_008d9af4. Posts event 0x008000E7 |
+| 0x22/0x23 receiver | 0x006A4C10 | 0.0 / 83.1 | `(char)iVar2 == '\"'` (0x22) -> SystemChecksumFail; else (0x23) -> VersionDifferent. Sets DAT_0097fa78+0x100 = 0x65 (disconnect) |
+| Success poster | 0x006A4BB0 | 5.1 / 84.8 | Posts event 0x008000E8 (18-line function) |
+| 0x20 client receiver | 0x006A5DF0 | 0.0 / 83.1 | Round-0 path runs FUN_006A6630; response prepends int32 reference hash |
+| Reference-hash bundler | 0x006A6630 | 0.0 / 80.5 | 4 extra checksums (Autoexec, Scripts/ships, Scripts/Systems, Scripts/Multiplayer) into a single int32 |
+| 0x25 receiver | 0x006A3EA0 | 0.0 / 80.5 | One-shot warning gated on this+0x14; reimports `Scripts/*.pyc`; always responds 0x27 |
+| 0x27 receiver | 0x006A4250 | 13.1 / 100 | Thin wrapper to FUN_006A5860 (correctly classified) |
+| FileTransferProcessor | 0x006A5860 | 0.0 / 80.5 | Drains per-peer queue; on empty sends single-byte 0x28 + posts event 0x008000E6 |
+| ChecksumCompleteHandler | 0x006A1B10 | 0.0 / 81.9 | Consumes event 0x008000E6; sends Settings (0x00) + GameInit (0x01) reliable |
+
+No annotations applied this pass; the dispatcher's downstream helpers all carried
+their FUN_xxxxxxxx names. The completeness scores reflect un-annotated state, not
+unverifiability — every behavior was tractable from decompile output.
+
+**Confirmed claims (high confidence):** 32 anchors.
+
+- NetFile dispatcher accepts non-contiguous opcodes {0x20, 0x21, 0x22, 0x23, 0x25, 0x27}.
+  0x24 and 0x26 have no handler. 0x28 is outbound-only (no dispatcher case) — confirms
+  the transport-layer.md C2 catalog.
+- Per-opcode handler addresses (0x20 -> 0x6A5DF0, 0x21 -> 0x6A4260, 0x22/0x23 -> 0x6A4C10,
+  0x25 -> 0x6A3EA0, 0x27 -> 0x6A4250). 0x28 sender at 0x6A5860.
+- 0x21 routing: `byte[1] != 0xFF` -> FUN_006A4560; `byte[1] == 0xFF` reserved inline.
+- ChecksumRequestSender FUN_006A3820 builds 4 requests (indices 0..3) and queues all in
+  hash table B before sending #0.
+- ChecksumRequestBuilder FUN_006A39B0 wire format with bit-packed recursive flag and
+  `msg+0x3A = 1` reliable.
+- Hash table B at NetFile+0x38 (vtable) and NetFile+0x44 (buckets) — cross-confirms
+  decompiled-functions.md NetFile ctor description.
+- Event ID anchoring with the 2-xref pattern (producer + FUN_0069E590 registration):
+  0x008000E6 (FUN_006A5860 after 0x28), 0x008000E7 (FUN_006A4A00 fail), 0x008000E8
+  (FUN_006A4BB0 success).
+- Client round-0 reference hash includes Autoexec, Scripts/ships, Scripts/Systems,
+  Scripts/Multiplayer via FUN_006A6630; result is prepended to round-0 response.
+- ChecksumCompleteHandler FUN_006A1B10 consumes event 0x008000E6 and sends Settings +
+  GameInit; Settings flag fields use `WriteBool_Bit` (confirms wire-format-spec C1).
+
+**Corrected claims:**
+
+1. **C1 — 0x22 / 0x23 dialog mapping is SWAPPED (material).**
+   - Old: 0x22 = VersionDifferent dialog; 0x23 = SystemChecksumFail dialog.
+   - **New: 0x22 = SystemChecksumFail dialog; 0x23 = VersionDifferent dialog.**
+   - Evidence: FUN_006A4C10's `(char)iVar2 == '\"'` (0x22) branch routes to
+     `s_SystemChecksumFail_0095a434`; the else (0x23) routes to
+     `s_VersionDifferent_0095a420`. Sender FUN_006A4A00 confirms: `param_4 == 0`
+     writes 0x22 with per-file filename (per-file mismatch); `param_4 != 0` writes
+     0x23 with `PTR_DAT_008d9af4` (App.pyc reference-hash mismatch).
+   - This is a clean opposite-mapping correction; clean-room implementations need it.
+
+2. **C2 — "5th round at index 0xFF = Scripts/Multiplayer" is a fabrication (material).**
+   - Old: 5 rounds with index 0xFF for `Scripts/Multiplayer/*.pyc` recursive.
+   - **New: 4 rounds (indices 0..3). `Scripts/Multiplayer` IS checksummed during the
+     handshake but as part of round 0's reference-hash bundle via FUN_006A6630, NOT
+     as a separate round.**
+   - Evidence: FUN_006A3820 loops `while (uVar9 < 4)` — the bound is decisive. The
+     four directories on the function's stack literals are App.pyc, Autoexec.pyc,
+     scripts/ships *.pyc (recursive), scripts/mainmenu *.pyc. FUN_006A6630 (called
+     from FUN_006A5DF0 when index == 0) computes 4 extra checksums and folds them
+     into a single int32 reference hash that the round-0 response prepends.
+   - **Important caveat:** the 0xFF code path IS reserved in FUN_006A4260's receive
+     dispatch, and packet traces from `openbc-test-20260225.md` show a real
+     `ChecksumReq(round 0xFF)` message on the wire. So the 0xFF round exists in
+     production — but the in-binary sender is **not located** via FUN_006A39B0
+     caller analysis. Tracked as open question OQ1.
+
+**Refinements:**
+
+3. **C3 — 0x25 dialog timing.** Clarified: the "Receive File Warning" dialog is a
+   **one-shot** — fires on the FIRST 0x25 receive only (when `this+0x14 == 0`), not
+   on every transfer. The handler sets `this+0x14 = 1` and skips the dialog on all
+   subsequent 0x25s in the same session.
+4. **C4 — 0x21 payload structure.** Old: "variable opaque hash_data". **New:**
+   `[if idx==0: int32 reference_hash][int32 dir_or_file_hash][optional file-list via
+   FUN_006A6190]`. FUN_006A6190 walks a tree and joins per-file hashes with a `/`
+   separator (DAT_008DACA0).
+5. **C5 — Trace-vs-binary tagging.** The "~400 bytes round 2 response" observation
+   is tagged `[cross-source-2026-02-25 trace]` rather than presented as a
+   binary-derived claim — it's a wire observation from openbc-test-20260225.md.
+
+**Dropped claims:**
+
+1. **D1 — "0xFF = final round, Scripts/Multiplayer, handled by main path."** Dropped.
+   The semantic attribution is unanchored: the 0xFF reserved branch exists in the
+   receiver but no in-binary sender for 0xFF was located, and Scripts/Multiplayer is
+   in fact bundled into round 0 via FUN_006A6630. The wire observation is preserved
+   as OQ1.
+2. **D2 — "FUN_006A4260 -> FUN_006A4560 (verify) or FUN_006A5570 (mismatch)."** Dropped.
+   FUN_006A5570 is NOT the mismatch peer to FUN_006A4560 — it's called from FUN_006A5660
+   (queue management). The true mismatch path is FUN_006A4560 -> FUN_006A4A00 (which
+   then sends 0x22 or 0x23 based on `param_4`). The file-enqueue / 0x25 transfer chain
+   sits on a separate branch (FUN_006A4E70 -> FUN_006A5660).
+
+**New factual sections added:**
+
+- **Top-of-doc NOTE block** stating partial status, the non-contiguous dispatcher
+  catalog, the two material corrections, and the round-0xFF open question.
+- **"Dispatcher" section** with explicit per-opcode missing-handler table (0x24, 0x26,
+  0x28) — the negative claim for v5.
+- **"Round 0 reference hash" subsection** documenting FUN_006A6630's role, replacing
+  the dropped 5th-round table row.
+- **"Round 0xFF on the wire" subsection** capturing OQ1 — the wire fact is
+  authoritative; the binary sender is the gap.
+- **"Opcode 0x28 - Outbound only" section** documenting FUN_006A5860 as sender,
+  the single-byte payload, and the event 0x008000E6 chain to FUN_006A1B10.
+- **"Event IDs" subsection** with the 3-row event/producer/consumer table.
+- **"Open questions" section** capturing OQ1 (round-0xFF sender) + OQ2
+  (PTR_DAT_008d9af4 init site).
+
+**Companion follow-ups (deferred to those docs' own validation passes):**
+
+- [decompiled-functions.md](../engine/decompiled-functions.md) — already verified;
+  this pass confirms the FUN_006A4A00 / FUN_006A4BB0 fire sites that doc's "open
+  question #3" flagged. The OQ closes from this side; decompiled-functions.md does
+  not need a corrigendum since the question was forward-looking.
+- [wire-format-spec.md](wire-format-spec.md) — already corrected; this doc inherits
+  the WriteBool_Bit anchoring on FUN_006A1B10 (the Settings sender).
+- [transport-layer.md](transport-layer.md) — already corrected (C2 cross-references
+  this doc as the canonical NetFile opcode catalog); no further action needed.
+
+**Open questions left for downstream rows:**
+
+1. **OQ1 — Round-0xFF sender unlocated in the binary.** Static call-graph search from
+   FUN_006A39B0 (the only known ChecksumRequestBuilder) finds only FUN_006A3820, which
+   iterates 0..3. Packet traces from `openbc-test-20260225.md` show a real
+   `ChecksumReq(round 0xFF)` on the wire, so the emission exists in production.
+   Candidates: event handler registered by FUN_0069E590, deferred-init in NetFile
+   ctor sequence, or OpenBC-side emission. Worth a dedicated dig. Trace evidence is
+   authoritative for the wire fact.
+2. **OQ2 — `PTR_DAT_008d9af4` initialization site.** The static bytes read as garbage,
+   confirming runtime population. decompiled-functions.md describes it as the "App.pyc
+   reference hash pointer" — defer to that doc's ctor/DllMain notes.
+
+**Resolving OQ1 promotes this doc from `partial` -> `verified`.**
+
+**Files touched:** docs/protocol/checksum-opcodes.md (re-rendered with v5 frontmatter,
+top-of-doc NOTE block, dispatcher section with missing-handler table, 4-round table
+replacing the 5-round fabrication, round-0xFF subsection, reference-hash bundle
+subsection, IMPORTANT block on 0x22/0x23 swap, 0x28 outbound-only section, Event IDs
+subsection, Open Questions section, cross-references). docs/protocol/v5-validation-status.md
+(this row added; §2 row #5 status flipped to partial).
 
 ---
 

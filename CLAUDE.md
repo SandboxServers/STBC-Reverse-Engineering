@@ -157,21 +157,26 @@ collision damage and subsystem damage. The main multiplayer loop is functional.
 Then opcode 0x01 (single byte).
 
 ### Key Globals
+
+> **CRITICAL READING NOTE (2026-05-28)**: If you see docs in `docs/` or `engine/` referencing `0x0097FA88` as "IsClient", `0x0097FA89` as "IsHost", or `0x0097FA8A` as "IsMultiplayer", treat the FLAG NAMES with skepticism — the addresses are correct but the labels were inverted before today's cascade verification. Cross-check against this table.
+
 | Address | What |
 |---------|------|
 | 0x0097FA00 | UtopiaModule base |
 | 0x0097FA78 | TGWinsockNetwork* (UtopiaModule+0x78) |
 | 0x0097FA7C | GameSpy ptr (+0xDC=qr_t) |
 | 0x0097FA80 | NetFile/ChecksumMgr |
-| 0x0097FA88 | IsClient (BYTE) - 0=host, 1=client |
-| 0x0097FA89 | IsHost (BYTE) - 1=host, 0=client |
-| 0x0097FA8A | IsMultiplayer (BYTE) |
+| 0x0097FA88 | **HasLocalPlayer** (BYTE) - 1=has local player ship; 0=dedicated server [corrected 2026-05-28 via cascade-verification-flags memo] |
+| 0x0097FA89 | **GameLive** (BYTE) - 1=live MP game running; 0=SP or pre-game [corrected 2026-05-28] |
+| 0x0097FA8A | **IsHost** (BYTE) - 1=host or SP; 0=client [corrected 2026-05-28] |
 | 0x008e5f59 | Settings byte 1 (sent in opcode 0x00, currently 0x01) |
 | 0x0097faa2 | Settings byte 2 (sent in opcode 0x00, currently 0x00) |
 | 0x0097e238 | PlayWindow / Game state ptr (NOT TopWindow — corrected 2026-05-28 per docs/engine/ui-class-hierarchy.md) |
 | 0x009878cc | TopWindow (root scene/window container — owns 5 MainWindow children) |
 | 0x00991438 | TGEventManager singleton (zero in image, populated at boot) |
 | 0x009a09d0 | Clock object ptr (+0x90=gameTime, +0x54=frameTime) |
+
+> **2026-05-28 cascade correction**: The three rows at `0x0097FA88` / `0x0097FA89` / `0x0097FA8A` were previously labeled IsClient/IsHost/IsMultiplayer with INVERTED semantics — they form a cyclic permutation of identities. Byte-level evidence from MultiplayerGame_Start (~0x00438C70) is decisive (the function writes these three bytes explicitly per mode: client / host / dedicated). ~28 downstream docs reference these addresses with the old (wrong) labels. The binary BEHAVIOR in those docs is correct (the actual gates work); only the human-readable flag NAMES are wrong. Mass-fix is deferred to a future sweep; readers should treat flag-name claims in pre-cascade docs with caution and cross-reference this corrected table. See `.claude/agent-memory/game-archaeology-specialist/cascade-verification-flags-20260528.md` for the verification.
 
 ## Python 1.5 Quirks (CRITICAL)
 - `print "string"` (no parens), `except Exception, e:` (not `as e`)
@@ -197,6 +202,8 @@ Then opcode 0x01 (single byte).
 - `11_tgnetwork.c` - TGWinsockNetwork, packet I/O
 
 ## Documentation Index
+
+> **v5 evidence-standard re-validation campaign COMPLETE (2026-05-28)**: 59/59 docs validated across 4 families — engine (10/10 verified), protocol (22/22), networking (11/11), gameplay (16/16). See each family's `v5-validation-status.md` tracker.
 
 ### Architecture
 - [docs/architecture/architecture-overview.md](docs/architecture/architecture-overview.md) - How the proxy DLL works, COM chain, bootstrap phases
@@ -242,6 +249,8 @@ Then opcode 0x01 (single byte).
 - [docs/networking/ship-death-lifecycle.md](docs/networking/ship-death-lifecycle.md) - Ship death in MP: Explosion + respawn, DestroyObject NOT used
 
 ### Gameplay
+> **v5 validation status (2026-05-28)**: Gameplay family campaign closed at 16/16 docs validated (6 verified + 10 partial). See [docs/gameplay/v5-validation-status.md](docs/gameplay/v5-validation-status.md) for the per-doc tracker.
+
 - [docs/gameplay/combat-mechanics-re.md](docs/gameplay/combat-mechanics-re.md) - Consolidated combat RE: shields, cloak, weapons, repair, tractor
 - [docs/gameplay/damage-system.md](docs/gameplay/damage-system.md) - Complete damage pipeline: collision, weapon, explosion paths, gate checks
 - [docs/gameplay/shield-system.md](docs/gameplay/shield-system.md) - Shield system: 6-facing ellipsoid, absorption, power-budget recharge

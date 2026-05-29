@@ -83,6 +83,16 @@ See full analysis in conversation dated 2026-02-16.
 - **EnterSet 0x1F**: Custom mission multi-zone infrastructure. Never fires in FFA/TDM.
 Full details in design-intent.md "OpenBC Design Questions" section.
 
+### StateUpdate Condition/Power Byte Semantics (2026-02-26)
+- **Condition byte is scalar, not boolean**: subsystem ReadState applies `condition = byte * (1/255) * maxCondition` (FUN_0056d390). So `0x01` means "barely alive" (~0.39%), not destroyed.
+- **`0x00` means destroyed; `0xFF` means full health** for hull/bridge/shield/system condition bytes.
+- **Power slider default is 100% by construction**: PoweredSubsystem ctor sets `+0x90 = 1.0f`, then setup path reaffirms 1.0.
+- **Wire power byte `0x64` = 100%** in flag 0x20 PoweredSubsystem state (`powerPctWanted = int(pct*100)`).
+
+### Multiplayer Score/Cloak Authority Notes (2026-02-26)
+- **Score messages are server-originated (`0x36`/`0x37`, S→C)**, but stock dedi has a known gap: weapon kills often emit no `SCORE_CHANGE (0x36)` while collision/self-destruct paths do.
+- **Cloak toggles are client-initiated relay events** (`0x0E/0x0F` via GenericEventForward), frequently observed wrapped in client `PythonEvent2 (0x0D)` payloads in stock traces.
+
 ## File Index
 - [design-intent.md](design-intent.md) - Detailed architecture analysis and design intent
 - [load-bearing-bugs.md](load-bearing-bugs.md) - Bugs/behaviors that other code depends on

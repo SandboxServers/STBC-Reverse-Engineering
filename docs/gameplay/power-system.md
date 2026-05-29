@@ -1,8 +1,197 @@
 > [docs](../README.md) / [gameplay](README.md) / power-system.md
 
+---
+title: Power & Reactor System — Complete Reverse Engineering
+type: reference + explanation
+audience: re-engineer
+validated: 2026-05-28
+methodology: FUNCTION_DOC_WORKFLOW_V5
+binary:
+  name: stbc.exe
+  size: 6182400
+  base: 0x00400000
+status: partial
+evidence:
+  - claim: "Power system uses 3-class architecture: PowerSubsystem (reactor, vtable 0x00892C98) does NOT inherit PoweredSubsystem; PoweredSubsystem base (vtable 0x00892D98); PoweredMaster EPS distributor (vtable 0x0088A1F0) at ship+0x2B0"
+    address: 0x00560470
+    function: PowerSubsystem_Ctor
+    confidence: high
+    note: "Reactor ctor FUN_00560470 calls FUN_0056B970 (ShipSubsystem base ctor) — NOT FUN_00562240 (PoweredSubsystem base ctor) — confirming non-inheritance. Renamed this pass."
+  - claim: "Ship__SetupProperties at 0x005B3FB0 installs 12 subsystem slots at ship+0x2B0..+0x2DC with type-ID gate + ctor + vtable per-slot; full slot table v5-validated 2026-05-28"
+    address: 0x005B3FB0
+    function: Ship__SetupProperties
+    confidence: high
+    note: "Full disasm of switch body 0x005B402C..0x005B445C decoded; ctor + vtable per slot all byte-confirmed. This is the source of truth for the 12 vtable-to-class-name mappings. Foundation cross-anchor: wire-format-spec.md Named Slot Layout."
+  - claim: "PoweredMaster::Update at 0x00563780 (vtable 0x0088A1F0 slot 25) runs main power simulation once per INTERVAL (1.0s constant at 0x00892E20); calls ShipSubsystem::Update, computes elapsed time, runs AddPowerToBatteries + ComputeAvailablePower, updates battery percentages"
+    address: 0x00563780
+    function: PoweredMaster_Update
+    confidence: high
+    note: "Renamed this pass."
+  - claim: "PoweredSubsystem::Update at 0x00562470 runs every frame; per-frame three-way switch at consumer+0xA0 (powerMode) dispatches to DrawFromMainBattery / DrawFromBackupBattery / DrawFromBackupOnly"
+    address: 0x00562470
+    function: PoweredSubsystem_Update
+    confidence: high
+    note: "Decompile confirms three-way switch on param_1[0x28] (= +0xA0). Renamed this pass."
+  - claim: "PoweredSubsystem base ctor at 0x00562240 writes vtable 0x00892D98 and initializes consumer state defaults: +0x90=1.0f (powerPercentageWanted), +0x94=1.0f (efficiency), +0x98=1.0f (conditionRatio), +0x9C=1 (isOn), +0xA0=0 (powerMode main-first)"
+    address: 0x00562240
+    function: PoweredSubsystem_Ctor
+    confidence: high
+    note: "Stage 1 of init chain confirmed via decompile. Renamed this pass."
+  - claim: "PoweredMaster::SetupFromProperty at 0x005636D0 (vtable 0x0088A1F0 slot 22) fills mainBatteryPower=MainBatteryLimit and backupBatteryPower=BackupBatteryLimit at spawn (Stage 2 of init chain)"
+    address: 0x005636D0
+    confidence: high
+    note: "Disasm: CALL 0x005634C0 (GetMainBatteryLimit) -> FSTP [ESI+0xAC]; CALL 0x005634D0 (GetBackupBatteryLimit) -> FSTP [ESI+0xB4]. Function exists at this address but is NOT auto-defined in Ghidra DB; reached via vtable slot 22 pointer at 0x0088A248."
+  - claim: "PoweredMaster ctor at 0x00563530 (slot ship+0x2B0, type ID 0x8022) writes vtable 0x0088A1F0 and derives from PoweredSubsystem base"
+    address: 0x00563530
+    function: PoweredMaster_Ctor
+    confidence: high
+    note: "Renamed this pass."
+  - claim: "12-slot ship subsystem layout binary-truth: +0x2B0 PoweredMaster (0x0088A1F0), +0x2B4 TorpedoSystem (0x00893598), +0x2B8 PhaserSystem (0x00893240), +0x2BC PulseWeaponSystem (0x008933B0), +0x2C0 ShieldGenerator (0x00892F34), +0x2C4 PowerSubsystem reactor (0x00892C98), +0x2C8 SensorSubsystem (0x00892EAC), +0x2CC ImpulseEngineSubsystem (0x00892D10), +0x2D0 WarpEngineSubsystem (0x00893040), +0x2D4 TractorBeamSystem (0x00893794), +0x2D8 RepairSubsystem (0x00892E24), +0x2DC CloakingSubsystem (0x00892C04)"
+    address: 0x005B3FB0
+    function: Ship__SetupProperties
+    confidence: high
+    note: "C1 — corrects prior doc Class Hierarchy table which had 8 of 11 vtables paired with WRONG class names. See body Class Hierarchy section."
+  - claim: "ShieldGenerator ctor at 0x0056A000 writes vtable 0x00892F34; slot ship+0x2C0; type ID 0x8028"
+    address: 0x0056A000
+    function: ShieldGenerator_Ctor
+    confidence: high
+    note: "Renamed this pass."
+  - claim: "CloakingSubsystem ctor at 0x0055E2B0 writes vtable 0x00892C04 and at 0x0055E32E sets +0xA0 = 2 (powerMode backup-only); slot ship+0x2DC; type ID 0x8024"
+    address: 0x0055E2B0
+    function: CloakingSubsystem_Ctor
+    confidence: high
+    note: "Renamed this pass."
+  - claim: "ImpulseEngineSubsystem ctor at 0x00561050 writes vtable 0x00892D10; slot ship+0x2CC; type ID 0x8026"
+    address: 0x00561050
+    function: ImpulseEngineSubsystem_Ctor
+    confidence: high
+    note: "Renamed this pass."
+  - claim: "RepairSubsystem ctor at 0x00565090 writes vtable 0x00892E24; slot ship+0x2D8; type ID 0x8029"
+    address: 0x00565090
+    function: RepairSubsystem_Ctor
+    confidence: high
+    note: "Renamed this pass."
+  - claim: "WarpEngineSubsystem ctor at 0x0056DE70 writes vtable 0x00893040; slot ship+0x2D0; type ID 0x8025"
+    address: 0x0056DE70
+    function: WarpEngineSubsystem_Ctor
+    confidence: high
+    note: "Renamed this pass."
+  - claim: "SensorSubsystem ctor at 0x00566D10 writes vtable 0x00892EAC; slot ship+0x2C8; type ID 0x8023"
+    address: 0x00566D10
+    function: SensorSubsystem_Ctor
+    confidence: high
+    note: "Renamed this pass."
+  - claim: "TractorBeamSystem ctor at 0x00582080 writes vtable 0x00893794 and at 0x005820B2 sets +0xA0 = 1 (powerMode backup-first); slot ship+0x2D4; type ID 0x8021"
+    address: 0x00582080
+    function: TractorBeamSystem_Ctor
+    confidence: high
+    note: "Renamed this pass."
+  - claim: "FUN_005638D0 PoweredMaster::AddPowerToBatteries gate is (!IsHost OR IsMultiplayer); recharge runs everywhere EXCEPT the SP-host config — NOT 'HOST-ONLY in multiplayer' as prior doc claimed"
+    address: 0x005638D0
+    function: PoweredMaster_AddPowerToBatteries
+    confidence: high
+    note: "C2. Decompile shows: if ((DAT_0097FA89 == 0) || (DAT_0097FA8A != 0)) { recharge }. Renamed + plate this pass."
+  - claim: "DrawFromMainBattery (0x00563A70), DrawFromBackupBattery (0x00563BB0), DrawFromBackupOnly (0x00563CB0) all implement host-authority gating (bVar3 mutate-allow, bVar5 early-return-allow); clients CALCULATE projected draws but do NOT mutate authoritative battery state"
+    address: 0x00563A70
+    function: PoweredMaster_DrawFromMainBattery
+    confidence: high
+    note: "C3. All three Draw functions start with `bool bVar3=true, bVar5=true; if (DAT_0097FA89!=0) { ... }` host-build conditional that controls subsequent +0xAC/+0xB4 writes. Renamed + plate this pass."
+  - claim: "FUN_0055F7F0 is the cloak-decloak shield-restore handler — called only from CloakingSubsystem::Update (FUN_0055E500) at state 5->0 transition; reads ship+0x2C0 (ShieldGenerator) and restores shield power to 1.0 if zeroed; posts events 0x0080007A (cloak status changed) and 0x0080007B (shield enable)"
+    address: 0x0055F7F0
+    function: CloakDisengageRestoreShield
+    confidence: high
+    note: "C4 — NOT 'reactor enable guard' as prior doc claimed. Renamed + plate this pass."
+  - claim: "Consumer list head/tail labels are REVERSED in prior doc — PoweredMaster+0xC8 is the TAIL (first inserted, untouched) and +0xCC is the HEAD (insertion point, LIFO)"
+    address: 0x00563D50
+    function: PoweredMaster_SetPowerSource
+    confidence: high
+    note: "C5. FUN_00563D50: on first insert, param_1[0x32]=local_4 (+0xC8 = first node = tail) and param_1[0x33]=local_4 (+0xCC = head); subsequent inserts back-link old head and update +0xCC. Renamed this pass."
+  - claim: "PowerProperty field offsets +0x48 MainBatteryLimit, +0x4C BackupBatteryLimit, +0x50 MainConduitCapacity, +0x54 BackupConduitCapacity, +0x58 PowerOutput — all confirmed via helper functions at 0x005634C0/D0/E0/F0/520"
+    address: 0x005634C0
+    function: PowerSubsystem_GetMainBatteryLimit
+    confidence: high
+  - claim: "PoweredSubsystem::SetPowerPercentageWanted at 0x00562430 writes +0x90 (powerPercentageWanted) and rescales +0x8C (powerWanted = powerWanted * pct / oldPct) when oldPct != 0.0"
+    address: 0x00562430
+    function: PoweredSubsystem_SetPowerPercentageWanted
+    confidence: high
+    note: "Pure local setter — no network call, no event posting. Renamed this pass."
+  - claim: "PoweredSubsystem::GetNormalPowerWanted at 0x005623D0 returns property+0x48 if (!IsDisabled && isOn && property!=NULL) else 0"
+    address: 0x005623D0
+    function: PoweredSubsystem_GetNormalPowerWanted
+    confidence: high
+    note: "Renamed this pass."
+  - claim: "PoweredMaster::ComputeAvailablePower at 0x00563700 computes per-pool min(battery, capacity*ticks); mainConduitCurrent uses MainConduitCapacity*conditionPct (health-scaled); backupConduitCurrent uses raw BackupConduitCapacity"
+    address: 0x00563700
+    function: PoweredMaster_ComputeAvailablePower
+    confidence: high
+    note: "Renamed this pass."
+  - claim: "PoweredMaster::SetPowerSource at 0x00563D50 allocates 12-byte node from FUN_0054F720 pool and inserts at head (+0xCC) of consumer linked list (LIFO order)"
+    address: 0x00563D50
+    function: PoweredMaster_SetPowerSource
+    confidence: high
+  - claim: "Power mode assignments: TractorBeamSystem sets +0xA0=1 (backup-first) at 0x005820B2; CloakingSubsystem sets +0xA0=2 (backup-only) at 0x0055E32E; all other subsystem ctors do NOT touch +0xA0 and inherit mode 0 from base"
+    address: 0x005820B2
+    confidence: high
+  - claim: "Constant INTERVAL = 1.0f at 0x00892E20 (bytes 0x3F800000) controls PoweredMaster::Update interval"
+    address: 0x00892E20
+    confidence: high
+  - claim: "Constant 0.0f at 0x00888B54 (bytes 0x00000000) used for float comparisons"
+    address: 0x00888B54
+    confidence: high
+  - claim: "Constant 1.0f at 0x00888860 (bytes 0x3F800000) used in GetCombinedConditionPercentage"
+    address: 0x00888860
+    confidence: high
+  - claim: "Constant 1.25f at 0x0088BEC0 (bytes 0x3FA00000) — maximum powerPercentageWanted overload cap (125%)"
+    address: 0x0088BEC0
+    confidence: high
+  - claim: "Constant 100.0f at 0x0088CE78 (bytes 0x42C80000) — WriteState power-byte encoding multiplier (int(pct * 100.0))"
+    address: 0x0088CE78
+    confidence: high
+  - claim: "Constant 0.01f at 0x0088D4E4 (bytes 0x3C23D70A) — ReadState power-byte decoding multiplier (byte * 0.01f)"
+    address: 0x0088D4E4
+    confidence: high
+  - claim: "Constant 255.0f at 0x0088B9AC (bytes 0x437F0000) — condition byte multiplier"
+    address: 0x0088B9AC
+    confidence: high
+  - claim: "FUN_0054E690 posts event 0x0080008C (ET_SUBSYSTEM_POWER_CHANGED) carrying powerPctWanted; event is NOT in MultiplayerGame's network-forwarded list — power slider changes propagate ONLY via StateUpdate (opcode 0x1C) round-robin"
+    address: 0x0054E690
+    confidence: high
+    note: "Decompile confirms event creation writes &DAT_0080008C to event+0x10, payload at +0x28 = source->[+0x90] (powerPctWanted). Cross-anchored to docs/protocol/wire-format-spec.md MultiplayerGame forwarded event table."
+  - claim: "PoweredSubsystem::WriteState at 0x00562960 (vtable+0x70, round-robin path) writes hasData bit + powerPctByte gated on isOwnShip; PoweredSubsystem::ReadState at 0x005629D0 (vtable+0x74) gates apply on timestamp newer than lastNetworkUpdate"
+    address: 0x00562960
+    function: PoweredSubsystem_WriteState
+    confidence: high
+    note: "Cross-anchored from protocol mid #11 (stateupdate-subsystem-wire-format.md), v5-validated 2026-05-28."
+  - claim: "FUN_0055F7F0 posts event 0x0080007A (cloak status changed) and event 0x0080007B (shield enable) when restoring shield power after decloak"
+    address: 0x0055F7F0
+    function: CloakDisengageRestoreShield
+    confidence: high
+    note: "Partial resolution of prior doc Open Question #1."
+companions:
+  - docs/protocol/subsystem-integrity-hash.md
+  - docs/protocol/wire-format-spec.md
+  - docs/protocol/stateupdate.md
+  - docs/protocol/stateupdate-subsystem-wire-format.md
+  - docs/gameplay/cloaking-state-machine.md
+  - docs/gameplay/shield-system.md
+  - docs/gameplay/repair-system.md
+  - docs/gameplay/combat-mechanics-re.md
+---
+
+> [!NOTE]
+> **v5 re-validation 2026-05-28 — 5 corrections including 1 HIGH-PRIORITY vtable-to-class table shift across 8 of 11 subsystem classes + cascade to protocol leaf #19 (subsystem-integrity-hash).** Power model substantively correct (3-class architecture, battery/conduit math, powerMode pools, network propagation, init chain, all 7 constants byte-confirmed). 26 Ghidra functions renamed.
+>
+> - **C1 (HIGH)**: Class Hierarchy table paired 8 of 11 subsystem vtables with WRONG class names — circular-shifted mapping. Binary truth now rendered from Ship__SetupProperties (FUN_005B3FB0) decompile + 12 individual ctor disassemblies. Cascade: protocol leaf #19 (subsystem-integrity-hash) needs slot 1 (+0x2C4) reverted from HullSubsystem back to PowerSubsystem; patched separately.
+> - **C2**: AddPowerToBatteries gate (FUN_005638D0) is INVERTED. Actual gate is `(!IsHost) || IsMultiplayer` — runs everywhere except SP-host config — NOT "HOST-ONLY in multiplayer".
+> - **C3**: Draw functions (FUN_00563A70 / BB0 / CB0) all implement client-side prediction — clients CALCULATE projected draws via bVar3/bVar5 host-auth gating but do NOT mutate authoritative battery state. Prior doc pseudocode entirely omitted this.
+> - **C4**: FUN_0055F7F0 is the cloak-decloak shield-restore handler, NOT a reactor enable guard. Called only from CloakingSubsystem::Update at state 5->0 transition.
+> - **C5**: Consumer list head/tail labels are REVERSED — +0xC8 is the TAIL (first inserted), +0xCC is the HEAD (LIFO insertion point).
+
+---
+
 # Power & Reactor System — Complete Reverse Engineering
 
-Reverse-engineered from stbc.exe via objdump disassembly, SWIG wrapper analysis, and cross-referenced against shipped hardpoint scripts. All addresses verified against the game binary.
+Reverse-engineered from stbc.exe via Ghidra decompilation, SWIG wrapper analysis, and cross-referenced against shipped hardpoint scripts. All addresses verified against the game binary.
 
 For the clean-room behavioral specification (no addresses, suitable for reimplementation), see the OpenBC repository at `../OpenBC/docs/power-system.md`.
 
@@ -10,54 +199,120 @@ For the clean-room behavioral specification (no addresses, suitable for reimplem
 
 ## Overview
 
-Bridge Commander's power system uses a three-class architecture:
+Bridge Commander's power system uses a three-class architecture [v5-validated 2026-05-28]:
 
-1. **PowerSubsystem** — the physical warp core/reactor. A ShipSubsystem that stores HP, can be damaged, and whose condition scales power output. Does NOT inherit from PoweredSubsystem.
+1. **PowerSubsystem** — the physical warp core/reactor. A ShipSubsystem that stores HP, can be damaged, and whose condition scales power output. **Does NOT inherit from PoweredSubsystem.** Verified: ctor FUN_00560470 (PowerSubsystem_Ctor) calls FUN_0056B970 (ShipSubsystem base ctor), not FUN_00562240 (PoweredSubsystem base ctor).
 2. **PoweredSubsystem** — base class for all power-consuming subsystems (shields, engines, weapons, etc.). Each consumer draws power per-frame from the master distributor.
-3. **"Powered" master** — a special PoweredSubsystem instance at ship+0x2B0 that acts as the EPS (Electro-Plasma System) distributor. Manages batteries, conduit limits, and the consumer list. Runs the main power simulation tick once per second.
+3. **PoweredMaster** ("Powered" master) — a special PoweredSubsystem instance at ship+0x2B0 that acts as the EPS (Electro-Plasma System) distributor. Manages batteries, conduit limits, and the consumer list. Runs the main power simulation tick once per second.
 
 The power flow is: **Reactor generates → Main battery stores → Powered distributor allocates → Each PoweredSubsystem draws**.
 
 ---
 
-## Class Hierarchy
+## Class Hierarchy [v5-validated 2026-05-28]
+
+### C1 — Vtable-to-class map (CORRECTED 2026-05-28)
+
+The prior doc paired 8 of 11 subsystem vtables with the WRONG class names — a circular-shifted mapping. The slot offsets (which ship offset maps to which subsystem) were mostly correct (foundation #1 had already been corrected for the Pulse/Tractor swap). The **vtable-to-class-name** column within the hierarchy block was the load-bearing error.
+
+Binary truth, extracted from Ship__SetupProperties (FUN_005B3FB0) disassembly + 12 individual ctor decompiles:
+
+| Slot | Class | Vtable (binary truth) | Vtable (prior doc) | Status |
+|---|---|---|---|---|
+| +0x2B0 | PoweredMaster | 0x0088A1F0 | 0x88A1F0 | OK |
+| +0x2B4 | TorpedoSystem | 0x00893598 | 0x893630 | **CORRECTION** |
+| +0x2B8 | PhaserSystem (was "PhaserController") | 0x00893240 | 0x893240 | OK (name aligned) |
+| +0x2BC | PulseWeaponSystem | 0x008933B0 | 0x893794 | **CORRECTION** |
+| +0x2C0 | ShieldGenerator | 0x00892F34 | 0x893598 | **CORRECTION** |
+| +0x2C4 | PowerSubsystem (Reactor) | 0x00892C98 | 0x892C98 | OK |
+| +0x2C8 | SensorSubsystem (was "SensorArray") | 0x00892EAC | 0x893040 | **CORRECTION** |
+| +0x2CC | ImpulseEngineSubsystem | 0x00892D10 | 0x892FC4 (= ShipSubsystem base) | **CORRECTION** |
+| +0x2D0 | WarpEngineSubsystem | 0x00893040 | 0x892E24 | **CORRECTION** |
+| +0x2D4 | TractorBeamSystem | 0x00893794 | 0x8936F0 | **CORRECTION** |
+| +0x2D8 | RepairSubsystem | 0x00892E24 | 0x892F34 | **CORRECTION** |
+| +0x2DC | CloakingSubsystem | 0x00892C04 | 0x892EAC | **CORRECTION** |
+
+Anchor: extracted from Ship__SetupProperties (FUN_005B3FB0) disasm at 0x005B402C..0x005B445C + 12 individual ctor decompiles. Each ctor's vtable write (`MOV [EDI], &PTR_FUN_00xxxxxx`) is the class-defining write.
+
+### Corrected hierarchy tree
 
 ```
-ShipSubsystem (vtable 0x892FC4)
+ShipSubsystem (vtable 0x00892FC4)              ← Base for ALL ship subsystems
+  Ctor: FUN_0056B970
+  Update: FUN_0056BC60 (slot 25)
   │
-  ├── PowerSubsystem (vtable 0x892C98)         ← Reactor / "Warp Core"
-  │     ctor: FUN_00560470
-  │     named slot: ship+0x2C4
-  │     type ID: 0x8138
-  │     DOES NOT inherit from PoweredSubsystem
-  │     DOES NOT override Update (uses base ShipSubsystem::Update)
+  └── PowerSubsystem (vtable 0x00892C98)        ← Reactor / "Warp Core"
+        Ctor: FUN_00560470 (PowerSubsystem_Ctor)
+        Named slot: ship+0x2C4
+        Instance type ID: 0x8027
+        DOES NOT inherit from PoweredSubsystem
+        DOES NOT override Update (uses base ShipSubsystem::Update)
+
+PoweredSubsystem (vtable 0x00892D98)           ← Base for all powered consumers
+  Ctor: FUN_00562240 (PoweredSubsystem_Ctor)
+  Update: FUN_00562470 (PoweredSubsystem_Update, slot 25)
   │
-  └── PoweredSubsystem (vtable 0x892D98)        ← Base for all powered systems
-        ctor: FUN_00562240 → FUN_0056b970
-        Update: FUN_00562470 (vtable slot 25)
-        │
-        ├── "Powered" distributor (vtable 0x88A1F0) ← Master power manager / EPS grid
-        │     named slot: ship+0x2B0
-        │     type ID: 0x813E
-        │     Update override: FUN_00563780 (MAIN POWER SIMULATION)
-        │
-        ├── ShieldGenerator (vtable 0x893598)
-        ├── PhaserController (vtable 0x893240)
-        ├── SensorArray (vtable 0x893040)
-        ├── ImpulseEngineSubsystem (vtable 0x892FC4)
-        ├── WarpEngineSubsystem (vtable 0x892E24)
-        ├── RepairSubsystem (vtable 0x892F34)
-        ├── CloakingSubsystem (vtable 0x892EAC)
-        ├── TractorBeamSystem (vtable 0x8936F0)
-        ├── TorpedoSystem (vtable 0x893630)
-        └── PulseWeaponSystem (vtable 0x893794)
+  ├── PoweredMaster (vtable 0x0088A1F0)         ← EPS distributor
+  │     Ctor: FUN_00563530 (PoweredMaster_Ctor)
+  │     Named slot: ship+0x2B0
+  │     Instance type ID: 0x8022
+  │     Update override: FUN_00563780 (PoweredMaster_Update — MAIN POWER SIMULATION)
+  │     SetupFromProperty: FUN_005636D0 (vtable slot 22)
+  │
+  ├── ShieldGenerator (vtable 0x00892F34)
+  │     Ctor: FUN_0056A000 (ShieldGenerator_Ctor), slot ship+0x2C0, type ID 0x8028
+  │
+  ├── SensorSubsystem (vtable 0x00892EAC)
+  │     Ctor: FUN_00566D10 (SensorSubsystem_Ctor), slot ship+0x2C8, type ID 0x8023
+  │
+  ├── ImpulseEngineSubsystem (vtable 0x00892D10)
+  │     Ctor: FUN_00561050 (ImpulseEngineSubsystem_Ctor), slot ship+0x2CC, type ID 0x8026
+  │
+  ├── WarpEngineSubsystem (vtable 0x00893040)
+  │     Ctor: FUN_0056DE70 (WarpEngineSubsystem_Ctor), slot ship+0x2D0, type ID 0x8025
+  │
+  ├── RepairSubsystem (vtable 0x00892E24)
+  │     Ctor: FUN_00565090 (RepairSubsystem_Ctor), slot ship+0x2D8, type ID 0x8029
+  │
+  ├── CloakingSubsystem (vtable 0x00892C04)
+  │     Ctor: FUN_0055E2B0 (CloakingSubsystem_Ctor), slot ship+0x2DC, type ID 0x8024
+  │     powerMode = 2 (backup-only)
+  │
+  ├── TractorBeamSystem (vtable 0x00893794)
+  │     Ctor: FUN_00582080 (TractorBeamSystem_Ctor), slot ship+0x2D4, type ID 0x8021
+  │     powerMode = 1 (backup-first)
+  │
+  ├── TorpedoSystem (vtable 0x00893598)
+  │     Ctor: FUN_0057B020, slot ship+0x2B4, type ID 0x801E
+  │
+  ├── PhaserSystem (vtable 0x00893240)
+  │     Ctor: FUN_00573C90, slot ship+0x2B8, type ID 0x801F
+  │
+  └── PulseWeaponSystem (vtable 0x008933B0)
+        Ctor: FUN_005773B0, slot ship+0x2BC, type ID 0x8020
 ```
 
 **Key architectural insight**: The reactor (ship+0x2C4) and the EPS distributor (ship+0x2B0) are separate objects. The reactor has its own HP (7,000 on Sovereign) and its condition percentage scales the power output. The EPS distributor manages the actual batteries and power delivery. Both are created from the same `PowerProperty` hardpoint definition — the reactor inherits its MaxCondition and position, while the distributor inherits the battery/conduit/output parameters.
 
+### Type ID namespaces (clarification)
+
+Prior doc lines 31, 41 cited "type ID: 0x8138" (PowerSubsystem) and "type ID: 0x813E" (PoweredMaster). These are the **PowerProperty / HullProperty class IDs** in the Context Type ID space (0x812F..0x813F) — the read-only hardpoint templates — NOT the subsystem instance class IDs. Subsystem instance IDs are in the 0x8021..0x8029 range (gated by the FUN_005604x0 type-gate functions in Ship__SetupProperties). The doc conflated the two namespaces.
+
+| Namespace | Range | What it identifies | Where stored |
+|---|---|---|---|
+| Property class IDs | 0x812F..0x813F | Read-only hardpoint template (PowerProperty, HullProperty, etc.) | At PoweredMaster+0x18 (member field) |
+| Subsystem instance class IDs | 0x8021..0x8029 | Runtime subsystem class | What GetClassID returns (vtable slot 1) |
+
+### Cross-doc cascade — protocol leaf #19 reconciliation required
+
+> [!IMPORTANT]
+> **CASCADE TO PROTOCOL LEAF #19** [2026-05-28]: The slot 1 (+0x2C4) attribution in `docs/protocol/subsystem-integrity-hash.md` says HullSubsystem (0x8138). Binary truth: ship+0x2C4 is PowerSubsystem reactor (vtable 0x00892C98, instance class ID 0x8027). The 0x8138 is the **PowerProperty CLASS ID** (a different namespace from subsystem instance class IDs). The pre-correction name "Power Reactor" was right; leaf #19's HullSubsystem rename needs reverting.
+>
+> Slots 4 (+0x2C8 SensorSubsystem) / 6 (+0x2D0 WarpEngineSubsystem) / 7 (+0x2D8 RepairSubsystem) / 8 (+0x2DC CloakingSubsystem) from leaf #19 STILL HOLD. This cross-doc cascade is being patched separately.
+
 ---
 
-## PowerProperty Field Offsets
+## PowerProperty Field Offsets [v5-validated 2026-05-28]
 
 PowerProperty is the read-only template created by `App.PowerProperty_Create()` in hardpoint scripts. It stores the 5 core power parameters.
 
@@ -71,15 +326,17 @@ PowerProperty is the read-only template created by `App.PowerProperty_Create()` 
 
 Example (Sovereign): MainBattery=200,000, BackupBattery=100,000, MainConduit=1,450, BackupConduit=250, PowerOutput=1,200.
 
+All 5 offsets confirmed via helper functions at 0x005634C0..0x00563520.
+
 ---
 
 ## PowerSubsystem (Reactor) Runtime Layout
 
-vtable at 0x892C98. Named slot: ship+0x2C4. This is the physical reactor — it takes damage and its HP affects power output.
+vtable at 0x00892C98. Named slot: ship+0x2C4. This is the physical reactor — it takes damage and its HP affects power output.
 
 | Offset | Type | Field | Notes |
 |--------|------|-------|-------|
-| +0x00 | ptr | vtable | 0x892C98 |
+| +0x00 | ptr | vtable | 0x00892C98 |
 | +0x18 | ptr | property | PowerProperty* (read-only template) |
 | +0x30 | float | condition | Current HP (float, not percentage) |
 | +0x34 | float | conditionPct | condition / maxCondition (0.0–1.0) |
@@ -88,7 +345,7 @@ The reactor itself does NOT store batteries or manage distribution. It serves as
 
 ---
 
-## "Powered" Master (EPS Distributor) Runtime Layout
+## PoweredMaster (EPS Distributor) Runtime Layout
 
 vtable at 0x0088A1F0. Named slot: ship+0x2B0. This is the central power management object.
 
@@ -99,8 +356,8 @@ vtable at 0x0088A1F0. Named slot: ship+0x2B0. This is the central power manageme
 | +0x30 | float | condition | Current HP |
 | +0x34 | float | conditionPct | Health ratio (0.0–1.0) |
 | +0x40 | ptr | ownerShip | Ship* that owns this subsystem |
-| +0x88 | 12 | mainBatteryWatcher | FPU watcher for main battery |
-| +0x94 | 12 | backupBatteryWatcher | FPU watcher for backup battery |
+| +0x88 | ptr | mainBatteryWatcher | FPU watcher pointer (4 bytes, not 12) |
+| +0x94 | ptr | backupBatteryWatcher | FPU watcher pointer (4 bytes, not 12) |
 | +0xA0 | float | availablePower | Total power available for consumption |
 | +0xA4 | float | mainConduitCurrent | Main conduit power remaining this interval |
 | +0xA8 | float | backupConduitCurrent | Backup conduit power remaining this interval |
@@ -111,15 +368,17 @@ vtable at 0x0088A1F0. Named slot: ship+0x2B0. This is the central power manageme
 | +0xBC | float | powerDispensed | Total power dispensed this tick |
 | +0xC0 | float | lastUpdateTime | For elapsed time calculation |
 | +0xC4 | int | consumerCount | Number of registered power consumers |
-| +0xC8 | ptr | consumerListHead | Linked list of PoweredSubsystem* |
-| +0xCC | ptr | consumerListTail | |
+| +0xC8 | ptr | consumerListTail | **C5 CORRECTION**: This is the TAIL (first inserted, untouched). Pre-v5 doc said "Head". |
+| +0xCC | ptr | consumerListHead | **C5 CORRECTION**: This is the HEAD (insertion point, LIFO). Pre-v5 doc said "Tail". |
 | +0xD0 | ptr | freeListHead | Pool allocator for list nodes |
 
-Consumer list node layout: `[subsystem_ptr (4), prev (4), next (4)]` — 12 bytes each, allocated from pool at FUN_0054f720.
+Consumer list node layout: `[subsystem_ptr (4), prev (4), next (4)]` — 12 bytes each, allocated from pool at FUN_0054F720.
+
+> **Watcher fields clarification (OQ-3)**: prior doc claimed +0x88 / +0x94 are "12 bytes for FPU watcher container". Binary truth: PoweredMaster ctor sets `param_1[0x22] = param_1 + 0x2C` (+0x88 = `&this[+0xB0]`) and `param_1[0x25] = param_1 + 0x2E` (+0x94 = `&this[+0xB8]`). These are 4-byte pointer fields, not 12-byte container regions. The FPU watcher objects ARE associated with the master, but the watcher class itself is not yet identified — see Open Questions.
 
 ---
 
-## PoweredSubsystem (Consumer) Field Offsets
+## PoweredSubsystem (Consumer) Field Offsets [v5-validated 2026-05-28]
 
 Base class for all subsystems that consume power. These fields are inherited by shields, engines, weapons, etc.
 
@@ -129,6 +388,7 @@ Base class for all subsystems that consume power. These fields are inherited by 
 | +0x30 | float | condition | Current HP |
 | +0x34 | float | conditionPct | condition / maxCondition |
 | +0x40 | ptr | ownerShip | Ship* |
+| +0x84 | float | lastNetworkUpdate | Timestamp of last applied StateUpdate (used in ReadState gate) |
 | +0x88 | float | powerReceived | Actual power received this tick |
 | +0x8C | float | powerWanted | Power demanded this tick |
 | +0x90 | float | powerPercentageWanted | User slider (0.0–1.0+) |
@@ -140,66 +400,72 @@ Base class for all subsystems that consume power. These fields are inherited by 
 
 ---
 
-## Key Function Table
+## Key Function Table [v5-validated 2026-05-28]
 
 | Address | Name | Signature | Purpose |
 |---------|------|-----------|---------|
-| 0x00563780 | PoweredMaster::Update | __thiscall(float dt) | **Main power simulation tick** (once per second) |
-| 0x00562470 | PoweredSubsystem::Update | __thiscall(float dt) | Per-consumer power draw (every frame) |
+| 0x00563780 | PoweredMaster_Update | __thiscall(float dt) | **Main power simulation tick** (once per second) |
+| 0x00562470 | PoweredSubsystem_Update | __thiscall(float dt) | Per-consumer power draw (every frame) |
 | 0x0056BC60 | ShipSubsystem::Update | __thiscall(float dt) | Base: condition tracking |
-| 0x00560470 | PowerSubsystem::ctor | __thiscall(int param) | Reactor constructor |
-| 0x005634a0 | PowerSubsystem::GetProperty | — | Returns this+0x18 |
-| 0x005634b0 | PowerSubsystem::GetPowerOutput | — | property+0x58 * conditionPct |
-| 0x005634c0 | PowerSubsystem::GetMainBatteryLimit | — | property+0x48 |
-| 0x005634d0 | PowerSubsystem::GetBackupBatteryLimit | — | property+0x4C |
-| 0x005634e0 | PowerSubsystem::GetMainConduitCapacity | — | property+0x50 (raw, not scaled) |
-| 0x005634f0 | PowerSubsystem::GetMainConduitCapacity_scaled | — | property+0x50 * conditionPct |
-| 0x00563520 | PowerSubsystem::GetBackupConduitCapacity | — | property+0x54 (raw, not scaled) |
-| 0x00563700 | PoweredMaster::ComputeAvailablePower | __thiscall(float ticks) | Compute conduit limits and available pool |
-| 0x005638d0 | PoweredMaster::AddPowerToBatteries | __thiscall(float amount) | Recharge main → overflow to backup |
-| 0x00563a70 | PoweredMaster::DrawFromMainBattery | __thiscall(float wanted) | Mode 0: main first, then backup |
-| 0x00563bb0 | PoweredMaster::DrawFromBackupBattery | __thiscall(float wanted) | Mode 1: backup first, then main |
-| 0x00563cb0 | PoweredMaster::DrawFromBackupOnly | __thiscall(float wanted) | Mode 2: backup only |
-| 0x005623D0 | PoweredSubsystem::GetNormalPowerWanted | vslot 30 | Returns property+0x48 if isOn, else 0 |
-| 0x00562430 | PoweredSubsystem::SetPowerPercentageWanted | __thiscall(float pct) | Sets +0x90, rescales +0x8C |
-| 0x00563ed0 | PoweredMaster::ComputeTotalPowerWanted | — | Sums NormalPowerWanted * dt across all consumers |
-| 0x00563d50 | PoweredMaster::SetPowerSource | — | Adds consumer to linked list |
-| 0x005644b0 | PowerSubsystem::WriteState | — | Network serialization |
+| 0x00560470 | PowerSubsystem_Ctor | __thiscall(int param) | Reactor constructor |
+| 0x00563530 | PoweredMaster_Ctor | __thiscall(int param) | EPS distributor constructor |
+| 0x00562240 | PoweredSubsystem_Ctor | __thiscall(int param) | Base consumer constructor |
+| 0x005634A0 | PowerSubsystem_GetProperty | — | Returns this+0x18 |
+| 0x005634B0 | PowerSubsystem_GetPowerOutput | — | property+0x58 * conditionPct |
+| 0x005634C0 | PowerSubsystem_GetMainBatteryLimit | — | property+0x48 |
+| 0x005634D0 | PowerSubsystem_GetBackupBatteryLimit | — | property+0x4C |
+| 0x005634E0 | PowerSubsystem::GetMaxMainConduitCapacity | — | property+0x50 (raw); function exists but undefined in Ghidra DB |
+| 0x005634F0 | PowerSubsystem_GetMainConduitCapacity_Scaled | — | property+0x50 * conditionPct |
+| 0x00563520 | PowerSubsystem_GetBackupConduitCapacity | — | property+0x54 (raw, not scaled) |
+| 0x00563700 | PoweredMaster_ComputeAvailablePower | __thiscall(float ticks) | Compute conduit limits and available pool |
+| 0x005638D0 | PoweredMaster_AddPowerToBatteries | __thiscall(float amount) | Recharge main → overflow to backup (gate: `!IsHost OR IsMultiplayer`) |
+| 0x00563A70 | PoweredMaster_DrawFromMainBattery | __thiscall(float wanted) | Mode 0: main first, then backup (host-auth gated) |
+| 0x00563BB0 | PoweredMaster_DrawFromBackupBattery | __thiscall(float wanted) | Mode 1: backup first, then main (host-auth gated) |
+| 0x00563CB0 | PoweredMaster_DrawFromBackupOnly | __thiscall(float wanted) | Mode 2: backup only (host-auth gated) |
+| 0x005623D0 | PoweredSubsystem_GetNormalPowerWanted | vslot 30 | Returns property+0x48 if (!IsDisabled && isOn && property!=NULL), else 0 |
+| 0x00562430 | PoweredSubsystem_SetPowerPercentageWanted | __thiscall(float pct) | Writes +0x90, rescales +0x8C (pure local — no network call) |
+| 0x00563ED0 | PoweredMaster::ComputeTotalPowerWanted | — | Sums NormalPowerWanted * dt across all consumers (function exists at this address but undefined in Ghidra DB — see OQ-4) |
+| 0x00563D50 | PoweredMaster_SetPowerSource | — | Adds consumer to head (+0xCC) of LIFO list |
+| 0x005636D0 | PoweredMaster::SetupFromProperty | __thiscall | Fills batteries to limit (slot 22 of vtable 0x0088A1F0; not auto-defined in Ghidra DB) |
+| 0x0055F7F0 | CloakDisengageRestoreShield | __thiscall | **CORRECTION** — cloak-decloak shield-restore handler, not "reactor enable guard" |
+| 0x005644B0 | PowerSubsystem::WriteState | — | Network serialization |
 | 0x00564530 | PowerSubsystem::ReadState | — | Network deserialization |
+| 0x00562960 | PoweredSubsystem_WriteState | — | Round-robin (flag 0x20) power byte serialization (cross-anchored from protocol mid #11) |
+| 0x005629D0 | PoweredSubsystem_ReadState | — | Round-robin (flag 0x20) power byte deserialization (cross-anchored from protocol mid #11) |
 
 ---
 
 ## Decompiled Pseudocode
 
-### PoweredMaster::Update (FUN_00563780) — Main Power Simulation
+### PoweredMaster_Update (FUN_00563780) — Main Power Simulation [v5-validated 2026-05-28]
 
 ```c
 // vtable 0x0088A1F0, slot 25
-// this = "Powered" subsystem at ship+0x2B0
-// Runs once per INTERVAL (1.0 second, constant at 0x892e20)
+// this = PoweredMaster at ship+0x2B0
+// Runs once per INTERVAL (1.0 second, constant at 0x00892E20)
 void PoweredMaster_Update(PoweredMaster* this, float deltaTime) {
     // Step 1: Call base ShipSubsystem::Update (condition tracking)
-    ShipSubsystem_Update(this, deltaTime);   // FUN_0056bc60
+    ShipSubsystem_Update(this, deltaTime);   // FUN_0056BC60
 
     // Step 2: Compute elapsed game time since last update
-    float gameTime = g_Clock->gameTime;      // [0x9a09d0]+0x90
+    float gameTime = g_Clock->gameTime;       // [0x009A09D0]+0x90
     if (gameTime < this->lastUpdateTime)      // +0xC0
         this->lastUpdateTime = gameTime;
 
     float elapsed = gameTime - this->lastUpdateTime;
-    if (elapsed > INTERVAL) {                 // INTERVAL = 1.0f at 0x892e20
+    if (elapsed > INTERVAL) {                 // INTERVAL = 1.0f at 0x00892E20
         this->powerDispensed = 0.0;           // +0xBC = reset per interval
         int ticks = (int)(elapsed / INTERVAL);
 
-        if (!IsDisabled()) {                  // FUN_0056c350
+        if (!IsDisabled()) {                  // FUN_0056C350
             // Compute power output (scaled by reactor health)
-            float powerOutput = GetPowerOutput();  // prop+0x58 * condPct
+            float powerOutput = GetPowerOutput();   // prop+0x58 * condPct
             float rechargeAmount = powerOutput * ticks;
-            AddPowerToBatteries(rechargeAmount);   // FUN_005638d0
+            AddPowerToBatteries(rechargeAmount);    // FUN_005638D0
         }
 
         // Compute available power for this interval
-        float availPower = ComputeAvailablePower(ticks);  // FUN_00563700
+        float availPower = ComputeAvailablePower(ticks);   // FUN_00563700
         this->availablePower = availPower;     // +0xA0
 
         // Update lastUpdateTime (wraps to prevent drift)
@@ -221,7 +487,7 @@ void PoweredMaster_Update(PoweredMaster* this, float deltaTime) {
 }
 ```
 
-### PoweredSubsystem::Update (FUN_00562470) — Per-Consumer Draw
+### PoweredSubsystem_Update (FUN_00562470) — Per-Consumer Draw [v5-validated 2026-05-28]
 
 ```c
 // Called by each powered subsystem's Update (shields, engines, weapons, etc.)
@@ -231,26 +497,20 @@ void PoweredSubsystem_Update(PoweredSubsystem* this, float deltaTime) {
     ShipSubsystem_Update(this, deltaTime);
 
     // Step 2: Compute power wanted
-    float pctWanted = this->powerPercentageWanted;  // +0x90
+    float pctWanted = this->powerPercentageWanted;          // +0x90
     float normalPower = vtable->GetNormalPowerWanted(this); // vslot 30
     float powerWanted = normalPower * pctWanted * deltaTime;
-    this->powerWanted = powerWanted;           // +0x8C
+    this->powerWanted = powerWanted;                        // +0x8C
 
     // Step 3: Request power from master via ship+0x2B0
-    Ship* ship = this->ownerShip;              // +0x40
-    PoweredMaster* master = ship->poweredMaster; // ship+0x2B0
+    Ship* ship = this->ownerShip;                           // +0x40
+    PoweredMaster* master = ship->poweredMaster;            // ship+0x2B0
 
     // Three modes for power draw:
-    switch (this->powerMode) {                 // +0xA0
-        case 0: // Normal (main battery first, then backup)
-            this->powerReceived = master->DrawFromMainBattery(powerWanted);
-            break;
-        case 1: // Backup first (backup battery, then main)
-            this->powerReceived = master->DrawFromBackupBattery(powerWanted);
-            break;
-        case 2: // Backup only
-            this->powerReceived = master->DrawFromBackupOnly(powerWanted);
-            break;
+    switch (this->powerMode) {                              // +0xA0
+        case 0: this->powerReceived = master->DrawFromMainBattery(powerWanted);   break;
+        case 1: this->powerReceived = master->DrawFromBackupBattery(powerWanted); break;
+        case 2: this->powerReceived = master->DrawFromBackupOnly(powerWanted);    break;
     }
 
     // Step 4: Compute efficiency ratio
@@ -261,10 +521,8 @@ void PoweredSubsystem_Update(PoweredSubsystem* this, float deltaTime) {
 
     // Step 5: Compute conditionRatio
     float fullPower = deltaTime * vtable->GetNormalPowerWanted(this);
-    if (fullPower <= 0.0)
-        this->conditionRatio = 1.0;            // +0x98
-    else
-        this->conditionRatio = this->powerReceived / fullPower;
+    if (fullPower <= 0.0) this->conditionRatio = 1.0;       // +0x98
+    else                  this->conditionRatio = this->powerReceived / fullPower;
 }
 ```
 
@@ -274,7 +532,7 @@ void PoweredSubsystem_Update(PoweredSubsystem* this, float deltaTime) {
 // Called once per INTERVAL to compute how much power subsystems can draw
 float ComputeAvailablePower(PoweredMaster* this, float ticks) {
     // Main conduit: limited by mainConduitCapacity * conditionPct * ticks
-    float mainMax = GetMainConduitCapacity_scaled() * ticks;  // prop+0x50 * condPct
+    float mainMax = GetMainConduitCapacity_Scaled() * ticks;  // prop+0x50 * condPct
     float backupMax = GetBackupConduitCapacity_raw() * ticks; // prop+0x54
 
     // Main conduit current = min(mainBatteryPower, mainMax)
@@ -291,49 +549,104 @@ float ComputeAvailablePower(PoweredMaster* this, float ticks) {
 
 **Key insight**: Main conduit capacity is health-scaled (`condPct`), backup conduit capacity is NOT. A damaged reactor reduces main power delivery but backup delivery stays constant.
 
-### AddPowerToBatteries (FUN_005638d0)
+### C2 — AddPowerToBatteries gate is INVERTED (FUN_005638D0) [v5-validated 2026-05-28]
+
+**Prior doc**: "HOST-ONLY in multiplayer (gated on g_IsHost at 0x0097FA89)" — **WRONG**.
+
+**Binary truth** (FUN_005638D0 first line of body):
+
+```c
+if ((DAT_0097FA89 == '\0') || (DAT_0097FA8A != '\0')) {
+    // recharge logic
+}
+```
+
+Translated: gate is `(!IsHost) || IsMultiplayer`. Truth table:
+
+| IsHost | IsMultiplayer | Gate value | Effective scenario |
+|---|---|---|---|
+| 0 | 0 | TRUE | SP-client (impossible config, but truthy) |
+| 0 | 1 | TRUE | MP-client RUNS recharge |
+| 1 | 0 | FALSE | SP-host SKIPS recharge |
+| 1 | 1 | TRUE | MP-host RUNS recharge |
+
+Net effect: recharge runs everywhere EXCEPT the SP-host config. But SP-host doesn't typically exist as a meaningful state (in SP, IsHost is usually 0). In practice this gate likely never excludes anything.
+
+The actual host-authority over battery state is enforced inside the Draw functions (see C3), not here.
 
 ```c
 // Recharges batteries from reactor output
-// HOST-ONLY in multiplayer (gated on g_IsHost at 0x0097FA89)
+// Gate: (!IsHost) || IsMultiplayer — runs everywhere except SP-host
 void AddPowerToBatteries(PoweredMaster* this, float amount) {
-    // Main battery first
-    float mainSpace = GetMainBatteryLimit() - this->mainBatteryPower;
+    if ((DAT_0097FA89 == 0) || (DAT_0097FA8A != 0)) {
+        float mainSpace = GetMainBatteryLimit() - this->mainBatteryPower;
 
-    if (amount <= mainSpace) {
-        // All goes to main battery
-        this->mainBatteryPower += amount;      // +0xAC
-        this->availablePower += amount;        // +0xA0
-    } else {
-        // Fill main battery, remainder goes to backup
-        this->mainBatteryPower = GetMainBatteryLimit();
-        this->availablePower += mainSpace;
-        float remainder = amount - mainSpace;
-
-        float backupSpace = GetBackupBatteryLimit() - this->backupBatteryPower;
-        if (remainder <= backupSpace) {
-            this->backupBatteryPower += remainder; // +0xB4
-            this->availablePower += remainder;
+        if (amount <= mainSpace) {
+            this->mainBatteryPower += amount;      // +0xAC
+            this->availablePower += amount;        // +0xA0
         } else {
-            this->backupBatteryPower = GetBackupBatteryLimit();
-            this->availablePower += backupSpace;
-            // Excess power is wasted
+            this->mainBatteryPower = GetMainBatteryLimit();
+            this->availablePower += mainSpace;
+            float remainder = amount - mainSpace;
+
+            float backupSpace = GetBackupBatteryLimit() - this->backupBatteryPower;
+            if (remainder <= backupSpace) {
+                this->backupBatteryPower += remainder; // +0xB4
+                this->availablePower += remainder;
+            } else {
+                this->backupBatteryPower = GetBackupBatteryLimit();
+                this->availablePower += backupSpace;
+                // Excess power is wasted
+            }
         }
     }
 }
 ```
 
-### DrawFromMainBattery (FUN_00563a70) — Mode 0
+### C3 — Client-Side Prediction in Draw Functions [v5-validated 2026-05-28]
+
+This is **fundamental client-prediction architecture** that the prior doc completely missed.
+
+All three Draw functions (FUN_00563A70 DrawFromMainBattery, FUN_00563BB0 DrawFromBackupBattery, FUN_00563CB0 DrawFromBackupOnly) start with the same host-authority preamble:
+
+```c
+bool bVar3 = true;       // mutate-allowed flag
+bool bVar5 = true;       // early-return-allowed flag
+
+if (DAT_0097FA89 != '\0') {                                  // host build
+    iVar4 = FUN_004069B0();                                  // get local player ship
+    iVar2 = *(int *)(param_1 + 0x40);                        // consumer->ownerShip
+
+    if (DAT_0097FA8A == '\0') {                              // SP-host
+        bVar5 = (iVar2 == iVar4);
+        bVar3 = false;                                       // NEVER mutate in SP-host
+    } else if ((iVar2 != iVar4)
+            && (*(int *)(iVar2 + 0x2E4) != 0)) {             // MP, foreign player-owned ship
+        bVar5 = false;
+    }
+}
+
+// ...subsequent code uses `if (bVar3) { mutate battery; }` and
+// `if (bVar5) { early-return when depleted; }`
+```
+
+**Implication for clean-room**: clients CALCULATE what they would have drawn (returning the value to the caller), but do NOT mutate authoritative battery state at `+0xAC` / `+0xB4`. The host's batteries are the source of truth; client-side battery values are predictive only. The Draw function still returns a power amount so the consumer can compute its `efficiency` and `conditionRatio` locally — but the underlying battery levels are reconciled via StateUpdate (see Network Propagation section).
+
+The prior doc's naive `this->mainBatteryPower -= wanted` pseudocode is misleading and must be re-written with the bVar3/bVar5 gating.
+
+### DrawFromMainBattery (FUN_00563A70) — Mode 0 [v5-validated 2026-05-28]
 
 ```c
 // Returns actual power drawn (may be less than requested)
 float DrawFromMainBattery(PoweredMaster* this, float wanted) {
+    // [C3 preamble: bVar3, bVar5 set from host-auth gating — see above]
+
     // Check if mainConduitCurrent can supply
     if (this->mainConduitCurrent >= wanted) {   // +0xA4
         // Fully satisfied from main conduit
         this->mainConduitCurrent -= wanted;
-        this->mainBatteryPower -= wanted;       // +0xAC (host only)
-        this->powerDispensed += wanted;         // +0xBC
+        if (bVar3) this->mainBatteryPower -= wanted;   // +0xAC (host-only mutate)
+        this->powerDispensed += wanted;                // +0xBC
         return wanted;
     }
 
@@ -342,14 +655,14 @@ float DrawFromMainBattery(PoweredMaster* this, float wanted) {
     this->mainConduitCurrent = 0;
 
     float remaining = wanted - fromMain;
-    if (this->backupConduitCurrent >= remaining) {  // +0xA8
+    if (this->backupConduitCurrent >= remaining) {     // +0xA8
         this->backupConduitCurrent -= remaining;
-        this->backupBatteryPower -= remaining;  // +0xB4 (host only)
+        if (bVar3) this->backupBatteryPower -= remaining;  // +0xB4 (host-only mutate)
         this->powerDispensed += wanted;
-        return wanted;  // fully satisfied
+        return wanted;
     }
 
-    // Both conduits depleted — return partial
+    // Both conduits depleted — return partial (unless bVar5 says skip)
     float fromBackup = this->backupConduitCurrent;
     this->backupConduitCurrent = 0;
     this->powerDispensed += fromMain + fromBackup;
@@ -357,40 +670,57 @@ float DrawFromMainBattery(PoweredMaster* this, float wanted) {
 }
 ```
 
-### DrawFromBackupBattery (FUN_00563bb0) — Mode 1
+### DrawFromBackupBattery (FUN_00563BB0) — Mode 1
 
-Same logic as DrawFromMainBattery but tries backup conduit first, then falls back to main. Used by subsystems that prefer backup power (e.g., cloaking device).
+Same logic as DrawFromMainBattery but tries backup conduit first, then falls back to main. Same C3 bVar3/bVar5 gating around battery mutations. Used by subsystems that prefer backup power (e.g., tractor beam).
 
-### DrawFromBackupOnly (FUN_00563cb0) — Mode 2
+### DrawFromBackupOnly (FUN_00563CB0) — Mode 2
 
-Only draws from backup conduit. If backup is depleted, returns 0 — does NOT fall back to main. Used for subsystems that must not touch main power.
+Only draws from backup conduit. If backup is depleted, returns 0 — does NOT fall back to main. Same C3 bVar3/bVar5 gating around `+0xB4` mutations. Used for subsystems that must not touch main power (cloaking device).
 
 ---
 
 ## Power Flow Diagram
 
 ```
-Per-second tick (FUN_00563780 "Powered" Master Update):
+Per-second tick (FUN_00563780 PoweredMaster_Update):
   1. GENERATE: powerOutput * condPct  →  add to main battery, overflow to backup
+                                         [gated by (!IsHost OR IsMultiplayer)]
   2. COMPUTE:  mainConduit = min(mainBattery, mainCapacity * condPct)
               backupConduit = min(backupBattery, backupCapacity)
               availablePower = mainConduit + backupConduit
   3. (consumers run their own Updates)
 
-Per-frame (FUN_00562470 each PoweredSubsystem Update):
+Per-frame (FUN_00562470 each PoweredSubsystem_Update):
   1. DEMAND: normalPowerPerSecond * percentageWanted * deltaTime
   2. DRAW:   mode 0 → main first, then backup
             mode 1 → backup first, then main
             mode 2 → backup only
+            [bVar3 controls whether battery is mutated — clients calculate, host mutates]
   3. RATIO:  efficiency = received / wanted (0.0–1.0)
   4. EFFECT: subsystem performance scales by efficiency
 ```
 
 ---
 
-## Consumer Registration (SetPowerSource, FUN_00563d50)
+## Consumer Registration (SetPowerSource, FUN_00563D50) [v5-validated 2026-05-28]
 
-Each PoweredSubsystem registers itself with the "Powered" master during `SetupFromProperty` (vtable slot 22). The master maintains a doubly-linked list of all consumers at +0xC4/+0xC8/+0xCC. List nodes are 12 bytes: `[subsystem_ptr, prev, next]`, allocated from a pool at FUN_0054f720.
+Each PoweredSubsystem registers itself with the PoweredMaster during `SetupFromProperty` (vtable slot 22). The master maintains a doubly-linked list of all consumers at +0xC4 (count) / +0xC8 (tail) / +0xCC (head). List nodes are 12 bytes: `[subsystem_ptr, prev, next]`, allocated from a pool at FUN_0054F720.
+
+> **C5 — head/tail labels reversed in prior doc.** Per FUN_00563D50:
+>
+> ```c
+> // On first insert (param_1[0x32] == NULL):
+> param_1[0x32] = local_4;   // +0xC8 first set = TAIL (first node)
+> param_1[0x33] = local_4;   // +0xCC first set = HEAD
+>
+> // On subsequent inserts (param_1[0x33] != NULL):
+> *(undefined4 **)(param_1[0x33] + 4) = local_4;   // old_head->[+4] = new_head — back-link
+> param_1[0x33] = local_4;                          // +0xCC = new HEAD (LIFO insertion)
+> // node layout: [data:0, prev:4, next:8]
+> ```
+>
+> So inserts grow at +0xCC (the head). +0xC8 remains pointing to the FIRST inserted node = the TAIL. Prior doc's labels were SWAPPED. The data structure is still correctly characterized as a doubly-linked list with pool-allocated nodes; only the head/tail labels needed swapping.
 
 ---
 
@@ -402,18 +732,18 @@ Each PoweredSubsystem registers itself with the "Powered" master during `SetupFr
 - **Priority by draw order**: Since consumers draw per-frame and the conduit pools deplete as they draw, the order in which subsystems run their Update determines who gets power first during shortages. This is effectively the linked list insertion order.
 - **Health scaling asymmetry**:
   - Reactor `PowerOutput` is scaled by `conditionPct`
-  - Main conduit capacity IS scaled by `conditionPct` (via FUN_005634f0)
+  - Main conduit capacity IS scaled by `conditionPct` (via FUN_005634F0)
   - Backup conduit capacity is NOT scaled (via FUN_00563520, returns raw property+0x54)
 
 ---
 
-## Power Initialization on Ship Spawn
+## Power Initialization on Ship Spawn [v5-validated 2026-05-28]
 
-Every ship spawns with all subsystems at 100% power, batteries full, and all consumers enabled. This is established through a three-stage initialization sequence:
+Every ship spawns with all subsystems at 100% power, batteries full, and all consumers enabled. This is established through a four-stage initialization sequence.
 
-### Stage 1: PoweredSubsystem Constructor (FUN_00562240)
+### Stage 1: PoweredSubsystem Constructor (FUN_00562240) [v5-validated 2026-05-28]
 
-The constructor chain (FUN_00562240 → FUN_0056b970) initializes every powered subsystem with these defaults:
+The constructor chain (FUN_00562240 → FUN_0056B970) initializes every powered subsystem with these defaults:
 
 | Offset | Type | Value | Field | Notes |
 |--------|------|-------|-------|-------|
@@ -427,21 +757,38 @@ The constructor chain (FUN_00562240 → FUN_0056b970) initializes every powered 
 
 **Key**: `powerPercentageWanted = 1.0f` at construction means every slider defaults to 100% without any explicit setter call.
 
-### Stage 2: SetupFromProperty (FUN_00562390)
+### Stage 2: SetupFromProperty (FUN_00562390 / FUN_005636D0) [v5-validated 2026-05-28]
 
 When `SetupFromProperty` (vtable slot 22) runs for each PoweredSubsystem, it reads the already-initialized `+0x90` value and computes `powerWanted = normalPower * powerPercentageWanted`. Since `+0x90 = 1.0` from the constructor, this naturally produces `powerWanted = normalPower * 1.0`.
 
-For the PoweredMaster (EPS distributor), `SetupFromProperty` (FUN_005636d0) also fills both batteries to maximum capacity:
-- `+0xAC = property+0x48` (mainBatteryPower = MainBatteryLimit)
-- `+0xB4 = property+0x4C` (backupBatteryPower = BackupBatteryLimit)
+For the PoweredMaster (EPS distributor), `SetupFromProperty` (FUN_005636D0, vtable slot 22 of 0x0088A1F0) fills both batteries to maximum capacity:
 
-### Stage 3: Ship::SetupProperties (FUN_005b0110)
+- `CALL 0x005634C0` (GetMainBatteryLimit) → `FSTP [ESI+0xAC]` → `mainBatteryPower = MainBatteryLimit`
+- `CALL 0x005634D0` (GetBackupBatteryLimit) → `FSTP [ESI+0xB4]` → `backupBatteryPower = BackupBatteryLimit`
+
+Note: FUN_005636D0 is real code at this address but is NOT auto-defined as a function in the current Ghidra DB. It's reached via vtable slot 22 pointer at 0x0088A248. The doc's address is correct; this is a Ghidra-DB artifact, not a doc error.
+
+### Stage 3: Ship::SetupProperties (FUN_005B0110)
 
 After all subsystems are constructed and linked, `SetupProperties` redundantly iterates ALL powered subsystems and calls `SetPowerPercentageWanted(1.0)` on each one. This is a safety net — the constructor already set 1.0, so this is a no-op in normal operation.
 
-### Safety Guard (FUN_0055f7f0)
+### Stage 4: Cloak-Decloak Shield Restore (FUN_0055F7F0) [v5-validated 2026-05-28]
 
-When the reactor is enabled, a guard check at FUN_0055f7f0 forces `powerPercentageWanted = 1.0` if the current value is `<= 0.0`. This prevents a subsystem from remaining at 0% after being re-enabled.
+### C4 — FUN_0055F7F0 is the cloak-decloak shield-restore handler, NOT a reactor enable guard
+
+**Prior doc** (line 444): "When the reactor is enabled, a guard check at FUN_0055F7F0 forces `powerPercentageWanted = 1.0` if the current value is `<= 0.0`."
+
+**Binary truth**: FUN_0055F7F0 is called from exactly one place — CloakingSubsystem::Update (FUN_0055E500) at the state-5 → state-0 transition (decloak complete). It is the SHIELDS-COME-BACK-ON-AFTER-DECLOAK mechanism. It is NOT triggered by reactor enable, and it does NOT operate on the reactor.
+
+Body of FUN_0055F7F0:
+
+1. Zeros `consumer->[+0xB0]` (cloak counter)
+2. Posts event **0x0080007A** (cloak status changed)
+3. Reads `ship+0x2C0` = ShieldGenerator (per binary-truth slot table, C1 above)
+4. If `shield->powerPctWanted (+0x90) <= 0`, calls `SetPowerPercentageWanted(1.0)` on the SHIELD (not the reactor)
+5. Posts event **0x0080007B** (shield enable)
+
+Renamed in Ghidra to `CloakDisengageRestoreShield` + plate added. See [docs/gameplay/cloaking-state-machine.md](cloaking-state-machine.md) for the cloak state machine itself.
 
 ### Initialization Order Summary
 
@@ -449,15 +796,16 @@ When the reactor is enabled, a guard check at FUN_0055f7f0 forces `powerPercenta
 1. PoweredSubsystem ctor (FUN_00562240)
    └── +0x90=1.0, +0x9C=1, +0xA0=0    ← defaults baked in constructor
 
-2. SetupFromProperty (FUN_00562390 / FUN_005636d0)
+2. SetupFromProperty (FUN_00562390 / FUN_005636D0)
    ├── PoweredSubsystem: powerWanted = normalPower * 1.0
    └── PoweredMaster: mainBattery=limit, backupBattery=limit
 
-3. Ship::SetupProperties (FUN_005b0110)
+3. Ship::SetupProperties (FUN_005B0110)
    └── ForEach(subsystem): SetPowerPercentageWanted(1.0)  ← redundant safety
 
-4. Reactor enable guard (FUN_0055f7f0)
-   └── if (pctWanted <= 0.0) → force 1.0  ← catch-all
+4. CloakDisengageRestoreShield (FUN_0055F7F0)
+   └── Called only at cloak state 5→0 transition; restores SHIELD power.
+       Not part of normal ship spawn init.
 ```
 
 **Result**: Ship spawns with 100% power to all subsystems, batteries full, mode 0 (main-first), all enabled. This is what the player sees on the F5 Engineering panel immediately after spawn.
@@ -475,16 +823,16 @@ Players adjust power via the F5 Engineering panel (Power Transmission Grid). Two
 The mouse-draggable slider bars in the F5 panel are C++ `EngPowerCtrl` widgets. When the player drags a slider:
 
 ```
-EngPowerCtrl::HandlePowerChange (FUN_0054dde0)
+EngPowerCtrl::HandlePowerChange (FUN_0054DDE0)
   → identifies subsystem from slider bar (hash table at +0x58)
   → resolves subsystem group (weapons/engines/single)
   → calls SetPowerPercentageWanted (FUN_00562430) for each subsystem in group
-  → posts ET_SUBSYSTEM_POWER_CHANGED (0x0080008c) event
+  → posts ET_SUBSYSTEM_POWER_CHANGED (0x0080008C) event
     source = subsystem, destination = ship, float = new percentage
   → calls CallNextHandler (event chain)
 ```
 
-The C++ slider performs its own range validation in `HandlePowerChange`, preventing values outside the valid range. The maximum of 1.25 comes from a float constant at 0x0088bec0 (`1.25f`).
+The C++ slider performs its own range validation in `HandlePowerChange`, preventing values outside the valid range. The maximum of 1.25 comes from a float constant at 0x0088BEC0 (`1.25f`).
 
 #### Path B: Keyboard Hotkeys (Python)
 
@@ -536,7 +884,7 @@ The valid power range is **0% to 125%** (0.0 to 1.25f). Enforcement occurs at th
 | Level | Mechanism | Notes |
 |-------|-----------|-------|
 | Python keyboard | Explicit `if fPercentWanted < 0.0` / `> 1.25` clamp | EngineerMenuHandlers.py:425-428 |
-| C++ slider | HandlePowerChange (FUN_0054dde0) validates range | Uses constant 1.25f at 0x0088bec0 |
+| C++ slider | HandlePowerChange (FUN_0054DDE0) validates range | Uses constant 1.25f at 0x0088BEC0 |
 | Network wire | Power byte encodes `(int)(pct * 100.0)`, range 0-125 | Byte naturally caps at 255, but 125 is practical max |
 | Server | **No enforcement** | Host applies whatever the client sends |
 
@@ -561,17 +909,19 @@ def SetPowerToSubsystem(pSubsystem, fPercentWanted):
 
 ---
 
-## Confirmed Constants
+## Confirmed Constants [v5-validated 2026-05-28]
 
-| Address | Value | Used As |
-|---------|-------|---------|
-| 0x892e20 | 1.0f | INTERVAL — power sim runs once per second |
-| 0x888b54 | 0.0f | Zero constant for float comparisons |
-| 0x888860 | 1.0f | Used in GetCombinedConditionPercentage |
-| 0x0088bec0 | 1.25f | Maximum powerPercentageWanted (125% overload cap) |
-| 0x0088ce78 | 100.0f | WriteState: `(int)(pct * 100.0)` encoding multiplier |
-| 0x0088d4e4 | 0.01f | ReadState: `byte * 0.01f` decoding multiplier |
-| 0x0088b9ac | 255.0f | Condition byte: `(condition/maxCondition) * 255.0` |
+All 7 constants byte-confirmed at their cited `.rdata` addresses:
+
+| Address | Bytes | Value | Used As |
+|---------|-------|-------|---------|
+| 0x00892E20 | 0x3F800000 | 1.0f | INTERVAL — power sim runs once per second |
+| 0x00888B54 | 0x00000000 | 0.0f | Zero constant for float comparisons |
+| 0x00888860 | 0x3F800000 | 1.0f | Used in GetCombinedConditionPercentage |
+| 0x0088BEC0 | 0x3FA00000 | 1.25f | Maximum powerPercentageWanted (125% overload cap) |
+| 0x0088CE78 | 0x42C80000 | 100.0f | WriteState: `(int)(pct * 100.0)` encoding multiplier |
+| 0x0088D4E4 | 0x3C23D70A | 0.01f | ReadState: `byte * 0.01f` decoding multiplier |
+| 0x0088B9AC | 0x437F0000 | 255.0f | Condition byte: `(condition/maxCondition) * 255.0` |
 
 ---
 
@@ -627,6 +977,9 @@ def SetPowerToSubsystem(pSubsystem, fPercentWanted):
 
 ## Ship Power Parameters (All Hardpoints)
 
+> [!NOTE]
+> The tables below (OQ-5) are sourced from shipped hardpoint scripts (`scripts/Custom/Ships/*.py`), NOT stbc.exe. They were NOT re-validated this pass. Values match the pre-v5 doc; format-only changes here.
+
 ### Playable Ships
 
 | Ship | Faction | MainBattery | BackupBattery | MainConduit | BackupConduit | PowerOutput |
@@ -681,6 +1034,9 @@ All use: MainBattery=70,000, BackupBattery=10,000, MainConduit=400, BackupCondui
 ---
 
 ## Subsystem Power Consumption (NormalPowerPerSecond)
+
+> [!NOTE]
+> These tables (OQ-5) are also sourced from hardpoint scripts and were NOT re-validated this pass.
 
 ### Federation Ships
 
@@ -836,7 +1192,7 @@ def AdjustPower(lSystems):
 
 ---
 
-## Multiplayer Network Propagation of Power Distribution
+## Multiplayer Network Propagation of Power Distribution [v5-validated 2026-05-28]
 
 ### Summary
 
@@ -852,11 +1208,11 @@ Two input paths converge on the same setter:
 
 **Path A: Mouse slider (C++ EngPowerCtrl widget)**
 ```
-EngPowerCtrl::HandlePowerChange (FUN_0054dde0)
+EngPowerCtrl::HandlePowerChange (FUN_0054DDE0)
   → identifies subsystem from slider bar (hash table at +0x58)
   → resolves ship (FUN_00562210) and subsystem group (weapons/engines/single)
   → calls SetPowerPercentageWanted (FUN_00562430) for each subsystem
-  → calls FUN_0054e690: posts ET_SUBSYSTEM_POWER_CHANGED (0x0080008c) event
+  → calls FUN_0054E690: posts ET_SUBSYSTEM_POWER_CHANGED (0x0080008C) event
     source = subsystem, destination = ship, float = new percentage
   → calls CallNextHandler (event chain propagation)
 ```
@@ -869,60 +1225,62 @@ ManagePower handler (ET_MANAGE_POWER event)
   → posts TGFloatEvent with ET_SUBSYSTEM_POWER_CHANGED, same as Path A
 ```
 
-Both paths end with `SetPowerPercentageWanted` (FUN_00562430), which is a **pure local setter**:
+Both paths end with `SetPowerPercentageWanted` (FUN_00562430), which is a **pure local setter** [v5-validated 2026-05-28]:
+
 ```c
-void SetPowerPercentageWanted(PoweredSubsystem* this, float pct) {
+void PoweredSubsystem_SetPowerPercentageWanted(PoweredSubsystem* this, float pct) {
     float oldPct = this->powerPercentageWanted;  // +0x90
     this->powerPercentageWanted = pct;
     if (oldPct != 0.0)
         this->powerWanted = (this->powerWanted * pct) / oldPct;  // +0x8C rescale
 }
 ```
+
 No network call. No TGEvent posting (the event is posted by the *caller*, not the setter).
 
-#### 2. ET_SUBSYSTEM_POWER_CHANGED (0x0080008c) is LOCAL ONLY
+#### 2. ET_SUBSYSTEM_POWER_CHANGED (0x0080008C) is LOCAL ONLY [v5-validated 2026-05-28]
 
-The event `0x0080008c` is registered with two handlers:
-- `EngPowerCtrl::HandlePowerChange` (0x0054dde0) — registered at EngPowerCtrl ctor via FUN_006d92b0
+The event `0x0080008C` is registered with two handlers:
+- `EngPowerCtrl::HandlePowerChange` (0x0054DDE0) — registered at EngPowerCtrl ctor via FUN_006D92B0
 - Mission script handlers (E5M4, E7M6, E2M2) — single-player campaign use only
 
-**Critically, `0x0080008c` is NOT registered in the MultiplayerGame constructor (FUN_0069e590).** It does not appear in any network forwarding table. The complete list of forwarded event types is:
+**Critically, `0x0080008C` is NOT registered in the MultiplayerGame constructor (FUN_0069E590).** It does not appear in any network forwarding table. The complete list of forwarded event types is:
 
 | Event Code | Handler Name | Network Opcode |
 |------------|--------------|----------------|
-| 0x008000d8 | StartFiring | 0x07 |
-| 0x008000da | StopFiring | 0x08 |
-| 0x008000dc | StopFiringAtTarget | 0x09 |
-| 0x008000dd | SubsystemStatus | 0x0A |
+| 0x008000D8 | StartFiring | 0x07 |
+| 0x008000DA | StopFiring | 0x08 |
+| 0x008000DC | StopFiringAtTarget | 0x09 |
+| 0x008000DD | SubsystemStatus | 0x0A |
 | 0x00800076 | RepairListPriority | 0x11 |
-| 0x008000e0 | SetPhaserLevel | 0x12 |
-| 0x008000e2 | StartCloaking | 0x0E |
-| 0x008000e4 | StopCloaking | 0x0F |
-| 0x008000ec | StartWarp | 0x10 |
-| 0x008000fe | TorpedoTypeChange | 0x1B |
+| 0x008000E0 | SetPhaserLevel | 0x12 |
+| 0x008000E2 | StartCloaking | 0x0E |
+| 0x008000E4 | StopCloaking | 0x0F |
+| 0x008000EC | StartWarp | 0x10 |
+| 0x008000FE | TorpedoTypeChange | 0x1B |
 
-**0x0080008c is absent.** Power slider changes do NOT generate any network message.
+**0x0080008C is absent.** Power slider changes do NOT generate any network message. Cross-anchored to `docs/protocol/wire-format-spec.md` MultiplayerGame forwarded event table.
 
-#### 3. Network Propagation via StateUpdate (0x1C)
+#### 3. Network Propagation via StateUpdate (0x1C) [v5-validated 2026-05-28]
 
-Power percentages are serialized in the **StateUpdate flag 0x20 block** by `PoweredSubsystem::WriteState` (FUN_00562960):
+Power percentages are serialized in the **StateUpdate flag 0x20 block** by `PoweredSubsystem_WriteState` (FUN_00562960). Cross-anchored from protocol mid #11 (`docs/protocol/stateupdate-subsystem-wire-format.md`):
 
-**WriteState (sender):**
+**WriteState (sender, FUN_00562960):**
 ```c
 void PoweredSubsystem_WriteState(PoweredSubsystem* this, Stream* stream, bool isOwnShip) {
     ShipSubsystem_WriteState(this, stream);  // condition byte + children
     if (!isOwnShip) {
-        WriteBit(stream, 1);                                    // hasData = true
+        WriteBit(stream, 1);                                       // hasData = true
         int pctByte = (int)(this->powerPercentageWanted * 100.0);  // +0x90 → 0-100
         WriteByte(stream, pctByte);
     } else {
-        WriteBit(stream, 0);                                    // hasData = false (owner has local state)
+        WriteBit(stream, 0);                                       // hasData = false (owner has local state)
     }
     EndMarker(stream);
 }
 ```
 
-**ReadState (receiver):**
+**ReadState (receiver, FUN_005629D0):**
 ```c
 void PoweredSubsystem_ReadState(PoweredSubsystem* this, Stream* stream, float timestamp) {
     float lastUpdate = this->lastNetworkUpdate;  // +0x84
@@ -942,7 +1300,7 @@ void PoweredSubsystem_ReadState(PoweredSubsystem* this, Stream* stream, float ti
 - When sending state about ship X to the player who owns ship X: `isOwnShip = 1`, power data SKIPPED
 - When sending state about ship X to any other player: `isOwnShip = 0`, power data INCLUDED
 
-This is determined in `Ship_WriteStateUpdate` (FUN_005b17f0) by comparing `ship->objectID` (ship+0x04) against the target peer's `shipObjectID` (peer+0x0C). See the "isOwnShip Determination" subsection below for details.
+This is determined in `Ship_WriteStateUpdate` (FUN_005B17F0) by comparing `ship->objectID` (ship+0x04) against the target peer's `shipObjectID` (peer+0x0C). See the "isOwnShip Determination" subsection below for details.
 
 #### 4. Data Flow in Star Topology
 
@@ -950,22 +1308,22 @@ This is determined in `Ship_WriteStateUpdate` (FUN_005b17f0) by comparing `ship-
 Client A adjusts power sliders
   → SetPowerPercentageWanted() changes local subsystem +0x90
   → Client A's Ship_WriteStateUpdate sends 0x1C to host
-    → PoweredSubsystem::WriteState writes powerPctWanted byte (isOwnShip=0)
+    → PoweredSubsystem_WriteState writes powerPctWanted byte (isOwnShip=0)
 
 Host receives 0x1C from Client A
-  → Ship_ReadStateUpdate → PoweredSubsystem::ReadState
+  → Ship_ReadStateUpdate → PoweredSubsystem_ReadState
     → SetPowerPercentageWanted() applies to host's copy of Client A's ship
 
 Host broadcasts 0x1C to Client B
   → Ship_WriteStateUpdate for Client A's ship
-    → PoweredSubsystem::WriteState writes powerPctWanted byte (isOwnShip=0)
+    → PoweredSubsystem_WriteState writes powerPctWanted byte (isOwnShip=0)
 
 Client B receives 0x1C
-  → Ship_ReadStateUpdate → PoweredSubsystem::ReadState
+  → Ship_ReadStateUpdate → PoweredSubsystem_ReadState
     → SetPowerPercentageWanted() applies to Client B's copy of Client A's ship
 
 Host sends 0x1C back to Client A (for Client A's own ship)
-  → PoweredSubsystem::WriteState writes hasData=0 bit (isOwnShip=1)
+  → PoweredSubsystem_WriteState writes hasData=0 bit (isOwnShip=1)
   → Client A DOES NOT overwrite its own local power settings
 ```
 
@@ -999,12 +1357,13 @@ The powerPctWanted byte uses range 0-100 for normal (0%-100%) and can go up to 1
 1. **No instant sync**: Power changes propagate at StateUpdate rate (~10Hz round-robin), not on-demand. A slider change takes up to 1-2 seconds to fully propagate to all peers.
 2. **No server authority**: The host does not validate or enforce power percentages. It applies whatever the client sends.
 3. **Auto-balance is client-side only**: The `AdjustPower` function in `PowerDisplay.py` runs locally. Other peers see the final result via StateUpdate, not the intermediate balancing.
-4. **EngPowerCtrl refresh is local**: The C++ EngPowerCtrl periodic refresh (event 0x0080008d, every ~0.5s) only updates the local UI. It does not trigger any network send.
-5. **TurnOn/TurnOff IS forwarded**: While power percentage is StateUpdate-only, toggling a subsystem on/off uses event 0x008000dd (SubsystemStatus, opcode 0x0A), which IS network-forwarded. The on/off state also propagates in the WriteState sign bit.
+4. **EngPowerCtrl refresh is local**: The C++ EngPowerCtrl periodic refresh (event 0x0080008D, every ~0.5s) only updates the local UI. It does not trigger any network send.
+5. **TurnOn/TurnOff IS forwarded**: While power percentage is StateUpdate-only, toggling a subsystem on/off uses event 0x008000DD (SubsystemStatus, opcode 0x0A), which IS network-forwarded. The on/off state also propagates in the WriteState sign bit.
 
 ### Sign Bit Encoding (On/Off State)
 
 In `FUN_00562900` (an alternate ReadState path), the power byte has a sign encoding:
+
 ```c
 if (pctByte < 1) {
     pctByte = -pctByte;       // negate
@@ -1030,21 +1389,21 @@ Used in the **StateUpdate flag 0x20 block** (subsystem health round-robin). This
 ShipSubsystem_WriteState(this, stream);       // condition byte + children (recursive)
 if (!isOwnShip) {
     WriteBit(stream, 1);                       // hasData = 1
-    int pctByte = (int)(this->powerPercentageWanted * 100.0);  // 0x0088ce78
+    int pctByte = (int)(this->powerPercentageWanted * 100.0);  // 0x0088CE78
     WriteByte(stream, pctByte);                // power percentage as 0-125
 } else {
     WriteBit(stream, 0);                       // hasData = 0 (owner has local state)
 }
 EndMarker(stream);
 
-// ReadState (vtable+0x74, FUN_005629d0):
+// ReadState (vtable+0x74, FUN_005629D0):
 float savedTimestamp = this->lastNetworkUpdate;  // +0x84 — saved BEFORE base ReadState
 ShipSubsystem_ReadState(this, stream, timestamp);  // condition byte + children
 bool hasData = ReadBit(stream);
 if (hasData) {
     int pctByte = ReadByte(stream);
     if (savedTimestamp < timestamp) {           // only apply if packet is newer
-        SetPowerPercentageWanted(this, (float)pctByte * 0.01f);  // 0x0088d4e4
+        SetPowerPercentageWanted(this, (float)pctByte * 0.01f);  // 0x0088D4E4
     }
 }
 EndMarker(stream);
@@ -1052,12 +1411,12 @@ EndMarker(stream);
 
 **Timestamp detail**: ReadState saves `this->lastNetworkUpdate` BEFORE calling the base class ReadState. This is critical because the base class updates `lastNetworkUpdate` from the incoming timestamp. The saved value represents the timestamp of the *previous* update, allowing the receiver to correctly determine whether the incoming data is newer.
 
-#### Interface B: ObjCreate / Full Snapshot (vtable+0x68 / vtable+0x6c)
+#### Interface B: ObjCreate / Full Snapshot (vtable+0x68 / vtable+0x6C)
 
 Used during **ObjCreate (opcode 0x02/0x03)** for initial object state transmission and in weapon round-robin (flag 0x80). This path uses sign-bit encoding:
 
 ```c
-// WriteState_SignBit (vtable+0x68, FUN_005628a0):
+// WriteState_SignBit (vtable+0x68, FUN_005628A0):
 ShipSubsystem_WriteState(this, stream);       // condition byte + children
 int pctByte = (int)(this->powerPercentageWanted * 100.0);
 if (!this->isOn)                               // +0x9C
@@ -1065,7 +1424,7 @@ if (!this->isOn)                               // +0x9C
 WriteByte(stream, pctByte);                    // signed byte: positive=ON, negative=OFF
 EndMarker(stream);
 
-// ReadState_SignBit (vtable+0x6c, FUN_00562900):
+// ReadState_SignBit (vtable+0x6C, FUN_00562900):
 ShipSubsystem_ReadState(this, stream, timestamp);
 int pctByte = ReadByte(stream);               // signed
 if (pctByte < 1) {                            // 0 or negative
@@ -1085,7 +1444,7 @@ EndMarker(stream);
 The round-robin serializer maintains a per-peer write cursor that persists across ticks:
 
 ```c
-// From Ship_WriteStateUpdate (FUN_005b17f0), flag 0x20 section:
+// From Ship_WriteStateUpdate (FUN_005B17F0), flag 0x20 section:
 // Per-peer tracking structure (iVar7):
 //   +0x30: linked list cursor (SubsystemListNode*)
 //   +0x34: subsystem index counter (int)
@@ -1120,7 +1479,7 @@ while (bytesWritten < 10) {                    // 10-byte budget per tick
 
 ### isOwnShip Determination
 
-The `isOwnShip` flag is determined in `Ship_WriteStateUpdate` (FUN_005b17f0) by comparing object IDs:
+The `isOwnShip` flag is determined in `Ship_WriteStateUpdate` (FUN_005B17F0) by comparing object IDs:
 
 ```c
 // isOwnShip = (ship->objectID == peer->shipObjectID) && IsMultiplayer
@@ -1133,33 +1492,33 @@ This is an **object ID comparison**, not a connection ID comparison. When the ho
 
 ---
 
-## Power Mode Assignments (COMPLETE)
+## Power Mode Assignments (COMPLETE) [v5-validated 2026-05-28]
 
 The `powerMode` field at PoweredSubsystem+0xA0 controls which battery pool a subsystem draws from. There are exactly 3 modes:
 
 | Mode | Name | Draw Function | Behavior |
 |------|------|---------------|----------|
-| 0 | Main-first | FUN_00563a70 | Draw from main battery (+0xA4); overflow to backup (+0xA8) |
-| 1 | Backup-first | FUN_00563bb0 | Draw from backup battery (+0xB4 via +0xAC); overflow to main (+0xA4 via +0xB4) |
-| 2 | Backup-only | FUN_00563cb0 | Draw exclusively from backup battery (+0xB4); NO fallback |
+| 0 | Main-first | FUN_00563A70 | Draw from main battery (+0xA4); overflow to backup (+0xA8) |
+| 1 | Backup-first | FUN_00563BB0 | Draw from backup battery (+0xB4 via +0xAC); overflow to main (+0xA4 via +0xB4) |
+| 2 | Backup-only | FUN_00563CB0 | Draw exclusively from backup battery (+0xB4); NO fallback |
 
 ### Per-Subsystem Mode Assignments
 
 Verified by exhaustive binary search for `mov DWORD PTR [reg+0xA0], N` in the PoweredSubsystem inheritance chain:
 
-| Subsystem | Constructor | powerMode | Rationale |
-|-----------|-------------|-----------|-----------|
-| PoweredSubsystem (base) | FUN_00562240 | 0 (main-first) | Default for all consumers |
-| ImpulseEngineSubsystem | FUN_00561050 | 0 (inherited) | Normal power draw |
-| SensorSubsystem | FUN_00566d10 | 0 (inherited) | Normal power draw |
-| PhaserSystem | FUN_00573c90 | 0 (inherited) | Normal power draw |
-| TorpedoSystem | FUN_0057b020 | 0 (inherited) | Normal power draw |
-| PulseWeaponSystem | (inherits WeaponSystem) | 0 (inherited) | Normal power draw |
-| ShieldGenerator | (inherits PoweredSubsystem) | 0 (inherited) | Normal power draw |
-| WarpEngineSubsystem | (inherits PoweredSubsystem) | 0 (inherited) | Normal power draw |
-| RepairSubsystem | (inherits PoweredSubsystem) | 0 (inherited) | Normal power draw |
-| **TractorBeamSystem** | FUN_00582080 | **1 (backup-first)** | Draws from backup battery first, then main |
-| **CloakingSubsystem** | FUN_0055e2b0 | **2 (backup-only)** | Draws exclusively from backup battery |
+| Subsystem | Constructor | Address | powerMode | Rationale |
+|-----------|-------------|---------|-----------|-----------|
+| PoweredSubsystem (base) | FUN_00562240 | — | 0 (main-first) | Default for all consumers |
+| ImpulseEngineSubsystem | FUN_00561050 | — | 0 (inherited) | Normal power draw |
+| SensorSubsystem | FUN_00566D10 | — | 0 (inherited) | Normal power draw |
+| PhaserSystem | FUN_00573C90 | — | 0 (inherited) | Normal power draw |
+| TorpedoSystem | FUN_0057B020 | — | 0 (inherited) | Normal power draw |
+| PulseWeaponSystem | (inherits WeaponSystem) | — | 0 (inherited) | Normal power draw |
+| ShieldGenerator | FUN_0056A000 | — | 0 (inherited) | Normal power draw |
+| WarpEngineSubsystem | FUN_0056DE70 | — | 0 (inherited) | Normal power draw |
+| RepairSubsystem | FUN_00565090 | — | 0 (inherited) | Normal power draw |
+| **TractorBeamSystem** | FUN_00582080 | **0x005820B2: `MOV [ESI+0xA0], ECX` where ECX=1** | **1 (backup-first)** | Draws from backup battery first, then main |
+| **CloakingSubsystem** | FUN_0055E2B0 | **0x0055E32E: `MOV [ESI+0xA0], 0x2`** | **2 (backup-only)** | Draws exclusively from backup battery |
 
 **Key findings:**
 - Only **2 of 11** subsystem types override the default power mode
@@ -1169,7 +1528,7 @@ Verified by exhaustive binary search for `mov DWORD PTR [reg+0xA0], N` in the Po
 
 ### Shield Recharge Special Path
 
-ShieldClass::Update (FUN_0056a230) contains a hardcoded call to `DrawFromBackupBattery` (FUN_00563bb0) outside the normal powerMode switch. This occurs in the **dead-shield recharge path**: when the shield subsystem itself is dead (IsDead returns true) but individual facings need recharge power, the shield draws directly from backup batteries. This is NOT driven by the powerMode field -- it bypasses the switch entirely.
+ShieldClass::Update (FUN_0056A230) contains a hardcoded call to `DrawFromBackupBattery` (FUN_00563BB0) outside the normal powerMode switch. This occurs in the **dead-shield recharge path**: when the shield subsystem itself is dead (IsDead returns true) but individual facings need recharge power, the shield draws directly from backup batteries. This is NOT driven by the powerMode field -- it bypasses the switch entirely.
 
 ```
 ShieldClass::Update:
@@ -1184,7 +1543,7 @@ ShieldClass::Update:
           // DIRECT call to DrawFromBackupBattery (bypasses powerMode)
           power = EPS->DrawFromBackupBattery(chargeRate * SHIELD_CONSTANT)
           // Then recharge this facing
-          // Then return excess via AddToBackupBattery (FUN_005638d0)
+          // Then return excess via AddToBackupBattery (FUN_005638D0)
 ```
 
 This design means damaged shields preferentially consume backup batteries during recovery, preserving main battery charge for active combat systems. The 0.85 constant at `0x892FBC` (`0x3EA8F5C3 = 0.33` is the random phase, `0x3F59999A = 0.85` is the charge factor) scales the normal charge rate.
@@ -1202,20 +1561,27 @@ This is consistent with Star Trek engineering: backup/auxiliary power for stealt
 
 ## Open Questions
 
-1. **Event IDs**: 0x80006c likely = "power state changed", 0x800072 = "subsystem disabled", 0x800073 = "subsystem enabled", 0x8000dd = "powered subsystem state changed". Need Ghidra verification.
-2. **PowerProperty ownership**: The PowerProperty (type 0x813E) creates the "Powered" master (+0x2B0). The "Power" reactor at +0x2C4 (type 0x8138) may use a different generic property. Need to trace `SetupFromProperty` for both. *(Partially answered: SetupFromProperty at FUN_005636d0 initializes battery levels from property+0x48 and +0x4C. Batteries start full at spawn.)*
-3. ~~**Default powerMode values**: Which subsystems default to mode 0/1/2?~~ **ANSWERED**: See "Power Mode Assignments" section below. Only 2 subsystems override the default: CloakingSubsystem (mode 2, backup-only) and TractorBeamSystem (mode 1, backup-first). All others inherit mode 0 (main-first) from the PoweredSubsystem base constructor.
-4. ~~**FUN_005636D0** (PoweredMaster::SetupFromProperty): How does it initialize battery levels from property? Are batteries full at spawn?~~ **ANSWERED**: Yes. `mainBatteryPower = property+0x48` (MainBatteryLimit), `backupBatteryPower = property+0x4C` (BackupBatteryLimit). Batteries start at maximum capacity.
-5. **Conduit scaling correction**: Need to verify which conduit is health-scaled. The analysis shows MainConduit scaled via FUN_005634f0 (property+0x50 * condPct) and BackupConduit raw via FUN_00563520 (property+0x54). This needs Ghidra confirmation.
+- **OQ-1 — Event ID set** (originally posed in prior Open Question #1): partially resolved.
+  - **CONFIRMED this pass**: 0x0080007A (cloak status changed — posted in FUN_0055F7F0 / CloakDisengageRestoreShield) and 0x0080007B (shield enable — posted in FUN_0055F7F0).
+  - **ALREADY CONFIRMED**: 0x0080008C (ET_SUBSYSTEM_POWER_CHANGED — posted by FUN_0054E690, local-only event).
+  - **STILL UNVERIFIED**: prior doc's speculative 0x80006C ("power state changed"), 0x800072 ("subsystem disabled"), 0x800073 ("subsystem enabled"), 0x8000DD ("powered subsystem state changed"). Need further trace.
 
-*(Duplicate open questions removed — see above for current status.)*
+- **OQ-2 — Vtable 0x008936F0 identity** (cited as TractorBeamSystem in prior doc): binary shows this vtable is xref'd from FUN_0057EC70, NOT from TractorBeamSystem_Ctor. TractorBeamSystem's actual vtable is 0x00893794. Identity of vtable 0x008936F0 is unknown — likely some weapon sub-class (TorpedoTube? Phaser hardpoint?). Not validated this pass.
+
+- **OQ-3 — FPU watcher class at PoweredMaster +0x88 / +0x94**: confirmed as 4-byte pointer fields (NOT 12-byte containers as prior doc claimed). Pointers are set in PoweredMaster ctor to `&this[+0xB0]` and `&this[+0xB8]` respectively. The watcher OBJECTS associated with the master are real, but the watcher class type is unidentified — likely a callback-trigger class. Not validated this pass.
+
+- **OQ-4 — FUN_00563ED0 ComputeTotalPowerWanted body**: confirmed as code at this address (16 bytes of valid prologue confirmed), but the function is NOT auto-defined in Ghidra DB. Body computation (iterates consumer list at +0xC8, sums NormalPowerWanted * dt) not byte-verified this pass.
+
+- **OQ-5 — Per-ship hardpoint power tables** (lines under "Ship Power Parameters" and "Subsystem Power Consumption"): these are sourced from shipped hardpoint scripts (`scripts/Custom/Ships/*.py`), NOT stbc.exe. Values match the pre-v5 doc but were NOT re-validated this pass. Out of scope for binary RE.
 
 ---
 
 ## Related Documentation
 
 - [combat-mechanics-re.md](combat-mechanics-re.md) — Damage pipeline (references power efficiency for subsystem performance)
-- [cloaking-state-machine.md](cloaking-state-machine.md) — Cloak power draw and energy failure auto-decloak
-- [shield-system.md](shield-system.md) — Shield recharge is power-budget based (efficiency affects recharge rate)
+- [cloaking-state-machine.md](cloaking-state-machine.md) — Cloak state machine; calls CloakDisengageRestoreShield (FUN_0055F7F0) at state 5→0 transition
+- [shield-system.md](shield-system.md) — Shield recharge is power-budget based (efficiency affects recharge rate); ShieldGenerator vtable 0x00892F34 at ship+0x2C0
 - [repair-tractor-analysis.md](repair-tractor-analysis.md) — Repair and tractor power consumption
-- [stateupdate-subsystem-wire-format.md](../protocol/stateupdate-subsystem-wire-format.md) — PowerSubsystem::WriteState serialization
+- [../protocol/stateupdate-subsystem-wire-format.md](../protocol/stateupdate-subsystem-wire-format.md) — PoweredSubsystem::WriteState serialization (cross-anchor for FUN_00562960 / FUN_005629D0)
+- [../protocol/subsystem-integrity-hash.md](../protocol/subsystem-integrity-hash.md) — Subsystem integrity hash; **CASCADE PENDING** for slot 1 (+0x2C4) reversion from HullSubsystem back to PowerSubsystem reactor
+- [../protocol/wire-format-spec.md](../protocol/wire-format-spec.md) — Named Slot Layout (source of truth for 12-slot identities); MultiplayerGame forwarded event list

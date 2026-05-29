@@ -6,6 +6,8 @@ Cross-session notes on STBC doc style, the doc-index map, and patterns that work
 
 Entries appear here as the campaign progresses. Each entry links to a topic file in this directory; this index stays under 200 lines.
 
+**4-family v5 campaign closed 2026-05-28 at 59/59 docs validated.**
+
 - [v5 named-function convention](v5-named-function-convention.md) — how to demote pre-v5 annotation-script names in catalog docs without dropping the addresses
 - [v5 foundation claim patterns](v5-foundation-claim-patterns.md) — evidence-row patterns for totals, address ranges, and exhaustive partitions in foundation-tier docs
 - [catalog row disposition tree](catalog-row-disposition-tree.md) — four-bucket decision tree (keep / keep-as-is / move to internal-only / drop) for pre-v5 catalog rows during re-validation
@@ -57,3 +59,21 @@ Networking family campaign closed 2026-05-28 at 11/11 docs validated (2 verified
 - [networking fragmented-ack render patterns](networking-fragmented-ack-render-patterns-20260528.md) — render patterns for fragmented reliable message ACK bug doc
 - [networking disconnect-flow render patterns](networking-disconnect-flow-render-patterns-20260528.md) — render patterns for player-disconnect doc (3 detection paths + cleanup cascade); FUN_0069efe0 binding-table evidence cascaded into protocol leaf #18 function-name corrections at 0x006a0a20 / 0x006a07d0
 - [networking ship-death render patterns](networking-ship-death-render-patterns-20260528.md) — render patterns for ship death lifecycle doc (Explosion + respawn, DestroyObject NOT used)
+
+### Gameplay family (2026-05-28, 16 memos)
+
+Gameplay family campaign closed 2026-05-28 at 16/16 docs validated (6 verified + 10 partial). objcreate-unknown-species render didn't write a new memo per the agent note (see tracker §6.15 for the verdict).
+
+- [gameplay damage-system render patterns](gameplay-damage-system-render-patterns-20260528.md) — foundation #1 damage pipeline render: 5 corrections + 4 clarifications + 3 OQs; all 10 magic constants byte-confirmed
+- [gameplay shield-system render patterns](gameplay-shield-system-render-patterns-20260528.md) — foundation #2 6-facing ellipsoid render: 4 corrections incl. ShieldProperty +0x48 runtime-vs-ctor identity reframe + fabricated per-ship recharge table
+- [gameplay power-system render patterns](gameplay-power-system-render-patterns-20260528.md) — foundation #3 render: 8-of-11 vtable-to-class shift cascade, AddPowerToBatteries gate INVERTED, client-side prediction architecture; 26 Ghidra renames
+- [gameplay collision-detection render patterns](gameplay-collision-detection-render-patterns-20260528.md) — foundation #4 render: "among strongest pre-v5 gameplay docs"; 34 fn addresses + 15 constants byte-confirmed; DAT_00888b54 = 0.0f not large-float-sentinel
+- [gameplay weapon-firing render patterns](gameplay-weapon-firing-render-patterns-20260528.md) — foundation #5 render: ZERO formula/wire errors; vtable column scramble C1; IsSubsystemAlive return-semantics INVERTED C2; DAT_00890550 boost-not-penalty C3
+- [gameplay ai-architecture render patterns](gameplay-ai-architecture-render-patterns-20260528.md) — foundation #6 render: 3rd gameplay doc to clear `verified`; ZERO material corrections; BuilderAI → PreprocessingAI → BaseAI ctor-chain inheritance confirmed
+- [consolidator-doc verified render patterns](consolidator-doc-verified-render-patterns.md) — mid #7 combat-mechanics-re render: 4th gameplay doc to clear `verified`; consolidator-doc pattern (cross-references multiple foundations); 23 unique addrs verified, 100% Sovereign hardpoint match
+- [gameplay mid cloaking render patterns](gameplay-mid-cloaking-render-patterns-20260528.md) — mid #8 cloaking render: 4 corrections incl. event-ID swap (0x00800077 IS the missing ET_CLOAK_BEGINNING) + CloakTime 5.0f not 3.0f OpenBC cascade + Ghidra rename SensorSubsystem_Ctor→CloakingSubsystem_Ctor at 0x00566D10
+- [gameplay repair-batch render patterns](gameplay-repair-batch-render-patterns-20260528.md) — mid #9+#10 batched render (repair-system + repair-tractor-analysis): 3 corrections incl. event factory IDs 0x008000DF=0x0100 and 0x00800074/0x00800075=0x010C; 8 Ghidra functions CREATED; 6 tractor modes string-anchored
+- [ship-navigation render patterns](ship-navigation-render-patterns-20260528.md) — mid #11 render: 5 corrections incl. OpenBC BLOCKING velocity field-offset swap (+0x1F8 = speed, +0x1FC..+0x204 = direction TGPoint3) + turn convergence inverted at 0x005ad4d0 + InSystemWarp 50.0f not 295
+- [gameplay collision-batch leaf render patterns](gameplay-collision-batch-leaf-render-patterns.md) — leaf #12+#13 batched render (collision-shield + collision-rate-limiting): #12 ZERO formula/wire errors + TGObjPtrEvent-not-TGCharEvent C1; #13 ZERO algorithm/constant errors + call-chain narrative materially wrong C1 (vtable+0x150 is RET-only stub)
+- [gameplay leaf14 self-destruct render patterns](gameplay-leaf-14-self-destruct-render-patterns.md) — leaf #14 self-destruct render: 3 corrections incl. DestroyObject Handler section vestigial in MP; DAT_008E5C18 FLT_MAX dying-sentinel reentrancy guard C2; C3 CASCADE PENDING flag-attribution verification at 0x0097FA88/89/8A; TopWindow__SelfDestructHandler CREATED at 0x0050D070 (219 bytes)
+- [gameplay leaf-16 repair-event-ids render patterns](gameplay-leaf-16-repair-event-ids-render-patterns-20260528.md) — leaf #16 render: 6th gameplay doc to clear `verified`; "ROCK SOLID on every wire-format/ID-encoding claim"; DAT_0095b078 ID counter single-writer proved via 4-xref result (3 reads + 1 write all from TGObject_Ctor itself)

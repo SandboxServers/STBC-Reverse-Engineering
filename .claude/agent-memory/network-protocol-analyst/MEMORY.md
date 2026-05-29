@@ -113,12 +113,13 @@
 - When has_target: target_id (ReadInt32v) + impact data (4 bytes, not 5 as doc says)
 - Needs RE of FUN_0057CB10 (TorpedoSystem::SendFireMessage) to fully decode
 
-### PythonEvent2 (0x0D) — NOT RELAYED (CONFIRMED)
-- 75 instances in 33.5min trace, ALL C->S, ZERO S->C
+### PythonEvent2 (0x0D) — NOT RELAYED, CLIENT-ORIGINATED (CORRECTED 2026-02-24)
 - Jump table entry for 0x0D goes directly to FUN_0069f880 (no relay)
-- Jump table entry for 0x06 has relay-then-dispatch (Forward group)
-- ALL observed 0x0D carry eventCode=0x0000010C (TGObjPtrEvent, power reactor)
-- Valentine analysis line 483 incorrectly says cloak events "use GenericEventForward relay pattern" — they propagate via StateUpdate CLK flag, not relay
+- ALL observed instances carry factory 0x0000010C (TGObjPtrEvent) + eventCode 0x00800058 (TARGET_WAS_CHANGED)
+- **3x verified**: Valentine 75x C->S, stock-dedi server 31x C->S / 0x S->C, client 15x (inverted labels)
+- **Direction**: ALWAYS client -> server. Server absorbs, never relays.
+- Client sends targeting changes to server via 0x0D; server does not forward to other clients
+- Valentine analysis line 483 cloak note still valid — cloak propagates via StateUpdate CLK flag
 
 ### 0x28+0x00+0x01 Bundling — CONFIRMED
 - Stock ALWAYS bundles [ACK][0x28 ChecksumComplete][0x00 Settings][0x01 GameInit] in ONE UDP datagram
@@ -141,11 +142,74 @@
 - CRITICAL: 0x28+0x00+0x01 MUST be bundled in single UDP datagram
 - Stock StateUpdate ~10Hz/ship, PythonEvent ~2/sec combat, CollisionEffect ~0.16/sec
 
+## Stock Dedi Server-Side Relay Audit (2026-02-24)
+- See [relay-audit-20260224.md](relay-audit-20260224.md) for full analysis
+- Session: 2-player stock BC dedi, 21min, 6 peers (3 player connections + reconnects)
+
+### CLIENT PROXY DIRECTION BUG (CRITICAL)
+- `socket_and_input_hooks.inc.c` labels sendto="S->C" and recvfrom="C->S"
+- This is CORRECT for server, INVERTED for client
+- All previous client-trace direction analysis was backwards
+- 0x0D "S->C at client" = actually C->S (client sending)
+- 0x36 "C->S at client" = actually S->C (client receiving)
+
+### Relay Classification (from server perspective)
+| Opcode | C->S | S->C | Behavior |
+|--------|------|------|----------|
+| 0x07 StartFiring | 174 | 172 | RELAYED to other clients |
+| 0x08 StopFiring | 86 | 87 | RELAYED |
+| 0x0A SubsysStatus | 60 | 71 | RELAYED + server-generated (shield toggles on death) |
+| 0x0D PythonEvent2 | 31 | 0 | NOT RELAYED — absorbed by server |
+| 0x10 StartWarp | 2 | 2 | RELAYED |
+| 0x11 RepairPriority | 4 | 4 | RELAYED |
+| 0x12 SetPhaserLevel | 5 | 5 | RELAYED |
+| 0x13 HostMsg | 3 | 0 | NOT RELAYED — server-only processing |
+| 0x15 CollisionEffect | 2 | 0 | NOT RELAYED — server generates 0x06 damage instead |
+| 0x19 TorpedoFire | 110 | 110 | RELAYED |
+| 0x1B TorpTypeChange | 1 | 1 | RELAYED |
+| 0x1C StateUpdate | 23994 | 45355 | RELAYED + server-generated |
+| 0x2A NewPlayerInGame | 4 | 0 | NOT RELAYED — server-only processing |
+| 0x2C ChatMessage | 5 | 10 | RELAYED to ALL clients incl sender (echo) |
+
+### Server-Only Generated (never received from clients)
+| Opcode | Count | Notes |
+|--------|-------|-------|
+| 0x00 Settings | 5 | Per-join handshake |
+| 0x01 GameInit | 5 | Per-join handshake |
+| 0x03 ObjCreateTeam | 8 S->C | Server creates objects (also 7 C->S = relayed) |
+| 0x06 PythonEvent | 529 | ALL server-generated: 310x 0x101, 209x 0x10C, 10x 0x8129 |
+| 0x17 DeletePlayerUI | 7 | Server-generated player list updates |
+| 0x1D ObjNotFound | 16 | S->C only (corrects docs: not C->S) |
+| 0x1F EnterSet | 4 | S->C only (corrects docs: not C->S) |
+| 0x28 ChecksumComplete | 5 | Bundled with Settings+GameInit |
+| 0x35 GameState | 4 | Per-join game state |
+| 0x36 ScoreChange | 10 | ALL server-generated, sent to all clients |
+| 0x37 PlayerRoster | 6 | Per-join roster update |
+
+### Never Observed on Wire
+- 0x14 DestroyObj — zero instances in entire session
+- 0x29 Explosion — zero instances in entire session (stock dedi)
+- 0x04 Boot (dead opcode, uses TGBootPlayerMessage type 0x04 at transport level)
+- 0x0E/0x0F StartCloak/StopCloak — zero (no cloaking ships in this session)
+
+### Direction Corrections vs Previous Docs
+- **0x1D ObjNotFound**: Was "C->S only" → actually S->C only (server broadcasts)
+- **0x1F EnterSet**: Was "C->S only" → actually S->C only (server broadcasts)
+- **0x0D PythonEvent2**: Confirmed NOT relayed (3rd independent verification)
+- **0x15 CollisionEffect**: NOT relayed by stock dedi (server absorbs + generates 0x06 damage)
+- **0x13 HostMsg**: NOT relayed (server processes locally, no response)
+
+## ACK below32 Flag (2026-02-25)
+- See [below32-ack-mechanism.md](below32-ack-mechanism.md) for full analysis
+- ACK flags byte bit 1 = is_below_0x32: identifies which reliable seq counter channel
+- below32=1 for types 0x00-0x05, below32=0 for type 0x32+
+- HandleACK CHECK 1 compares ACK.below32 against retxQ entry GetType() < 0x32
+- **OpenBC bug**: Not sending below32=1 for ConnectAck/DataMsg ACKs -> retxQ never drains
+- **OpenBC spec gap**: transport-layer.md says ACK flags bit 1 is "unused" — it is is_below_0x32
+
 ## Files Reference
-- `docs/protocol/wire-format-spec.md` - Complete opcode table + wire formats
-- `docs/protocol/message-trace-vs-packet-trace.md` - Stock packet cross-reference
-- `src/scripts/Custom/DSNetHandlers.py` - EndGame, RestartGame, scoring
-- `src/scripts/Custom/DSHandlers.py` - ChatRelay, DeferredInitObject
-- [post-join-opcodes.md](post-join-opcodes.md) - 0x35/0x37 analysis
-- [session-comparison-20260210.md](session-comparison-20260210.md) - Full comparison
-- [valentines-wire-gaps.md](valentines-wire-gaps.md) - Valentine's Day wire format cross-reference
+- [below32-ack-mechanism.md](below32-ack-mechanism.md) - ACK below32 flag analysis
+- [openbc-test-20260225.md](openbc-test-20260225.md) - OpenBC test session 2026-02-25
+- [valentines-wire-gaps.md](valentines-wire-gaps.md) - Valentine's Day wire format gaps
+- [timing-constraints.md](timing-constraints.md) - Protocol timing catalog
+- [relay-audit-20260224.md](relay-audit-20260224.md) - Stock dedi relay audit

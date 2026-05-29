@@ -59,6 +59,19 @@ Apply when:
 - [[verified-status-criteria]] — why this doc stays at `partial`
 - [[catalog-row-disposition-tree]] — for the dropped-class rows (STWidget, STRadioGroup as type-0x80EA attribution)
 
+## Sub-pattern: cyclic permutation (addresses right, labels inverted)
+
+A variant of the pattern: instead of two globals being collapsed into one, **N distinct globals at adjacent addresses got their labels rotated**. The addresses are correct; the names are inverted into a cyclic permutation. This is **higher-stakes** because every downstream doc's gate logic still works (the binary uses addresses, not names), so the bug is silent until someone reads a flag-name claim and reasons about it semantically.
+
+**Rendering differences from the canonical pattern:**
+
+1. **Don't restructure the body** — addresses haven't moved, so section anchors are still valid. The fix is a NOTE block + a corrected reference table, full stop.
+2. **Place the CRITICAL READING NOTE *above* the table, not below it** — readers grepping for an address need to know the labels are corrected *before* they read the row. A trailing NOTE gets missed.
+3. **Add a separate "cascade correction" NOTE *below* the table** that names (a) the binary truth-source function with its address, (b) the count of affected downstream docs, (c) the disposition ("mass-fix DEFERRED to future sweep"), and (d) the verification memo path. The two-NOTE sandwich frames the table as the canonical reference even though the broader doc corpus is stale.
+4. **Tracker §4 entry flips from "CASCADE VERIFICATION IN FLIGHT" to "CONFIRMED YYYY-MM-DD" with binary-truth one-liner** — keep the entry, don't delete it (CASCADE markers earn their place in §4 even when CLOSED, because they document the resolution path for the next analyst who hits a similar cyclic-permutation pattern).
+5. **Mass downstream fix is explicitly deferred** — DO NOT attempt to fix ~28 docs in the same pass. The cascade-correction NOTE in CLAUDE.md is the durable warning; the future sweep is its own task.
+
 ## Examples
 
 - **ui-class-hierarchy.md (2026-05-28):** TopWindow at 0x009878cc vs PlayWindow at 0x0097e238. Pre-v5 doc + CLAUDE.md both said TopWindow lived at 0x0097e238; PlayWindow (the Game state object) was misidentified as "the Game object stored at g_TopWindow." Correction also revealed that PlayWindow is NOT a MainWindow (no type-ID at +0x4C), which reshaped the doc's "TopWindow children" and "MainWindow Type IDs" sections.
+- **CLAUDE.md Key Globals flag attributions (2026-05-28, cyclic-permutation sub-pattern):** 0x0097FA88 / 0x0097FA89 / 0x0097FA8A pre-v5 were labeled IsClient / IsHost / IsMultiplayer; binary truth (per MultiplayerGame_Start ~0x00438C70 byte-level disasm in `cascade-verification-flags-20260528.md`) is HasLocalPlayer / GameLive / IsHost — a cyclic permutation. ~28 downstream docs use the wrong labels but correct addresses. Fix applied: CRITICAL READING NOTE above the table + cascade-correction NOTE below the table + v5-validation-status.md §4 entry flipped from "CASCADE VERIFICATION IN FLIGHT" to "CONFIRMED 2026-05-28". Mass downstream label-fix deferred.

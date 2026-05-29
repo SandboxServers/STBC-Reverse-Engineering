@@ -1,10 +1,145 @@
 > [docs](../README.md) / [gameplay](README.md) / repair-tractor-analysis.md
 
-# Repair System & Tractor Beam Mechanics - Reverse Engineering Analysis
+---
+title: Repair System & Tractor Beam Mechanics — Reverse Engineering Analysis
+type: reference + explanation
+audience: re-engineer
+validated: 2026-05-28
+methodology: FUNCTION_DOC_WORKFLOW_V5
+binary:
+  name: stbc.exe
+  size: 6182400
+  base: 0x00400000
+status: partial
+evidence:
+  # Repair side — see repair-system.md for full evidence trail; key cross-confirms here
+  - claim: "RepairSubsystem vtable at 0x00892e24, size 0xC0, stored at ship+0x2D8"
+    address: 0x00892e24
+    function: null
+    confidence: high
+    note: "Cross-confirmed with repair-system.md."
+  - claim: "RepairSubsystem::Update at 0x005652a0, body size 0x277"
+    address: 0x005652a0
+    function: RepairSubsystem__Update
+    completeness: 64
+    confidence: high
+    note: "Function created in Ghidra this pass. Cross-confirmed with repair-system.md."
+  - claim: "Repair rate formula: MaxRepairPoints * conditionPct * dt / min(queueCount, NumRepairTeams) / RepairComplexity"
+    address: 0x005652a0
+    function: RepairSubsystem__Update
+    confidence: high
+  - claim: "Subsystems at 0 HP are NOT added to repair queue (AddSubsystem checks condition > 0.0)"
+    address: 0x00565520
+    function: RepairSubsystem__AddSubsystem
+    confidence: high
+    note: "Condition read at subsystem+0x30."
+  - claim: "No maximum queue size enforced — uses dynamically-growing pool allocator (FUN_00486be0)"
+    address: 0x00565520
+    function: RepairSubsystem__AddSubsystem
+    confidence: high
+    note: "OpenBC's 'queue of up to 8' claim refuted."
+  # Tractor side — fully validated this pass
+  - claim: "TractorBeamSystem vtable at 0x00893794, size 0x100; ctor at 0x00582080 sets mode=1 and +0xA0=1"
+    address: 0x00582080
+    function: TractorBeamSystem__Ctor
+    confidence: high
+  - claim: "TractorBeamSystem::Update at 0x00582460 (40 bytes) — calls parent Update, sums projector MaxDamage, resets forceUsed"
+    address: 0x00582460
+    function: TractorBeamSystem__Update
+    completeness: 70
+    confidence: high
+    note: "Function created in Ghidra this pass. Vtable slot 25."
+  - claim: "TractorBeamSystem instance: mode at +0xF4, totalMaxDamage at +0xF8, forceUsed at +0xFC"
+    address: 0x00893794
+    function: null
+    confidence: high
+  - claim: "TractorBeamProjector vtable at 0x008936f0, FireTick at 0x0057f8c0 dispatches 6-mode switch"
+    address: 0x0057f8c0
+    function: TractorBeamProjector__FireTick
+    confidence: high
+    note: "Default switch case = no-op (returns input force unchanged)."
+  - claim: "6 tractor modes string-anchored at 0x0095017C..0x00950218: TBS_HOLD, TBS_TOW, TBS_PULL, TBS_PUSH, TBS_DOCK_STAGE_1, TBS_DOCK_STAGE_2"
+    address: 0x0095017C
+    function: null
+    confidence: high
+  - claim: "TBS_TOW (mode 1) and TBS_DOCK_STAGE_1 (mode 4) share handler FUN_0057ff60"
+    address: 0x0057ff60
+    function: TractorMode_TOW_or_DOCK1
+    confidence: high
+  - claim: "ComputeTractorForce at 0x00580f50: force = maxDamage * (sysCondPct * projCondPct) * distanceRatio * deltaTime"
+    address: 0x00580f50
+    function: ComputeTractorForce
+    confidence: high
+  - claim: "Distance ratio clamped at 1.0 via DAT_0088b9c0 (double 1.0)"
+    address: 0x0088b9c0
+    function: null
+    confidence: high
+    note: "Used for tractor distance falloff clamp."
+  - claim: "1.0 float constant for normalization is _DAT_00888860 (bytes 0x3F800000)"
+    address: 0x00888860
+    function: null
+    confidence: high
+  - claim: "0.0 float constant for zero-checks is _DAT_00888b54 (bytes 0x00000000)"
+    address: 0x00888b54
+    function: null
+    confidence: high
+  - claim: "DAT_008936e8 = 3.0f — TractorBeamSystem TOW/DOCK_1 max-move-per-tick rate cap"
+    address: 0x008936e8
+    function: null
+    confidence: high
+    note: "NEW anchor discovered this pass; not in pre-v5 doc."
+  - claim: "Multiplicative drag: ImpulseEngine reads tractor at +0xA8, calls GetForceRatio, multiplies (1.0 - ratio)"
+    address: 0x00561230
+    function: ComputeEffectiveMaxSpeed
+    confidence: high
+    note: "Tractor drag is multiplicative not additive; clamps to [0, maxSpeed]."
+  - claim: "GetForceRatio at 0x005822d0 returns forceUsed / totalMaxDamage (or 0 if forceUsed <= 0)"
+    address: 0x005822d0
+    function: TractorBeamSystem__GetForceRatio
+    confidence: high
+  - claim: "Tractor beam does NOT apply direct damage — none of the 5 mode handlers call DoDamage or ProcessDamage (FUN_00593E50)"
+    address: null
+    function: null
+    confidence: high
+    note: "Negative claim verified by xref absence: callees of FUN_0057fcd0 (HOLD), FUN_0057ff60 (TOW/DOCK1), FUN_00580590 (PULL), FUN_00580740 (PUSH), FUN_00580910 (DOCK2). None include damage routines."
+  - claim: "Friendly tractor time penalty in UtopiaModule: FriendlyTractorTime (+0x4C), FriendlyTractorWarning (+0x50), MaxFriendlyTractorTime (+0x54)"
+    address: 0x0097FA00
+    function: null
+    confidence: high
+    note: "UtopiaModule base 0x0097FA00."
+  # Cross-system coupling
+  - claim: "ImpulseEngineSubsystem at vtable 0x00892d10 (ctor FUN_00561050, size 0xBC) stores TractorBeamSystem at +0xA8"
+    address: 0x00561230
+    function: ComputeEffectiveMaxSpeed
+    confidence: high
+  - claim: "EnergyWeaponProperty MaxDamage at +0x78 (not +0x68 as old analysis claimed)"
+    address: 0x0056f930
+    function: Weapon__GetMaxDamage
+    confidence: high
+    note: "Verified via SWIG wrapper EnergyWeaponProperty_SetMaxDamage which writes to (object + 0x78)."
+companions:
+  - docs/gameplay/repair-system.md
+  - docs/gameplay/repair-event-object-ids.md
+  - docs/gameplay/combat-mechanics-re.md
+  - docs/gameplay/damage-system.md
+  - docs/gameplay/power-system.md
+  - docs/protocol/pythonevent-wire-format.md
+  - docs/gameplay/v5-validation-status.md
+---
+
+# Repair System & Tractor Beam Mechanics — Reverse Engineering Analysis
+
+> [!NOTE]
+> **v5-validated 2026-05-28 — 1 clarification (events-table row split).**
+> Validated against current stbc.exe Ghidra import per [v5-evidence-header.md](../guides/v5-evidence-header.md). The tractor RE is otherwise clean — all 6 modes, force formula, multiplicative drag, "no direct damage" negative claim, and instance layout pass byte-confirmation. The repair side is INHERITED into [repair-system.md](repair-system.md), which carries 3 corrections (C1 wire-format, C2 event-label, C3 7-not-3 bindings) — those corrections also apply to the repair narrative here, but the only place this doc makes a wire-format claim is the Repair Queue Events table, which is the single clarification rendered below.
+>
+> Two Ghidra function bodies were created this pass on the tractor side: `TractorBeamSystem::Update` (0x00582460) and `RepairSubsystem::Update` (0x005652a0). New constant anchor: `DAT_008936e8 = 3.0f` (TOW max-move-per-tick cap).
+>
+> For full wire-format corrections see the batch partner: [repair-system.md](repair-system.md).
 
 Detailed analysis of the repair subsystem and tractor beam system in Star Trek: Bridge Commander (stbc.exe), reverse engineered from the binary via Ghidra decompilation, raw disassembly (objdump), and cross-referenced against the shipped Python scripting API.
 
-**Status**: COMPLETE. All critical Update functions decompiled via raw binary disassembly. All OpenBC claims now verified or refuted.
+**Status**: All critical Update functions decompiled. All OpenBC claims now verified or refuted. v5 batch validation completed 2026-05-28 against current Ghidra import.
 
 ---
 
@@ -167,7 +302,9 @@ epilogue:
 }
 ```
 
-### Complete Repair Rate Formula (VERIFIED)
+### Complete Repair Rate Formula
+
+[v5-validated 2026-05-28 — byte-confirmed in Update at 0x005652a0]
 
 ```
 rawRepairAmount = MaxRepairPoints * (repairSystem.condition / repairSystem.maxCondition) * deltaTime
@@ -209,8 +346,10 @@ bool RepairSubsystem::AddSubsystem(ShipSubsystem* subsystem) {
         }
     }
 
-    // 2. Check if subsystem condition > 0.0
-    if (subsystem->condition > 0.0f) {   // subsystem+0x0C float field check
+    // 2. Check if subsystem condition > 0.0  (read at subsystem+0x30)
+    // [v5-validated 2026-05-28] Decompiler shows param_2[0xc] = param_2 + 0xC*4 = +0x30.
+    // The +0x30 layout in the instance table is correct.
+    if (subsystem->condition > 0.0f) {
         // Allocate a list node from the pool (FUN_00486be0)
         ListNode* newNode = AllocListNode(&this->listStruct);
 
@@ -238,9 +377,9 @@ bool RepairSubsystem::AddSubsystem(ShipSubsystem* subsystem) {
 }
 ```
 
-**CRITICAL FINDING: No maximum queue size enforced.** The AddSubsystem function uses a dynamically-growing pool allocator (FUN_00486be0). There is no check like `if (count >= 8) return false`. The linked list grows without bound. The OpenBC claim of "up to 8 subsystem indices" is **INCORRECT** -- there is no hardcoded queue size limit in the C++ code.
+**CRITICAL FINDING (v5-validated 2026-05-28): No maximum queue size enforced.** The AddSubsystem function uses a dynamically-growing pool allocator (FUN_00486be0). There is no check like `if (count >= 8) return false`. The linked list grows without bound. The OpenBC claim of "up to 8 subsystem indices" is **INCORRECT** — there is no hardcoded queue size limit in the C++ code.
 
-**CONFIRMED: Subsystems at 0 HP (condition <= 0.0) are NOT added to the repair queue.** The check `0.0f < condition` explicitly excludes destroyed subsystems.
+**CONFIRMED (v5-validated 2026-05-28): Subsystems at 0 HP (condition <= 0.0) are NOT added to the repair queue.** The check `0.0f < condition` explicitly excludes destroyed subsystems. Condition is read at subsystem+0x30.
 
 ### ShipSubsystem::Repair (FUN_0056bd90)
 
@@ -254,13 +393,19 @@ void ShipSubsystem::Repair(float repairPoints) {
 
 ### Repair Queue Events
 
-| Event ID | Name | Wire Opcode | Direction |
-|----------|------|-------------|-----------|
-| 0x00800074 | ET_REPAIR_COMPLETED | (internal) | Local |
-| 0x00800075 | ET_REPAIR_CANNOT_BE_COMPLETED | (internal) | Local |
-| 0x008000DF | ET_ADD_TO_REPAIR_LIST | 0x0B | Host -> All |
-| 0x00800076 | ET_REPAIR_INCREASE_PRIORITY | 0x11 | Client -> Host |
-| 0x0080006B | ET_SUBSYSTEM_STATE_CHANGED | (internal) | Local |
+[v5-validated 2026-05-28 — Clarification: 0x008000DF travels on TWO different wire opcodes depending on origin path.]
+
+| Event ID | Name | Wire Opcode | Direction | Notes |
+|----------|------|-------------|-----------|-------|
+| 0x008000DF | ET_ADD_TO_REPAIR_LIST | **0x06 (PythonEvent)** | Host → All | Host-auto-queue path. Posted by `AddToRepairList_MP` (FUN_00565900) after HandleHitEvent. Serialized by `HostEventHandler` (0x006a1150). Factory **0x0100 (base TGEvent)**, 16B payload. |
+| 0x008000DF | ET_ADD_TO_REPAIR_LIST | **0x0B (AddToRepairList)** | Client → Host → All | Client-manual-repair path (Engineering panel button). Relayed by GenericEventForward (FUN_0069fda0). Factory unanchored (likely TGCharEvent 0x0105) — see [OQ2 in repair-system.md](repair-system.md#open-questions). |
+| 0x00800074 | ET_REPAIR_COMPLETED | 0x06 (PythonEvent) | Host → All | Posted by `RepairSubsystem::Update` (0x005652a0) when condition/maxCondition >= 1.0. Factory **0x010C (TGObjPtrEvent)**, 21B payload. |
+| 0x00800075 | ET_REPAIR_CANNOT_BE_COMPLETED | 0x06 (PythonEvent) | Host → All | Posted by `RepairSubsystem::Update` for destroyed queued subsystems. Same factory as 0x00800074. |
+| 0x00800076 | ET_REPAIR_INCREASE_PRIORITY | 0x11 (RepairListPriority) | Client → Host → All | Player click in repair queue. Relayed by GenericEventForward. Factory 0x010C (TGObjPtrEvent). |
+| 0x0080006B | ET_SUBSYSTEM_HIT | (internal) | Local | Posted by `ShipSubsystem::SetCondition` (0x0056c470) when damaged. Caught by `HandleHitEvent` to auto-queue. |
+| 0x00800070 | ET_SUBSYSTEM_REBUILT | (internal) | Local | Periodic rebuild-tick timer scheduled in ShipSubsystem ctor. (String anchored at 0x00910784 — NOT "ET_SUBSYSTEM_DAMAGED" as some older docs claimed.) |
+
+> The pre-v5 single-row "0x008000DF → opcode 0x0B (Host → All)" was both wrong-direction (the host-auto path is 0x06, not 0x0B) and conflated two different sender paths. The corrected table separates them. Full wire-format details (factory IDs, byte layouts) live in [repair-system.md § Three Network Paths](repair-system.md#three-network-paths-for-repair-events).
 
 ---
 
@@ -282,16 +427,18 @@ ShipSubsystem
 
 ### Tractor Beam Modes (TBS enum)
 
-From string table at 0x0095017C:
+[v5-validated 2026-05-28 — all 6 mode names string-anchored at 0x0095017C..0x00950218]
 
-| Value | Constant | Description |
-|-------|----------|-------------|
-| 0 | TBS_HOLD | Hold target in place (zero velocity) |
-| 1 | TBS_TOW | Tow target toward source (default mode) |
-| 2 | TBS_PULL | Pull target toward self |
-| 3 | TBS_PUSH | Push target away |
-| 4 | TBS_DOCK_STAGE_1 | Docking approach phase |
-| 5 | TBS_DOCK_STAGE_2 | Docking final phase |
+| Value | Constant | Description | Mode Handler |
+|-------|----------|-------------|--------------|
+| 0 | TBS_HOLD | Hold target in place (zero velocity) | FUN_0057fcd0 |
+| 1 | TBS_TOW | Tow target toward source (default mode) | FUN_0057ff60 |
+| 2 | TBS_PULL | Pull target toward self | FUN_00580590 |
+| 3 | TBS_PUSH | Push target away | FUN_00580740 |
+| 4 | TBS_DOCK_STAGE_1 | Docking approach phase | FUN_0057ff60 (shared with TBS_TOW) |
+| 5 | TBS_DOCK_STAGE_2 | Docking final phase | FUN_00580910 |
+
+Switch default in FUN_0057f8c0 = no-op (returns input force unchanged).
 
 ### Key Functions
 
@@ -332,7 +479,9 @@ void TractorBeamSystem_Update(TractorBeamSystem* this, float deltaTime) {
 }
 ```
 
-### Tractor Force Formula (FUN_00580f50) -- VERIFIED
+### Tractor Force Formula (FUN_00580f50)
+
+[v5-validated 2026-05-28 — byte-confirmed in decompile]
 
 ```c
 // ComputeTractorForce  (__thiscall, float deltaTime, float beamDistance)
@@ -450,13 +599,15 @@ float ComputeEffectiveMaxSpeed(ImpulseEngineSubsystem* this) {
 }
 ```
 
-### Tractor Drag Formula (VERIFIED)
+### Tractor Drag Formula
+
+[v5-validated 2026-05-28 — multiplicative drag confirmed in ComputeEffectiveMaxSpeed at 0x00561230]
 
 The tractor speed drag is:
 
 ```
-tractorRatio = forceUsed / totalMaxDamage
-effectiveSpeed *= (1.0 - tractorRatio)
+tractorRatio = forceUsed / totalMaxDamage    (via GetForceRatio at 0x005822d0)
+effectiveSpeed *= (1.0 - tractorRatio)        (1.0 from _DAT_00888860)
 ```
 
 Where:
@@ -464,11 +615,15 @@ Where:
 - `totalMaxDamage` = sum of MaxDamage across all projectors (system+0xF8)
 - The ratio represents what fraction of the tractor system's capacity is being used
 
-This is a **multiplicative** drag, not additive. At full tractor output, speed drops to zero. At half output, speed is halved.
+This is a **multiplicative** drag, not additive. At full tractor output, speed drops to zero. At half output, speed is halved. The same ratio is applied to all four engine stats (speed, accel, angVel, angAccel).
 
 ### Tractor Beam Does NOT Apply Direct Damage
 
+[v5-validated 2026-05-28 — negative claim confirmed by xref absence across all 5 mode handlers]
+
 After decompiling all five mode handler functions (HOLD, TOW/DOCK_1, PULL, PUSH, DOCK_2), **none of them call any damage function on the target ship**. The modes only manipulate the target's velocity and angular velocity. The OpenBC claim of "tractor damage: max_damage * dt * 0.02" is **NOT FOUND** in the code.
+
+**Evidence**: Callees of each mode handler were enumerated; none include `FUN_00593E50` (ProcessDamage), `DoDamage`, or any ShipSubsystem condition mutator. The DOCK_STAGE_2 handler (FUN_00580910) is the only one that calls `TGEventManager_PostEvent` + `TGObjPtrEvent_Ctor` — those are event posts (dock-stage transition), not damage.
 
 ### Mode-Specific Behavior Summary
 
@@ -480,7 +635,7 @@ After decompiling all five mode handler functions (HOLD, TOW/DOCK_1, PULL, PUSH,
 **TOW (mode 1, FUN_0057ff60) / DOCK_STAGE_1 (mode 4)**:
 - Same as HOLD initially (stop target first)
 - Remaining force used to move target toward tractor source
-- Distance-to-move capped by `DAT_008936e8 * deltaTime` (class static)
+- Distance-to-move capped by `DAT_008936e8 * deltaTime` — DAT_008936e8 is **3.0f** (anchored 2026-05-28). At 30fps this is ~0.1 units/tick max
 - In DOCK_STAGE_1: transitions to DOCK_STAGE_2 when close enough
 - TOW applies impulse toward source, sets target angular velocity
 
@@ -618,9 +773,23 @@ Verification: `swig_EnergyWeaponProperty_SetMaxDamage` writes to `(object + 0x78
 
 ## Appendix D: Key Constants
 
+[v5-validated 2026-05-28 — byte-anchored]
+
 | Address | Type | Value | Used In |
 |---------|------|-------|---------|
-| 0x00888860 | float | 1.0f | Normalization, repair completion threshold |
-| 0x00888b54 | float | 0.0f | Zero comparisons (condition checks) |
-| 0x0088b9c0 | double | 1.0 | Tractor distance ratio clamp |
+| 0x00888860 | float | 1.0f (`0x3F800000`) | Normalization, repair completion threshold, multiplicative drag base |
+| 0x00888b54 | float | 0.0f (`0x00000000`) | Zero comparisons (condition checks), GetForceRatio zero-check |
+| 0x0088b9c0 | double | 1.0 | Tractor distance ratio clamp (FUN_00580f50) |
 | 0x00888b58 | float | ~epsilon | Near-zero vector length threshold |
+| **0x008936e8** | **float** | **3.0f** (`0x40400000`) | **TractorBeamSystem TOW/DOCK_1 max-move-per-tick rate cap (NEW anchor — discovered 2026-05-28)** |
+
+---
+
+## Related Documents
+
+- [repair-system.md](repair-system.md) — Consolidated repair RE with full wire-format details (batch partner, v5-validated 2026-05-28)
+- [combat-mechanics-re.md](combat-mechanics-re.md) — Consolidated combat RE
+- [damage-system.md](damage-system.md) — Full damage pipeline
+- [power-system.md](power-system.md) — Power/reactor system (subsystem coupling)
+- [pythonevent-wire-format.md](../protocol/pythonevent-wire-format.md) — PythonEvent (opcode 0x06) wire format
+- [v5-evidence-header.md](../guides/v5-evidence-header.md) — v5 evidence header schema

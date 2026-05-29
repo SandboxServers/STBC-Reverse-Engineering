@@ -67,13 +67,13 @@ evidence:
     function: ShipSubsystemContainer_Ctor
     confidence: high
     note: "Container offsets +0x34..+0x60 alias ship+0x2B0..+0x2DC; this explains why the hash function's container-relative offsets are bytewise identical to the named-slot table populated by Ship__SetupProperties."
-  - claim: "Slot subsystem identities (CORRECTED 2026-05-28 from foundation #1 wire-format-spec.md C1): slot 1 +0x2C4 HullSubsystem (0x8138); slot 3 +0x2B0 PowerSubsystem reactor (0x813E); slot 4 +0x2C8 SensorSubsystem (0x8139); slot 6 +0x2D0 WarpEngineSubsystem (0x813B); slot 7 +0x2D8 RepairSubsystem (0x813F); slot 8 +0x2DC CloakDevice (0x813A) — six pre-v5 labels were stale"
+  - claim: "Slot subsystem identities (CORRECTED 2026-05-28; slot 1 re-corrected via docs/gameplay/power-system.md C1 cascade 2026-05-28): slot 1 +0x2C4 PowerSubsystem reactor (instance class ID 0x8027, vtable 0x00892C98); slot 3 +0x2B0 PoweredSubsystem master (0x813E); slot 4 +0x2C8 SensorSubsystem (0x8139); slot 6 +0x2D0 WarpEngineSubsystem (0x813B); slot 7 +0x2D8 RepairSubsystem (0x813F); slot 8 +0x2DC CloakDevice (0x813A) — five pre-v5 labels were stale (slot 1 was correctly 'Power Reactor' pre-v5; a transient HullSubsystem 0x8138 rename was reverted via power-system cascade)"
     address: 0x005b5eb0
     function: ComputeSubsystemIntegrityHash
     completeness: 26.0
     effective: 38.3
     confidence: high
-    note: "C1 — see body. Foundation cross-anchor: wire-format-spec.md Named Slot Layout (v5-validated 2026-05-28). Hash function reads correct offsets; only the human-readable identity column was wrong. Doc line 129 negative claim is now WRONG: RepairSubsystem IS hashed at slot 7."
+    note: "C1 — see body. Foundation cross-anchor: wire-format-spec.md Named Slot Layout (v5-validated 2026-05-28). Slot 1 +0x2C4 cascade-corrected 2026-05-28 via docs/gameplay/power-system.md C1: the 0x8138 class ID is PowerProperty (script-facing property type returned by getter wrappers FUN_005634C0/D0/E0/F0/520), NOT the subsystem instance class. The underlying SUBSYSTEM at ship+0x2C4 has vtable 0x00892C98 = PowerSubsystem reactor (instance class ID 0x8027 per Ship__SetupProperties FUN_005B3FB0). Hash function reads correct offsets; only the human-readable identity column was wrong. Doc line 129 negative claim is now WRONG: RepairSubsystem IS hashed at slot 7."
   - claim: "All 6 boolean sentinel magic constants byte-exact: prop+0x24 64.0002f/76.6f; subsys+0x44 98.6f/100.0f; prop+0x25 14.3f/456.1f; prop+0x26 27.3f/16.1f; wsProp+0x50 0.4f/99.1f; wsProp+0x51 32.6f/487.1f"
     address: 0x005b6170
     function: HashBaseSubsystem
@@ -115,6 +115,8 @@ supersedes:
 
 > [!NOTE]
 > This doc is `status: partial`. **ONE material correction (slot subsystem-identity labels)** + 4 clarifications. Hash function reads correct offsets; only the human-readable identity column in the slot table was stale. Doc line 129 negative claim ("The Repair subsystem does NOT appear in the hash") is now WRONG — RepairSubsystem IS hashed at slot 7 (ship+0x2D8). All other claims — functions, sender/receiver gates, wire encoding, the 6 boolean sentinel magic constants, the dead-code-in-MP proof, and the kick path — are byte-by-byte confirmed. **C1** rewrites the 12-row slot table to match foundation #1's corrected ship-slot identities and fixes the line 129 negative claim. **Clar-1** documents the receiver event-type immediate at `event+0x10`. **Clar-2** documents a torpedo int-to-float cast precision detail. **Clar-3** notes that `&ET_BOOT_PLAYER` and `0x008000F6` are the same address constant. **Clar-4** notes the sender's signed `SAR` is wire-identical to an unsigned shift. See [v5-evidence-header.md](../guides/v5-evidence-header.md) for the standard. Source evidence: `.claude/agent-memory/game-archaeology-specialist/subsystem-integrity-hash-validation-20260528.md`.
+>
+> **Post-validation cascade 2026-05-28**: Slot 1 (+0x2C4) attribution corrected from "HullSubsystem 0x8138" back to "PowerSubsystem (Reactor) 0x8027" per docs/gameplay/power-system.md C1 cascade. The 0x8138 class ID is PowerProperty (script-facing property type), not the subsystem instance class. Other slot identities from leaf #19 unchanged.
 
 ---
 
@@ -141,11 +143,13 @@ The subsystem integrity hash is a tamper-detection system that hashes all ship s
 
 ---
 
-## C1 — Slot subsystem-identity column (6 of 12 rows mislabeled)
+## C1 — Slot subsystem-identity column (5 of 12 rows mislabeled)
 
-[v5-validated 2026-05-28]
+[v5-validated 2026-05-28] [post-validation cascade 2026-05-28 via docs/gameplay/power-system.md]
 
-The pre-v5 doc labeled six of the twelve hash slots with stale subsystem identities. The hash function reads the **correct container offsets** — and those offsets alias the correct **ship offsets** — but the human-readable subsystem name column was wrong on six rows. This is a cascade from foundation #1 (`wire-format-spec.md` C1, validated 2026-05-28), which corrected the canonical ship-slot table at ship+0x2C4 (was PowerSubsystem reactor → now HullSubsystem) and added the previously-missing rows at ship+0x2C8 (SensorSubsystem) and ship+0x2DC (CloakDevice), among others. The reactor slot moved to ship+0x2B0.
+The pre-v5 doc labeled five of the twelve hash slots with stale subsystem identities. The hash function reads the **correct container offsets** — and those offsets alias the correct **ship offsets** — but the human-readable subsystem name column was wrong on five rows. This is a cascade from foundation #1 (`wire-format-spec.md` C1, validated 2026-05-28), which corrected the canonical ship-slot table, added the previously-missing rows at ship+0x2C8 (SensorSubsystem) and ship+0x2DC (CloakDevice), and confirmed PoweredSubsystem master at ship+0x2B0.
+
+> **PowerProperty class ID 0x8138 vs PowerSubsystem instance class ID 0x8027**: The hash function reads property values via PoweredSubsystem helpers (FUN_005634C0/D0/E0/F0/520). The PowerProperty CLASS at vtable 0x..._8138 is the SCRIPT-FACING property type returned by getter wrappers; the underlying SUBSYSTEM instance at ship+0x2C4 has vtable 0x00892C98 = PowerSubsystem reactor (class ID 0x8027 per Ship__SetupProperties FUN_005B3FB0). The leaf #19 correction conflated these two class-ID namespaces. The pre-v5 doc's "Power Reactor" label at slot 1 was already correct; an intermediate v5 rename to "HullSubsystem (0x8138)" has been reverted via the 2026-05-28 power-system cascade.
 
 **Key archaeological finding.** The container at `ship+0x27C` is a sub-object constructed by `FUN_005b5d00` with its own vtable at `0x008944c8`. The ctor zero-fills `param_1[1..0x18]` — exactly the range `ship+0x280..ship+0x2DC` that overlaps the named-slot table at `ship+0x2B0..0x2DC`. So `container+N == ship+0x27C+N` arithmetically. After `Ship__SetupProperties` populates the named-slot pointers, the hash function reads those same pointers through the container alias. This is why the doc's container-relative offsets are consistent with the canonical ship offsets — they refer to the same memory through two aliases.
 
@@ -153,9 +157,9 @@ The pre-v5 doc labeled six of the twelve hash slots with stale subsystem identit
 
 | Hash Order | Container Offset | Ship Offset | Subsystem (CORRECTED) | Prior Label | Hash Method |
 |---|---|---|---|---|---|
-| 1 | +0x48 | +0x2C4 | **HullSubsystem** (0x8138) | Power Reactor | `HashBaseSubsystem` |
+| 1 | +0x48 | +0x2C4 | **PowerSubsystem (Reactor)** (instance class ID 0x8027, vtable 0x00892C98) `[v5-correction 2026-05-28 via docs/gameplay/power-system.md]` | Power Reactor | `HashBaseSubsystem` |
 | 2 | +0x44 | +0x2C0 | ShieldGenerator (0x8137) | Shield Generator | base + 12-float shield-array extras |
-| 3 | +0x34 | +0x2B0 | **PowerSubsystem (reactor)** (0x813E) | Powered Master | base + 5-float powered extras |
+| 3 | +0x34 | +0x2B0 | **PoweredSubsystem (master)** (0x813E) | Powered Master | base + 5-float powered extras |
 | 4 | +0x4C | +0x2C8 | **SensorSubsystem** (0x8139) | Cloak Device | base + 1-float (prop+0x4C) |
 | 5 | +0x50 | +0x2CC | ImpulseEngineSubsystem (0x813C) | Impulse Engine | base + 4-float ordered extras |
 | 6 | +0x54 | +0x2D0 | **WarpEngineSubsystem** (0x813B) | Sensor Array | `HashBaseSubsystem` |
@@ -166,7 +170,7 @@ The pre-v5 doc labeled six of the twelve hash slots with stale subsystem identit
 | 11 | +0x40 | +0x2BC | PulseWeaponSystem (0x812F, iVar4==3) | Pulse Weapon System | `HashWeaponSystem` (children) |
 | 12 | +0x58 | +0x2D4 | TractorBeamSystem (0x812F, iVar4==4) | Tractor Beam System | `HashWeaponSystem` (children) |
 
-Bolded rows are the 6 corrections. Authority: foundation doc [`wire-format-spec.md`](wire-format-spec.md) (Named Slot Layout, v5-validated 2026-05-28).
+Bolded rows are the 5 corrections (slot 1's intermediate HullSubsystem rename was reverted via the 2026-05-28 power-system cascade — the pre-v5 "Power Reactor" label was already correct). Authority: foundation doc [`wire-format-spec.md`](wire-format-spec.md) (Named Slot Layout, v5-validated 2026-05-28) and [`docs/gameplay/power-system.md`](../gameplay/power-system.md) C1 (slot 1 cascade, 2026-05-28).
 
 ### Downstream impact — line 129 negative claim is wrong
 
@@ -181,7 +185,7 @@ This statement is wrong on **two** counts:
 
 Corrected statement (replace line 129):
 
-> All 12 named subsystem slots (Power, Shield, Hull, Sensor, Impulse, Warp, Repair, Cloak, Torpedo, Phaser, Pulse, Tractor) DO appear in the hash via the container alias at `ship+0x27C`. See foundation [`wire-format-spec.md`](wire-format-spec.md) Named Slot Layout (v5-validated 2026-05-28) for the authoritative ship-slot identity table.
+> All 12 named subsystem slots (PowerReactor, Shield, PoweredMaster, Sensor, Impulse, Warp, Repair, Cloak, Torpedo, Phaser, Pulse, Tractor) DO appear in the hash via the container alias at `ship+0x27C`. See foundation [`wire-format-spec.md`](wire-format-spec.md) Named Slot Layout (v5-validated 2026-05-28) for the authoritative ship-slot identity table, and [`docs/gameplay/power-system.md`](../gameplay/power-system.md) C1 for the slot 1 cascade (PowerSubsystem reactor at ship+0x2C4 with instance class ID 0x8027 — not PowerProperty 0x8138, which is the script-facing property class).
 
 ---
 
@@ -663,5 +667,6 @@ All analysis performed against `reference/decompiled/05_game_mission.c`:
 - [`stateupdate-subsystem-wire-format.md`](stateupdate-subsystem-wire-format.md) — Subsystem linked-list order + WriteState formats; sibling for ship+0x2C0..+0x2DC.
 - [`per-ship-subsystem-wire-format.md`](per-ship-subsystem-wire-format.md) — Per-ship subsystem catalogs (16 stock ships) — uses the same corrected slot identities.
 - [`objnotfound-requestobj-enterset-wire-format.md`](objnotfound-requestobj-enterset-wire-format.md) — Sibling leaf documenting the **command-message-bypasses-TGFactory** pattern; the receiver's `PostEvent` chain here follows the same pattern.
-- [`docs/engine/rtti-class-catalog.md`](../engine/rtti-class-catalog.md) — Canonical class-ID mappings (CT_HULL_PROPERTY 0x8138, CT_SHIELD_PROPERTY 0x8137, etc.) used in the corrected slot table.
+- [`docs/engine/rtti-class-catalog.md`](../engine/rtti-class-catalog.md) — Canonical class-ID mappings (CT_SHIELD_PROPERTY 0x8137, CT_SENSOR 0x8139, etc.) used in the corrected slot table. Note: 0x8138 is **PowerProperty** (script-facing property class), not a HullSubsystem identity — see [`docs/gameplay/power-system.md`](../gameplay/power-system.md) C1 for the cascade that disambiguates the PowerProperty (0x8138) / PowerSubsystem-instance (0x8027) namespaces.
+- [`docs/gameplay/power-system.md`](../gameplay/power-system.md) — Authority for the slot 1 (+0x2C4) cascade: PowerSubsystem reactor instance class ID 0x8027 vs PowerProperty class ID 0x8138 disambiguation.
 - [`v5-validation-status.md`](v5-validation-status.md) — Protocol-family campaign tracker; this leaf is row #19. See §6.19 for the validation log entry.

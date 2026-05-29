@@ -120,6 +120,8 @@ supersedes:
 
 > [!NOTE]
 > This doc is `status: partial`. The 3-dispatcher overview, opcode jump table (41 entries, 0x02-0x2A), 29 event-handler registrations, key globals, subsystem catalog, and anti-cheat hash dead-code claim are v5-validated against the current Ghidra import (2026-05-28). Settings packet wire layout was corrected to bit-pack form (was previously documented as byte-form — material for any decoder). Subsystem catalog ship+0x2BC and ship+0x2D4 slot identities corrected (cross-doc disagreement #4 resolved; subsystem-integrity-hash.md is canonical). This doc is a **hub** — it consolidates summary tables for the protocol family; per-opcode detail lives in the linked companion docs. See [docs/guides/v5-evidence-header.md](../guides/v5-evidence-header.md) for the v5 standard.
+>
+> **Post-validation cascade 2026-05-28**: Slot 1 (+0x2C4) is PowerSubsystem (Reactor) — corrected 2026-05-28 from a transient "HullSubsystem 0x8138" rename in leaf #19 per [`docs/gameplay/power-system.md`](../gameplay/power-system.md) C1. The Named Slot Layout entry below already shows the correct attribution; only the leaf-doc cross-reference was affected. PowerProperty (class ID 0x8138) is the script-facing property type, NOT the subsystem instance class (which is 0x8027 at vtable 0x00892C98).
 
 Produced by systematic decompilation of stbc.exe (base 0x400000, ~5.9MB) using Ghidra.
 Validated against stock dedicated server packet traces (30,000+ packets).
@@ -368,6 +370,8 @@ See [../analysis/subsystem-trace-analysis.md](../analysis/subsystem-trace-analys
 > The vtable-to-type map above is and was correct (0x00893794 is PulseWeapon, 0x008936F0 is TractorBeam). The Named Slot Layout had the Pulse/Tractor *slot offsets* swapped — that's the load-bearing correction. Resolves protocol v5-validation-status §4 disagreement #4.
 >
 > The `+0x2DC` row is held at low confidence — FUN_005b5030 only handles 4 weapon classes, and the other 9 named-slot rows have not been ground-truthed by a switch decompile. Tracked as an open question in [v5-validation-status.md §6.1](v5-validation-status.md).
+>
+> **Cascade 2026-05-28** — Slot 1 (+0x2C4) is PowerSubsystem (Reactor) with instance class ID `0x8027` and vtable `0x00892C98` (as shown above). A transient leaf #19 ([`subsystem-integrity-hash.md`](subsystem-integrity-hash.md)) rename to "HullSubsystem 0x8138" has been reverted via [`docs/gameplay/power-system.md`](../gameplay/power-system.md) C1: the `0x8138` class ID is **PowerProperty** (the script-facing property type returned by getter wrappers FUN_005634C0/D0/E0/F0/520), NOT a subsystem instance class. The Named Slot Layout entry for `+2C4` above was already canonically correct; the cascade only corrects the leaf #19 cross-reference. Other slot identities cited in leaf #19 (slots 4/6/7/8) are unchanged by this cascade.
 
 ### Anti-Cheat Hash Field Offsets
 

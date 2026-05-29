@@ -4,7 +4,7 @@
 title: StateUpdate (0x1C) Subsystem Health Wire Format
 type: reference
 audience: re-engineer
-validated: 2026-05-28
+validated: 2026-05-29
 methodology: FUNCTION_DOC_WORKFLOW_V5
 binary:
   name: stbc.exe
@@ -101,6 +101,36 @@ evidence:
     completeness: null
     confidence: medium
     note: "Hardpoint file not in repo; example is observational and cannot be re-anchored without the client install."
+  - claim: "Runtime ship+0x284 list is FLAT: each weapon mount is its own top-level node; WriteState child recursion is a no-op (children reparented out by Ship_LinkAllSubsystemsToParents before StateUpdate)"
+    address: 0x005B3E20
+    function: Ship__LinkAllSubsystemsToParents
+    completeness: null
+    confidence: high
+    note: "[v5-correction 2026-05-29 via authority-ordering investigation] Wire-trace: start_idx reaches 6-11 across the weapon range, impossible if weapons were children under a single parent index. Binary recursion loop over instance+0x20[0..instance+0x1c-1] iterates zero times on the flat list (instance+0x1c==0). Memos: authority-ordering-validation-20260529 + ordering-trace-verification-20260529."
+  - claim: "start_idx is a TOP-LEVEL entry index: sender INC once per node, receiver walks start_idx x node->next from head; read as signed char"
+    address: 0x005b1eec
+    function: Ship__WriteStateUpdate
+    completeness: null
+    confidence: high
+    note: "[v5-correction 2026-05-29 via authority-ordering investigation] INC-once-per-node at 0x005b1eec (sender); receiver skip-loop + (int)(char) read at 0x005B21C0."
+  - claim: "Receiver loop is stream-exhaustion bounded (streamPos < payloadLength), NOT count-bounded; no entry-count field on the wire"
+    address: 0x005B21C0
+    function: Ship__ReadStateUpdate
+    completeness: 5
+    confidence: high
+    note: "[v5-correction 2026-05-29 via authority-ordering investigation] Each WriteState/ReadState is self-delimiting; receiver consumes until payload empty."
+  - claim: "has_power bit is per-subsystem standalone (count=1 bit-byte: 0x20 clear / 0x21 set); surrounding WriteByte calls break the bit group"
+    address: 0x00562960
+    function: PoweredSubsystem__WriteState
+    completeness: 11
+    confidence: high
+    note: "[v5-correction 2026-05-29 via authority-ordering investigation] WriteBit (FUN_006CF770) packs [count:3][bits:5]; condition WriteByte before + powerPct WriteByte after force a 1-bit group. HIGH on per-subsystem; MEDIUM on exact 0x20/0x21 values (flat-dump decoder cannot split entries)."
+  - claim: "Per-tick window is byte-budgeted (~10 bytes), variable entry count; trace shows 9-17 byte data runs"
+    address: 0x005B1EC0
+    function: Ship__WriteStateUpdate
+    completeness: null
+    confidence: high
+    note: "[v5-correction 2026-05-29 via authority-ordering investigation] CMP EAX,0xA budget cap measured as stream-cursor delta; 9B most common, 13-17B when power/battery bytes present. Fixed-entry-count implementations desync."
 companions:
   - docs/protocol/stateupdate.md
   - docs/protocol/per-ship-subsystem-wire-format.md
@@ -110,6 +140,7 @@ companions:
   - docs/protocol/v5-validation-status.md
 supersedes:
   - 2026-02-18
+  - 2026-05-28
 ---
 
 # StateUpdate (0x1C) Subsystem Health Wire Format
@@ -122,15 +153,58 @@ supersedes:
 >
 > One observational claim — the Sovereign-class wire-byte example — is marked `confidence: medium` because its source file (`sovereign.py` hardpoint) lives on the client install only. See [docs/guides/v5-evidence-header.md](../guides/v5-evidence-header.md) for the standard.
 
+> [!IMPORTANT]
+> **2026-05-29 authority + ordering investigation `[v5-correction 2026-05-29 via authority-ordering investigation]`.** A 3-leg study (binary RE + stock wire-trace + OpenBC differential) corrected four framing claims in this doc that were load-bearing for OpenBC issue #186 (subsystem flicker/drift):
+>
+> - **The runtime round-robin list is FLAT, not a tree.** Each weapon mount (torpedo tube, phaser emitter) is its **own top-level linked-list node**, NOT a child nested under a `TorpedoSystem` / `PhaserSystem` parent in the wire stream. The hardpoint `.py` `AddToSet` order DOES nest weapons under their system at spawn, but `Ship_LinkAllSubsystemsToParents` (FUN_005B3E20) flattens the tree into ship+0x284 **before** the first StateUpdate runs. See the **Flatten Reconciliation** callout below.
+> - **`start_idx` is a TOP-LEVEL entry index** — byte-anchored to the sender INC-once-per-node at 0x005b1eec and the receiver `node->next` walk. (Already implied; now explicit and byte-anchored.)
+> - **The receiver loop is STREAM-EXHAUSTION bounded, not count-bounded.** No entry-count field is on the wire; the receiver applies `ReadState` per node until `streamPos < payloadLength`.
+> - **The `has_power` bit is PER-SUBSYSTEM standalone**, not bit-packed across consecutive powered subsystems (the surrounding `WriteByte` calls break the bit group into its own count=1 byte: 0x20 clear / 0x21 set).
+> - **The window is byte-budgeted (~10 bytes), variable entry count** — trace shows 9-17 byte data runs.
+>
+> Evidence: `.claude/agent-memory/game-archaeology-specialist/authority-ordering-validation-20260529.md` (binary RE) and `.claude/agent-memory/network-protocol-analyst/ordering-trace-verification-20260529.md` (stock wire-trace). Open Question 4 below flags the unreliable decoder name-guess table.
+
+## Flatten Reconciliation (FLAT runtime list vs. inline-recursion code) `[v5-correction 2026-05-29 via authority-ordering investigation]`
+
+This doc previously implied the wire stream nests children under their parent ("each
+subsystem writes its own condition byte, then recursively writes all child subsystems",
+"individual weapons are serialized recursively within their parent's WriteState"). The
+2026-05-29 wire-trace refutes the nesting **as it appears on the wire**: `start_idx`
+legitimately takes the values 6, 7, 8, 9, 10, 11 across the weapon range. If torpedo tubes
+and phaser emitters were children absorbed inline under a single weapon-system parent at one
+top-level index, the round-robin cursor would step over them as ONE entry and `start_idx`
+could never reach 7-11. Because it does, **each weapon mount is its own top-level node.**
+
+The apparent contradiction with the binary (`ShipSubsystem__WriteState` at 0x0056D320 DOES
+contain a child-recursion loop over `instance+0x20[0 .. instance+0x1c-1]`) resolves cleanly:
+
+> **The recursion exists in the code but is a no-op on the flattened runtime list.** At
+> object-create time (ObjCreate 0x03 / `LoadPropertySet`), the hardpoint tree nests weapon
+> mounts under their system. `Ship_LinkAllSubsystemsToParents` (FUN_005B3E20) then **reparents
+> every child out of the tree into the flat top-level ship+0x284 list** before any StateUpdate
+> is emitted. By the time `Ship__WriteStateUpdate` (0x005B17F0) walks the list, **each
+> top-level node has ZERO children** (`instance+0x1c == 0`), so the `WriteState` child-recursion
+> loop iterates zero times. The "recurse over children" framing applied to the **hardpoint
+> tree**, not to the **flattened runtime list** the round-robin actually serializes.
+
+**OpenBC implication:** OpenBC's runtime `ser_list` must present every weapon mount as its own
+top-level entry, in `LoadPropertySet`/`AddToSet` order (top-level only). If OpenBC nests phaser
+or torpedo banks under a weapon-system container in the runtime list, its `start_idx` windows
+will be mis-sized vs. a stock client and the condition-byte stream desyncs after the first wrap
+— exactly the #186 flicker. The authoring/hardpoint format may be a tree; the **runtime list
+must be flat.**
+
 ## Executive Summary
 
 The StateUpdate flag 0x20 (subsystem health) uses a **round-robin serializer** that walks
-the ship's **top-level subsystem linked list** at `ship+0x284`. Each subsystem's `WriteState`
-virtual function writes a **variable-length** block: its own condition byte, then recursively
-writes all child subsystems. There is **no fixed index table** and **no fixed maximum**.
+the ship's **flat top-level subsystem linked list** at `ship+0x284`. Each subsystem's
+`WriteState` virtual function writes a **variable-length** block (its condition byte, plus
+power/battery bytes for the Powered/Power formats). The list is FLAT at runtime — every weapon
+mount is its own top-level node, so the `WriteState` child-recursion loop is a no-op (see
+**Flatten Reconciliation** above). There is **no fixed index table** and **no fixed maximum**.
 Wire byte positions are determined entirely by the order subsystems appear in the
-ship's linked list, which is determined by the order `AddToSet()` is called in the
-hardpoint Python file.
+ship's linked list, which is the order `AddToSet()` is called in the hardpoint Python file
+(top-level only, after `Ship_LinkAllSubsystemsToParents` flattens children into the list).
 
 ## Answers to Key Questions
 
@@ -168,11 +242,26 @@ and the same C++ `SetupProperties` + `LinkAllSubsystemsToParents` functions.
 ### Flag 0x20 Block Structure
 
 ```
-[startIndex: byte]    // Which subsystem index the round-robin starts from this tick
+[startIndex: byte]    // TOP-LEVEL entry index the round-robin starts from this tick.
+                      //   Counts top-level ship+0x284 nodes only (children excluded —
+                      //   but the runtime list is flat, so every node is a leaf).
+                      //   Sender INC-once-per-node at 0x005b1eec; receiver walks
+                      //   start_idx x node->next from the head. Read as a SIGNED char.
 [subsystem_0 data]    // WriteState output for subsystem at startIndex
 [subsystem_1 data]    // WriteState output for subsystem at startIndex+1
-...                   // Continues until 10-byte budget exhausted or full wrap
+...                   // Continues until ~10-byte budget exhausted or full wrap.
+                      // NO entry-count field on the wire — the receiver reads until
+                      // the stream payload is exhausted (streamPos < payloadLength).
 ```
+
+The per-tick window is **byte-budgeted (~10 bytes), variable entry count**
+`[v5-correction 2026-05-29 via authority-ordering investigation]`. The budget is enforced
+by `CMP EAX,0xA` at 0x005B1EC0 (measured as a stream-cursor delta, not an entry count).
+Stock traces show DATA runs of 9-17 bytes per SUB block: 9 bytes is most common (~9
+full-health 1-byte 0xFF entries); 13-17 bytes occur when a Powered/Power subsystem carries
+power/battery bytes (fewer entries, more bytes each). A multi-byte WriteState can push the
+post-write cursor past 10, which is why runs overshoot to 17. Implementations that budget by
+a **fixed entry count** desync against a byte-budgeted stock client.
 
 ### Per-Subsystem WriteState Output
 
@@ -191,9 +280,12 @@ TractorBeamProjector, individual Engine, plus the base class vtable itself.
                       //                                  (or _DAT_00888860 = 1.0f if no property)
                       //   multiplicand 0x0088B9AC = 255.0f
                       //   0xFF = 100% health, 0x00 = destroyed, truncated toward zero
-[child_0 WriteState]  // Recursive: each child writes its own block via vtable[+0x70]
-[child_1 WriteState]
-...
+[child_0 WriteState]  // Child-recursion loop over instance+0x20[0..instance+0x1c-1].
+[child_1 WriteState]  //   NO-OP on the flattened runtime list: every top-level node has
+...                   //   instance+0x1c == 0 (children were reparented out by
+                      //   Ship_LinkAllSubsystemsToParents). Emits ZERO child bytes on the
+                      //   wire. See Flatten Reconciliation above.
+                      //   [v5-correction 2026-05-29 via authority-ordering investigation]
 [end-of-block trailer] // stream.vtable[+0xD8] → TGBufferStream_swig_GetPos at 0x006CF9B0
                        // (reads cursor; return discarded — effectively no-op)
 ```
@@ -205,20 +297,47 @@ PhaserSystem, TorpedoSystem, TractorBeamSystem, WeaponSystem, plus intermediate 
 vtables.
 
 ```
-[base WriteState]     // Calls ShipSubsystem::WriteState first (condition + children)
+[base WriteState]     // Calls ShipSubsystem::WriteState first (condition byte; child
+                      //   recursion is a no-op on the flat list)
 if (isOwnShip == 0):  // Remote ship — include power data
-    [hasData: bit=1]              // stream.vtable[+0x4C] WriteBit
+    [has_power: bit=1]            // stream.vtable[+0x4C] WriteBit — emits a STANDALONE
+                                  //   count=1 bit-byte = 0x21 (see has_power note below)
     [powerPctWanted: byte]        // ftol(this+0x90 * 100.0)
                                   //   this+0x90 = PowerPercentageWanted (0.0-1.0 ratio)
                                   //   constant 100.0f at 0x0088CE78
                                   //   result range 0-100 (one byte)
     [end-of-block trailer]        // GetPos no-op
 else:                 // Own ship — owner has local state, skip power data
-    [hasData: bit=0]
+    [has_power: bit=0]            // STANDALONE count=1 bit-byte = 0x20
     [end-of-block trailer]
 ```
 
 Branch confirmed in disassembly: `TEST BL,BL / JNZ skip_power_branch`.
+
+> **`has_power` is a PER-SUBSYSTEM standalone bit-byte, NOT a shared bit group**
+> `[v5-correction 2026-05-29 via authority-ordering investigation]`. `TGBufferStream::WriteBit`
+> (FUN_006CF770) packs up to 5 bits into one byte as `[count:3][bits:5]`, but **any non-bit
+> write (WriteByte/WriteShort) breaks the bit group** and forces the next WriteBit to allocate
+> a fresh accumulator. In PoweredSubsystem::WriteState the `has_power` bit is sandwiched between
+> the condition `WriteByte` (immediately before) and the powerPct `WriteByte` (immediately
+> after). Those surrounding byte writes guarantee the bit can **never** share a byte with the
+> next subsystem's `has_power` bit. Each powered subsystem therefore contributes exactly one
+> bit-byte:
+>
+> - `has_power == 0` (own ship / no data): `[count=001][00000] = 0x20`
+> - `has_power == 1` (remote, powerPct follows): `[count=001][00001] = 0x21`
+>
+> The flat-dump packet decoder mislabels the 0x20 byte at a powered-subsystem position as a
+> "condition byte = 0x20"; it is actually `WriteBit(0)` with count=1.
+>
+> **OpenBC implication:** OpenBC MUST emit `has_power` as a standalone `WriteBit` call (its own
+> count=1 byte, 0x20 or 0x21) immediately after the condition `WriteByte`. If OpenBC packs
+> `has_power` bits from several consecutive subsystems into a SHARED group byte (e.g. five
+> powered subsystems → one 0x25 byte), it misaligns the entire SUB bitstream vs. a stock client
+> and every subsequent condition byte in the round-robin window lands on the wrong subsystem —
+> the #186 flicker/drift. (Confidence: HIGH that the bit is per-subsystem, following directly
+> from the group-break-on-WriteByte semantics; MEDIUM on the exact 0x20/0x21 byte values, since
+> the flat-dump decoder does not split entries.)
 
 #### 3. PowerSubsystem::WriteState (0x005644B0) [v5-validated 2026-05-28]
 
@@ -241,15 +360,23 @@ at disassembly 0x005644B0.
 
 ### Receiver (flag 0x20 in Ship__ReadStateUpdate, 0x005B21C0) [v5-validated 2026-05-28]
 
+The receiver loop is **STREAM-EXHAUSTION bounded, not count-bounded**
+`[v5-correction 2026-05-29 via authority-ordering investigation]`. There is no entry-count
+field on the wire: the receiver reads `start_idx`, walks that many top-level `node->next` hops
+from the head, then applies `ReadState` per node until `streamPos < payloadLength`. It figures
+out how many subsystems were sent purely from how many bytes remain — which works because each
+subsystem's WriteState/ReadState is self-delimiting (a known byte count from the local
+instance's format). `start_idx` is read as a **signed char**.
+
 ```c
-startIndex = ReadByte(stream);
+startIndex = (int)(char)ReadByte(stream);  // signed char
 node = ship->subsystemListHead;  // ship+0x284
-// Skip to startIndex position
+// Skip start_idx TOP-LEVEL nodes (children excluded; list is flat so each hop = one node)
 for (i = startIndex; i > 0; i--) {
     if (node) node = node->next;
 }
-// Read subsystem data until stream exhausted
-while (streamPos < dataLength) {
+// Read subsystem data until the STREAM PAYLOAD is exhausted (no node-count limit)
+while (streamPos < payloadLength) {
     if (!node) break;
     subsystem = node->data;
     node = node->next;
@@ -280,12 +407,19 @@ These subsystems remain in ship+0x284 after `Ship__LinkAllSubsystemsToParents` r
 | 0x8024 | CloakDevice | Powered | Only on ships with cloak |
 | 0x8029 | RepairSubsystem | Powered | |
 
-### What's REMOVED from the list (linked as children) [v5-validated 2026-05-28]
+### Parent association at spawn (NOT runtime list nesting) [v5-validated 2026-05-28; reframed 2026-05-29]
 
-These are removed from ship+0x284 by `Ship__LinkSubsystemToParent` (FUN_005B5030) and
-added as children of parent systems:
+> **Reframe `[v5-correction 2026-05-29 via authority-ordering investigation]`:** This table
+> documents the **parent-type association** recorded for each child type by
+> `Ship__LinkSubsystemToParent` (FUN_005B5030) — i.e. which system "owns" each mount for
+> gameplay purposes (damage routing, repair grouping). It does **NOT** mean the mounts are
+> nested inside their parent on the wire. After `Ship_LinkAllSubsystemsToParents` runs, every
+> mount below is a **flat top-level ship+0x284 node** that the round-robin serializes with its
+> own condition byte at its own `start_idx`. The wire-trace confirms `start_idx` lands on
+> individual weapon-mount indices (6, 7, 8, 9, 10, 11), proving they are top-level, not absorbed
+> inline under a parent. See **Flatten Reconciliation** at the top of this doc.
 
-| Runtime Type ID | Name | Parent Location | Parent Type |
+| Runtime Type ID | Name | Associated Parent Slot | Parent Type |
 |----------------|------|----------------|-------------|
 | 0x802C | PhaserBank | ship+0x2B8 | PhaserSystem |
 | 0x802D | PulseWeapon | ship+0x2BC | PulseWeaponSystem |
@@ -632,6 +766,18 @@ explicit `create_function` to recover the body. Now named and plated.
    Property type ID 0x8145 is outside the documented 0x812B-0x813F range.
 3. **Sovereign-class byte sizes** — require the `sovereign.py` hardpoint file (lives on
    the client install only). Without it the example table cannot be re-anchored.
+4. **Proxy decoder subsystem NAMES are unreliable** `[v5-correction 2026-05-29 via authority-ordering investigation]`.
+   The packet-trace decoder's per-index subsystem labels
+   (`packet_trace_and_decode.inc.c`, the `PktSubsystemIndexName()` table at lines 313-350)
+   are a HARDCODED `(start_idx + k) % 0x21` guess — they are **not** derived from the wire.
+   Only the raw `start_idx` byte values and the DATA byte runs are ground truth; the names
+   (`PowerReactor`, `RepairSubsystem`, `TorpedoTube#1`, etc.) are plausible-but-unverified.
+   Name-based trace analysis must not be treated as authoritative. (Flag only — no fix made to
+   the decoder in this pass.)
+5. **Rare `start_idx` = 254 / 255** — observed 9 + 286 times in the Valentine's trace, absent
+   in the single-client collision trace. Likely an uninitialized/edge `tracker+0x34`
+   start_index byte at object spawn before the round-robin seeds, or a wrap-edge artifact.
+   Does not affect the FLAT verdict.
 
 ## Companions
 

@@ -4,7 +4,7 @@
 title: Per-Ship Subsystem Wire Format Catalog
 type: reference
 audience: re-engineer
-validated: 2026-05-28
+validated: 2026-05-29
 methodology: FUNCTION_DOC_WORKFLOW_V5
 binary:
   name: STBC.exe
@@ -103,14 +103,44 @@ evidence:
     completeness: n/a
     confidence: high
     note: "Foundation: mid #11. Doc's 'Top-Level' count is the post-link state, not the raw AddToSet count"
+  - claim: "Runtime ship+0x284 list is FLAT: each weapon mount is its own top-level round-robin entry; catalog 'Children' grouping is hardpoint-tree readability only. True top-level entry count = Top-Level + Children"
+    address: 0x005b3e20
+    function: Ship__LinkAllSubsystemsToParents
+    completeness: n/a
+    confidence: high
+    note: "[v5-correction 2026-05-29 via authority-ordering investigation] Wire-trace: start_idx reaches 6-11 (up to 16 on larger hulls), impossible if mounts were children under one parent index. Cycle-byte totals unchanged. Memos: authority-ordering-validation-20260529 + ordering-trace-verification-20260529."
 supersedes:
   - 2026-02-22
+  - 2026-05-28
 ---
 
 # Per-Ship Subsystem Wire Format Catalog
 
 > [!NOTE]
 > This doc is `status: partial`. **Zero material wire-format corrections** in this v5 pass — the doc was exceptionally accurate. Four ships sampled byte-by-byte against `reference/scripts/ships/Hardpoints/<name>.py`: **Sovereign (49 bytes)**, **Bird of Prey (32)**, **Galor (31)**, **Akira (47)** — cycle-byte math matches the Summary Table EXACTLY. The 12 remaining ships are tagged `confidence: medium` by pattern extrapolation from the sampled set (the validation strategy: structural formula + AddToSet ordering + special-case catalog + foundation slot offsets all held for sampled ships; extrapolation justified). Three refinements landed: **(R1)** cycle-byte arithmetic is per-tick exact but per-cycle approximate due to bit-stream packing; **(R2)** "Top-Level Subsystems" is the post-link count after `Ship__LinkAllSubsystemsToParents` reparenting; **(R3)** templates like Probe Launcher / Shuttle Bay / Decoy Launcher silently drop because their property type IDs don't match any case in `Ship__SetupProperties`. Foundation cross-anchor: mid #11 slot table (ship+0x2B0..+0x2DC) re-confirmed via fresh `Ship__SetupProperties` decompile; per-ship doc never cites ship+offset directly, so foundation corrections don't cascade. See [docs/guides/v5-evidence-header.md](../guides/v5-evidence-header.md) for the standard.
+
+> [!IMPORTANT]
+> **2026-05-29 runtime list is FLAT `[v5-correction 2026-05-29 via authority-ordering investigation]`.**
+> The per-ship catalogs below group each ship's weapon mounts (phaser banks, torpedo tubes,
+> tractor projectors) as **children nested under their parent system** (PhaserSystem,
+> TorpedoSystem, TractorBeamSystem) at a single top-level index — this is the **hardpoint
+> `AddToSet` tree** and is kept here for readability. The **RUNTIME serialization list is FLAT**:
+> `Ship_LinkAllSubsystemsToParents` (FUN_005B3E20) reparents every child out of the tree into the
+> flat top-level ship+0x284 list **before** the first StateUpdate, so on the wire **each weapon
+> mount is its own top-level round-robin entry with its own `start_idx`** — NOT absorbed inline
+> under a parent.
+>
+> Wire proof: stock traces show `start_idx` taking the values 6, 7, 8, 9, 10, 11 (and up to 16
+> on larger hulls), which is impossible if those mounts were children stepped over as one entry.
+> So the **"Children" column and the "1 + N children inline" cycle-byte arithmetic below model
+> the byte TOTAL correctly** (the same bytes appear on the wire either way), **but the
+> top-level-entry COUNT and the per-index mapping must be read as flat**: a ship's true top-level
+> entry count is `Top-Level + Children` (e.g. Sovereign = 11 + 22 = 33 flat top-level nodes, not
+> 11). For the flatten reconciliation, the byte-anchored `start_idx`/`has_power`/stream-exhaustion
+> corrections, and the OpenBC `ser_list` requirement, see
+> [stateupdate-subsystem-wire-format.md § Flatten Reconciliation](stateupdate-subsystem-wire-format.md).
+> Evidence: `.claude/agent-memory/game-archaeology-specialist/authority-ordering-validation-20260529.md`
+> + `.claude/agent-memory/network-protocol-analyst/ordering-trace-verification-20260529.md`.
 
 ## Overview
 
@@ -303,6 +333,14 @@ Each ship section shows:
 2. Children per top-level subsystem
 3. WriteState type and byte count for a remote ship
 4. The AddToSet order determines the linked list order (per R2: post-link)
+
+> **Reading the "Children" column post-2026-05-29 `[v5-correction 2026-05-29 via authority-ordering investigation]`:**
+> The "Children" column groups weapon mounts under their parent system for readability, mirroring
+> the hardpoint tree. On the wire the runtime list is **FLAT** — each listed child is its own
+> top-level round-robin entry with its own `start_idx` (see the IMPORTANT block at the top of this
+> doc). The byte counts in the "WriteState Bytes" column are unchanged (the same bytes appear on
+> the wire), but a ship's true top-level entry count for `start_idx` purposes is
+> `Top-Level + Children`, not the "Top-Level" figure alone.
 
 ---
 

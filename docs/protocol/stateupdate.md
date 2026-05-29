@@ -289,12 +289,22 @@ stream is exhausted (`streamPos >= dataLength`).
 
 ### Subsystem list ordering
 
-There is no fixed index table. The `start_index` is a position in the ship's serialization
-linked list at `ship+0x284`, whose contents and order are determined by the hardpoint
-script's `LoadPropertySet()` call order. Only **top-level system containers** remain in the
-list after `Ship_LinkAllSubsystemsToParents` (`FUN_005B3E20`) removes children. Individual
-weapons (phaser banks, torpedo tubes) and engines are serialized **recursively** within
-their parent's WriteState.
+There is no fixed index table. The `start_index` is a **top-level entry** position in the
+ship's serialization linked list at `ship+0x284`, whose contents and order are determined by
+the hardpoint script's `LoadPropertySet()` call order.
+
+> **Runtime list is FLAT `[v5-correction 2026-05-29 via authority-ordering investigation]`.**
+> `Ship_LinkAllSubsystemsToParents` (`FUN_005B3E20`) reparents children into the flat
+> top-level list **before** any StateUpdate runs, so on the wire **each weapon mount (phaser
+> bank, torpedo tube) and engine is its own top-level round-robin entry** — NOT serialized
+> recursively inline under a parent. The `WriteState` child-recursion loop exists in the code
+> but is a no-op on the flattened list (each node has zero children). Wire proof: `start_idx`
+> reaches 6-11. `start_idx` is read as a signed char; the receiver loop is stream-exhaustion
+> bounded (no count field); the `has_power` bit is a per-subsystem standalone 0x20/0x21 byte.
+> For the full byte-anchored details and the OpenBC #186 flatten reconciliation, see
+> [stateupdate-subsystem-wire-format.md § Flatten Reconciliation](stateupdate-subsystem-wire-format.md).
+> Memos: `.claude/agent-memory/game-archaeology-specialist/authority-ordering-validation-20260529.md`,
+> `.claude/agent-memory/network-protocol-analyst/ordering-trace-verification-20260529.md`.
 
 ### Per-subsystem WriteState formats (vtable+0x70)
 
@@ -307,9 +317,9 @@ children:
 ```
 [condition: u8]           // (int)(currentCondition / GetMaxCondition() * 255.0)
                           //   this+0x30 / property+0x20 * 255.0; 0xFF=full, 0x00=destroyed
-[child_0 WriteState]      // Recursive: each child writes its own block
-[child_1 WriteState]
-...
+[child_0 WriteState]      // Child-recursion loop — NO-OP on the flat runtime list (each
+[child_1 WriteState]      //   top-level node has zero children; mounts are flat top-level
+...                       //   entries). See cross-ref above. [v5-correction 2026-05-29]
 ```
 [v5-validated 2026-05-28]
 

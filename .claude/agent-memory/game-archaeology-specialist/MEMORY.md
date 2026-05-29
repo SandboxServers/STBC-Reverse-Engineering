@@ -4,6 +4,7 @@ Field journal for binary archaeology on stbc.exe. The binary is finite; every di
 
 ## Index
 
+- [Authority + Ordering Validation 2026-05-29](authority-ordering-validation-20260529.md) — DEFINITIVE MP authority + order-of-ops. CRUX for OpenBC #186: StateUpdate 0x20 start_idx is a TOP-LEVEL ser_list node index (NOT flat); children absorbed inline by WriteState/ReadState recursion (vtable +0x70/+0x74), do NOT advance index. ser_list = ship+0x284 tail-append order = hardpoint AddToSet order, deterministic + host/client-identical. Receiver apply loop bounded by streamPos<payloadLength (no count field). Full originator + authoritative-source matrices.
 - [Engine Snapshot 2026-05-28](engine-snapshot-20260528.md) — v5 campaign ground truth: binary fingerprint, naming coverage 25.7% (not 83%), annotation scripts unapplied, top 3 drift findings.
 - [Dispatcher Recovery 2026-05-28](dispatcher-recovery-20260528.md) — MpgameHandleMessage at 0x0069F2A0 recovered (DATA-only xref); jump table decoded; v5 patterns for callback-registered functions.
 - [Struct Skeletons 2026-05-28](struct-skeletons-20260528.md) — MultiplayerGame (0x200), TGMessage (0x2C), TGBufferStream (0x2C), PlayerSlot (0x18) typed in Ghidra DB.

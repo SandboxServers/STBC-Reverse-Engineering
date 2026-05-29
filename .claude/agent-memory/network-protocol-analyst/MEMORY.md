@@ -1,5 +1,14 @@
 # Network Protocol Analyst - Memory
 
+## StateUpdate Ordering/Authority Verification for OpenBC #186 (2026-05-29)
+- See [ordering-trace-verification-20260529.md](ordering-trace-verification-20260529.md) — confirms #186 flicker root cause from real wire bytes
+- V4/V-NEST: start_idx is TOP-LEVEL entry index; weapons FLAT (each torp tube/phaser = own index; start_idx lands on 6,7,8,9,10,11). NOT nested.
+- V-BITPACK: has_power bit is PER-SUBSYSTEM own bit-byte (0x20=clear/0x21=set, count=1), group-broken by surrounding WriteByte. NOT shared group byte.
+- V2: SUB window BYTE-budgeted (~10B incl start_idx, overshoots to 17B), NOT fixed entry count. OpenBC must budget by bytes.
+- V1/V3: start_idx round-robins (byte-budget-driven 0,2,6,8 then steady 2,6,8); index->subsystem mapping STABLE within+across sessions.
+- V6: 100% disjoint — C->S=WPN(0x80) x5854, S->C=SUB(0x20) x5826, zero BOTH (matches FUN_006A2650 gate).
+- CAVEAT: decoder subsystem NAMES are a hardcoded guess (PktSubsystemIndexName); start_idx values + data byte runs are REAL wire bytes.
+
 ## Trace Mining Verification (2026-05-29)
 - See [trace-mining-verification-20260529.md](trace-mining-verification-20260529.md) — answers 7 OpenBC OQs from existing traces
 - REPAIR: 0x101 form=17B msg body / 0x10C TGObjPtrEvent form=21B (opcode-incl) = 20B payload. 21-vs-20 = opcode counted or not.

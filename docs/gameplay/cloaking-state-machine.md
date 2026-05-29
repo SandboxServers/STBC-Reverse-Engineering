@@ -18,23 +18,23 @@ evidence:
     confidence: high
     note: "Cross-anchored with stateupdate-subsystem-wire-format.md and tg-hierarchy-vtables.md."
   - claim: "CloakingSubsystem object layout: +0x9C isOn (byte, PoweredSubsystem inherited), +0xAC isFullyCloaked (byte), +0xAD tryingToCloak (byte), +0xB0 state (int, 0/2/3/5 active, 1/4 ghost), +0xB4 timer (float)"
-    address: 0x00566D10
+    address: 0x0055E2B0
     function: CloakingSubsystem_Ctor
     confidence: high
-    note: "All 5 field offsets cross-checked across ctor zero-inits, tick fn, StopCloaking, StateUpdate writer, and ShipClass::IsCloaked."
-  - claim: "CloakingSubsystem vtable at 0x00892EAC; parent vtable 0x00892D98 (PoweredSubsystem)"
-    address: 0x00892EAC
+    note: "C4 META-CASCADE REV 2 (2026-05-28): ctor address corrected from 0x00566D10 to 0x0055E2B0 per sensor/hull RE. 0x00566D10 is SensorSubsystem_Ctor. All 5 field offsets remain cross-checked across ctor zero-inits, tick fn, StopCloaking, StateUpdate writer, and ShipClass::IsCloaked."
+  - claim: "CloakingSubsystem vtable at 0x00892C04; parent vtable 0x00892D98 (PoweredSubsystem)"
+    address: 0x00892C04
     confidence: high
-    note: "Parent ctor FUN_00562240 confirmed via PTR_FUN_00892d98 install in CloakingSubsystem ctor body."
+    note: "C4 META-CASCADE REV 2 (2026-05-28): vtable corrected from 0x00892EAC to 0x00892C04 per sensor/hull RE. 0x00892EAC is SensorSubsystem vtable. Parent ctor FUN_00562240 confirmed via PTR_FUN_00892d98 install in genuine CloakingSubsystem ctor body at 0x0055E2B0."
   - claim: "ship+0x2C0 = ShieldGenerator* (cross-anchored from shield-system.md and power-system.md C1 slot table)"
     address: 0x005B3FB0
     function: Ship__SetupProperties
     confidence: high
-  - claim: "CloakingSubsystem_Ctor at 0x00566D10 sets vtable 0x00892EAC, calls FUN_00562240 (PoweredSubsystem base ctor), zeros +0xAC/+0xB0/+0xB4/+0xB8/+0xBC/+0xA8/+0xC4/+0xC8, sets +0xC0=2"
-    address: 0x00566D10
+  - claim: "CloakingSubsystem_Ctor at 0x0055E2B0 sets vtable 0x00892C04, calls FUN_00562240 (PoweredSubsystem base ctor), zeros +0xAC/+0xB0/+0xB4/+0xB8/+0xBC/+0xA8/+0xC4/+0xC8, sets +0xC0=2, delegates state-machine init to FUN_0055F930"
+    address: 0x0055E2B0
     function: CloakingSubsystem_Ctor
     confidence: high
-    note: "C4 — Ghidra DB currently labels this symbol `SensorSubsystem_Ctor` (pre-v5 annotation-script artifact). The body is CloakingSubsystem ctor exactly; Ghidra rename pending in a separate handoff."
+    note: "C4 META-CASCADE REV 2 (2026-05-28): genuine CloakingSubsystem_Ctor located at 0x0055E2B0 with vtable 0x00892C04 per sensor/hull RE. Prior rev 1 claim that 0x00566D10 was the cloak ctor (mis-renamed in Ghidra as SensorSubsystem_Ctor) was wrong — 0x00566D10 IS SensorSubsystem_Ctor. Ghidra plates corrected via Block 2 B follow-up."
   - claim: "CloakingSubsystem::Update tick fn at FUN_0055E500 reads +0xB0 (state) and +0xB4 (timer); state 2 counts timer UP, state 5 counts DOWN; energy failure at state 3 triggers force-decloak via efficiency (+0x94) < DAT_0088D4EC"
     address: 0x0055E500
     function: CloakingSubsystem_Update
@@ -155,12 +155,15 @@ companions:
 ---
 
 > [!NOTE]
+> **2026-05-28 (revision 2) — C4 META-CASCADE REVERSAL.** The original C4 correction in this doc renamed the WRONG Ghidra function. Sensor/hull RE (see `.claude/agent-memory/game-archaeology-specialist/sensor-hull-subsystem-validation-20260528.md`) confirmed that **0x00566D10 IS the SensorSubsystem_Ctor** (vtable 0x00892EAC, "SensorSubsystem::Handle*" strings prove identity), and the **genuine CloakingSubsystem_Ctor lives at 0x0055E2B0** (vtable 0x00892C04, state-machine init via FUN_0055F930). The cloaking-cascade pass had mis-renamed 0x00566D10 in Ghidra; the Ghidra plates have since been corrected via the Block 2 B follow-up. All CloakingSubsystem_Ctor address claims in this doc are updated from 0x00566D10 -> 0x0055E2B0 and vtable from 0x00892EAC -> 0x00892C04 where applicable. The state machine, wire format, event IDs (C1/C2/C3) and field offsets remain v5-validated.
+
+> [!NOTE]
 > **v5 re-validation 2026-05-28 — 4 corrections (2 HIGH + 1 MED + 1 LOW) + 3 clarifications + 2 OQs**. Core state machine and wire format byte-confirmed. C1 HIGH: StopCloaking field at +0xAC (isFullyCloaked), NOT +0xAD (tryingToCloak); C2 HIGH: Event 0x00800078 is ET_CLOAK_COMPLETED not ET_CLOAK_BEGINNING (and 0x00800077 IS the missing ET_CLOAK_BEGINNING); **C3 MED: CloakTime default is 5.0f (NOT 3.0f) — OpenBC clean-room spec needs cascade update**; C4 LOW: ctor at 0x00566D10 mis-Ghidra-named as SensorSubsystem_Ctor (corrected separately).
 >
 > - **C1 (HIGH)**: StopCloaking at 0x0055F393 checks `isFullyCloaked` at `+0xAC`, NOT `tryingToCloak` at `+0xAD` as prior doc claimed. Disasm: `CMP byte ptr [ESI + 0xAC],0x1`. Semantic meaning correct ("force decloak if mid-cloak or fully cloaked"); only the field label was wrong.
 > - **C2 (HIGH)**: Event 0x00800078 was labeled `ET_CLOAK_BEGINNING` in the prior doc's Event IDs table. Binary truth: string at 0x009106A0 = `ET_CLOAK_COMPLETED`, and the missing 0x00800077 (string at 0x009106B4) IS the real `ET_CLOAK_BEGINNING`. Posted only at FUN_0055F275 (BeginCloak path).
 > - **C3 (MED)**: Default `CloakTime = 5.0f` (raw bytes `00 00 A0 40` at 0x008E4E1C) and `ShieldDelay = 1.0f` (raw bytes `00 00 80 3F` at 0x008E4E20) ARE statically determinable from .rdata. Prior doc said they could not be verified from static analysis. **OpenBC clean-room spec uses "3.0 seconds" — that's off by 67%. Cloak transition is 5 seconds in stock STBC.**
-> - **C4 (LOW)**: Ghidra DB labels the ctor at 0x00566D10 as `SensorSubsystem_Ctor` — a pre-v5 annotation-script artifact. The function body is CloakingSubsystem ctor exactly (vtable 0x00892EAC, parent ctor FUN_00562240, sets +0xC0=2). Doc's address claim is correct; only the Ghidra symbol is wrong. Ghidra rename pending in a separate handoff.
+> - **C4 (LOW) — REVERSED 2026-05-28 (rev 2)**: The original C4 correction renamed the wrong Ghidra function. Binary truth: **0x00566D10 IS SensorSubsystem_Ctor** (vtable 0x00892EAC), and **CloakingSubsystem_Ctor lives at 0x0055E2B0** (vtable 0x00892C04, state-machine init via FUN_0055F930). All CloakingSubsystem_Ctor address claims in this doc are updated accordingly. See the rev 2 NOTE block at the top. Reference: `.claude/agent-memory/game-archaeology-specialist/sensor-hull-subsystem-validation-20260528.md`.
 
 ---
 
@@ -170,17 +173,17 @@ companions:
 
 The CloakingSubsystem is a PoweredSubsystem subclass that manages ship cloaking in STBC. It uses a state machine with a transition timer, interacts with shields through a delayed re-enable mechanism, and controls ship visibility through NiNode alpha manipulation.
 
-**Vtable**: `0x00892EAC` (CloakingSubsystem) [v5-validated 2026-05-28]
+**Vtable**: `0x00892C04` (CloakingSubsystem) [v5-validated 2026-05-28 — meta-cascade rev 2; was previously 0x00892EAC which is actually SensorSubsystem]
 **Parent vtable**: `0x00892D98` (PoweredSubsystem, set by FUN_00562240) [v5-validated 2026-05-28]
-**Constructor**: `FUN_00566D10` [v5-validated 2026-05-28 — see C4 below for Ghidra-symbol note]
-**Destructor**: `FUN_00566E50` (scalar deleting)
+**Constructor**: `FUN_0055E2B0` [v5-validated 2026-05-28 — meta-cascade rev 2; was previously claimed at 0x00566D10 which is actually SensorSubsystem_Ctor — see C4 rev 2 below]
+**Destructor**: `FUN_00566E50` (scalar deleting) — pending rev 2 review (the dtor address may also have been mis-attributed by the cloaking-cascade pass)
 
 ## Object Layout [v5-validated 2026-05-28]
 
 ```
 Offset  Size  Type    Field                   Notes
 ------  ----  ------  ----------------------  -----
-+0x00   4     ptr     vtable                  -> 0x00892EAC
++0x00   4     ptr     vtable                  -> 0x00892C04  (meta-cascade rev 2; was 0x00892EAC which is SensorSubsystem)
 ...           ...     (inherited from PoweredSubsystem via FUN_00562240 -> FUN_0056b970)
 +0x18   4     ptr     subsystem property      (inherited)
 +0x34   4     float   maxPower                (inherited, used in energy check FUN_0056c350)
@@ -208,17 +211,28 @@ Offset  Size  Type    Field                   Notes
 
 Ship stores the CloakingSubsystem pointer at **ship+0x2DC** [v5-validated 2026-05-28 — cross-anchored with stateupdate-subsystem-wire-format.md and tg-hierarchy-vtables.md].
 
-### C4 — Ghidra symbol for ctor mis-labeled
+### C4 — Ghidra symbol for ctor mis-labeled [REVERSED 2026-05-28 (rev 2)]
+
+> [!IMPORTANT]
+> **C4 REV 2 — META-CASCADE REVERSAL.** The original C4 correction (rev 1) renamed the wrong Ghidra function. Sensor/hull RE confirmed:
+>
+> - **0x00566D10 IS the SensorSubsystem_Ctor** (vtable 0x00892EAC; "SensorSubsystem::Handle*" debug strings prove identity)
+> - **Genuine CloakingSubsystem_Ctor lives at 0x0055E2B0** (vtable 0x00892C04, state-machine init via FUN_0055F930)
+>
+> The cloaking-cascade pass had mis-renamed 0x00566D10 in Ghidra; the Ghidra plates were corrected via the Block 2 B follow-up. This doc's CloakingSubsystem_Ctor address claim has been updated from 0x00566D10 -> **0x0055E2B0** throughout (Vtable / Constructor lines above; Function Address Summary table below).
+>
+> Genuine CloakingSubsystem ctor at 0x0055E2B0 (the actual constructor):
+>
+> - Writes vtable `0x00892C04` (CloakingSubsystem — meta-cascade truth)
+> - Calls `FUN_00562240` (PoweredSubsystem base ctor, installs parent vtable `0x00892D98`)
+> - Zeros the cloak state fields (+0xAC, +0xB0, +0xB4, +0xB8, +0xBC, +0xA8, +0xC4, +0xC8)
+> - Sets +0xC0 = 2 (the "render mode?" field)
+> - State-machine init delegated to FUN_0055F930
+>
+> Reference packet: `.claude/agent-memory/game-archaeology-specialist/sensor-hull-subsystem-validation-20260528.md`.
 
 > [!NOTE]
-> Ghidra DB currently labels the function at **0x00566D10** as `SensorSubsystem_Ctor`. This is a pre-v5 annotation-script artifact. The function body matches CloakingSubsystem ctor exactly:
->
-> - Writes vtable `0x00892EAC` (CloakingSubsystem)
-> - Calls `FUN_00562240` (PoweredSubsystem base ctor, installs parent vtable `0x00892D98`)
-> - Zeros +0xAC, +0xB0, +0xB4, +0xB8, +0xBC, +0xA8, +0xC4, +0xC8
-> - Sets +0xC0 = 2 (the "render mode?" field)
->
-> The doc's address claim (`FUN_00566d10`) is correct. Ghidra rename pending in a separate handoff (target: `CloakingSubsystem_Ctor`).
+> **Original C4 text (rev 1, SUPERSEDED)** — Ghidra DB currently labels the function at 0x00566D10 as `SensorSubsystem_Ctor`. This is a pre-v5 annotation-script artifact. The function body matches CloakingSubsystem ctor exactly: writes vtable 0x00892EAC (CloakingSubsystem); calls FUN_00562240 (PoweredSubsystem base ctor, installs parent vtable 0x00892D98); zeros +0xAC, +0xB0, +0xB4, +0xB8, +0xBC, +0xA8, +0xC4, +0xC8; sets +0xC0 = 2 (the "render mode?" field). The doc's address claim (FUN_00566d10) is correct. Ghidra rename pending in a separate handoff (target: CloakingSubsystem_Ctor). **(rev 1 reasoning was wrong — both the Ghidra label AND the doc's address claim were wrong, see rev 2 IMPORTANT block above)**
 
 ## State Machine [v5-validated 2026-05-28]
 
@@ -679,8 +693,9 @@ The event `ET_CLOAKED_COLLISION` (0x00910A60) exists in the string table but has
 
 | Address    | Name                                    | Role                                |
 |------------|-----------------------------------------|-------------------------------------|
-| 0x00566d10 | CloakingSubsystem::ctor (Ghidra DB: SensorSubsystem_Ctor — C4) | Constructor, inits all fields |
-| 0x00566e50 | CloakingSubsystem::dtor                 | Destructor, frees linked lists      |
+| 0x0055e2b0 | CloakingSubsystem::ctor (vtable 0x00892C04) — **meta-cascade rev 2** | Constructor, inits state fields, delegates state-machine init to FUN_0055F930 |
+| ~~0x00566d10~~ | **NOT the cloaking ctor** — IS SensorSubsystem_Ctor (vtable 0x00892EAC) per meta-cascade rev 2 | Sensor subsystem constructor (formerly mis-attributed to cloaking in C4 rev 1) |
+| 0x00566e50 | CloakingSubsystem::dtor (pending rev 2 review) | Destructor, frees linked lists — address may need re-validation after C4 rev 2 |
 | 0x0055e500 | CloakingSubsystem::Update (tick)        | State machine + timer + energy check|
 | 0x0055f360 | StartCloaking (user-facing)             | Sets tryingToCloak=1                |
 | 0x0055f380 | StopCloaking (user-facing)              | Calls BeginDecloaking when (state==1\|\|2 OR isFullyCloaked) — C1 |

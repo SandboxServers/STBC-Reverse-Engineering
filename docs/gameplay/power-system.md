@@ -181,7 +181,7 @@ companions:
 > [!NOTE]
 > **v5 re-validation 2026-05-28 — 5 corrections including 1 HIGH-PRIORITY vtable-to-class table shift across 8 of 11 subsystem classes + cascade to protocol leaf #19 (subsystem-integrity-hash).** Power model substantively correct (3-class architecture, battery/conduit math, powerMode pools, network propagation, init chain, all 7 constants byte-confirmed). 26 Ghidra functions renamed.
 >
-> - **C1 (HIGH)**: Class Hierarchy table paired 8 of 11 subsystem vtables with WRONG class names — circular-shifted mapping. Binary truth now rendered from Ship__SetupProperties (FUN_005B3FB0) decompile + 12 individual ctor disassemblies. Cascade: protocol leaf #19 (subsystem-integrity-hash) needs slot 1 (+0x2C4) reverted from HullSubsystem back to PowerSubsystem; patched separately.
+> - **C1 (HIGH)**: Class Hierarchy table paired 8 of 11 subsystem vtables with WRONG class names — circular-shifted mapping. Binary truth now rendered from Ship__SetupProperties (FUN_005B3FB0) decompile + 12 individual ctor disassemblies. **Meta-cascade rev 2 (2026-05-28)**: the slot +0x2C4 row was further reverted — vtable 0x00892C98 IS HullSubsystem (class 0x8027 — "HullClass" vtable strings), NOT PowerSubsystem reactor; the actual reactor (PoweredMaster, class 0x813E) is at +0x2B0 with vtable 0x0088A1F0. The 8-of-11 shift framing still stands; only the +0x2C4 row identity was the load-bearing error in rev 1. See the rev 2 IMPORTANT block in the Cross-doc cascade section.
 > - **C2**: AddPowerToBatteries gate (FUN_005638D0) is INVERTED. Actual gate is `(!IsHost) || IsMultiplayer` — runs everywhere except SP-host config — NOT "HOST-ONLY in multiplayer".
 > - **C3**: Draw functions (FUN_00563A70 / BB0 / CB0) all implement client-side prediction — clients CALCULATE projected draws via bVar3/bVar5 host-auth gating but do NOT mutate authoritative battery state. Prior doc pseudocode entirely omitted this.
 > - **C4**: FUN_0055F7F0 is the cloak-decloak shield-restore handler, NOT a reactor enable guard. Called only from CloakingSubsystem::Update at state 5->0 transition.
@@ -219,18 +219,26 @@ Binary truth, extracted from Ship__SetupProperties (FUN_005B3FB0) disassembly + 
 
 | Slot | Class | Vtable (binary truth) | Vtable (prior doc) | Status |
 |---|---|---|---|---|
-| +0x2B0 | PoweredMaster | 0x0088A1F0 | 0x88A1F0 | OK |
+| +0x2B0 | **PoweredMaster (Power Reactor)** — class 0x813E | 0x0088A1F0 | 0x88A1F0 | OK (slot/vtable correct; this IS the PowerSubsystem reactor — meta-cascade rev 2) |
 | +0x2B4 | TorpedoSystem | 0x00893598 | 0x893630 | **CORRECTION** |
 | +0x2B8 | PhaserSystem (was "PhaserController") | 0x00893240 | 0x893240 | OK (name aligned) |
 | +0x2BC | PulseWeaponSystem | 0x008933B0 | 0x893794 | **CORRECTION** |
 | +0x2C0 | ShieldGenerator | 0x00892F34 | 0x893598 | **CORRECTION** |
-| +0x2C4 | PowerSubsystem (Reactor) | 0x00892C98 | 0x892C98 | OK |
+| +0x2C4 | **HullSubsystem** (class 0x8027, vtable 0x00892C98 — "HullClass" strings) `[meta-cascade 2026-05-28 (rev 2)]` | 0x00892C98 | 0x892C98 | **CORRECTION (rev 2)** — vtable address unchanged; identity was PowerSubsystem reactor in rev 1, now HullSubsystem |
 | +0x2C8 | SensorSubsystem (was "SensorArray") | 0x00892EAC | 0x893040 | **CORRECTION** |
 | +0x2CC | ImpulseEngineSubsystem | 0x00892D10 | 0x892FC4 (= ShipSubsystem base) | **CORRECTION** |
 | +0x2D0 | WarpEngineSubsystem | 0x00893040 | 0x892E24 | **CORRECTION** |
 | +0x2D4 | TractorBeamSystem | 0x00893794 | 0x8936F0 | **CORRECTION** |
 | +0x2D8 | RepairSubsystem | 0x00892E24 | 0x892F34 | **CORRECTION** |
 | +0x2DC | CloakingSubsystem | 0x00892C04 | 0x892EAC | **CORRECTION** |
+
+> [!IMPORTANT]
+> **Meta-cascade revision (2026-05-28, rev 2)** — Slot +0x2C4 row corrected. Sensor/hull RE (see `.claude/agent-memory/game-archaeology-specialist/sensor-hull-subsystem-validation-20260528.md`) definitively proved via vtable literal strings that:
+>
+> - **PowerSubsystem reactor (class 0x813E PoweredMaster) is at slot +0x2B0** with vtable PTR_FUN_0088A1F0 (NOT at +0x2C4)
+> - **HullSubsystem (class 0x8027 with "HullClass" / "_p_HullClass" / "HullClassPtr" vtable strings) is at +0x2C4** with vtable 0x00892C98
+>
+> The 8-of-11 vtable-shift framing of C1 still stands; only the slot +0x2C4 identity row needed reversion. The earlier framing "+0x2C4: vtable 0x00892C98 = PowerSubsystem Reactor" was wrong — vtable 0x00892C98 IS HullSubsystem, and PoweredMaster (the actual reactor) has vtable 0x0088A1F0 at +0x2B0. The slot offsets in the table remain correct; only the human-readable identity at +0x2C4 was the load-bearing error in rev 1.
 
 Anchor: extracted from Ship__SetupProperties (FUN_005B3FB0) disasm at 0x005B402C..0x005B445C + 12 individual ctor decompiles. Each ctor's vtable write (`MOV [EDI], &PTR_FUN_00xxxxxx`) is the class-defining write.
 
@@ -292,7 +300,7 @@ PoweredSubsystem (vtable 0x00892D98)           ← Base for all powered consumer
         Ctor: FUN_005773B0, slot ship+0x2BC, type ID 0x8020
 ```
 
-**Key architectural insight**: The reactor (ship+0x2C4) and the EPS distributor (ship+0x2B0) are separate objects. The reactor has its own HP (7,000 on Sovereign) and its condition percentage scales the power output. The EPS distributor manages the actual batteries and power delivery. Both are created from the same `PowerProperty` hardpoint definition — the reactor inherits its MaxCondition and position, while the distributor inherits the battery/conduit/output parameters.
+**Key architectural insight** `[meta-cascade 2026-05-28 (rev 2) — slot identity refined]`: The reactor and the EPS distributor were originally described as separate objects at separate slots (ship+0x2C4 reactor + ship+0x2B0 distributor). The sensor/hull RE meta-cascade (rev 2) shows the reactor (PoweredMaster, class 0x813E, vtable 0x0088A1F0) is itself at **ship+0x2B0** — i.e., PoweredMaster is both the EPS distributor AND the reactor identity, and ship+0x2C4 is HullSubsystem instead. The 3-class architecture (ShipSubsystem base / PoweredSubsystem base / PoweredMaster reactor-distributor) and the battery/conduit math still stand; only the original "reactor lives at +0x2C4 separately from distributor at +0x2B0" framing was wrong. The 7,000 HP per ship is on the PoweredMaster at +0x2B0; HullSubsystem at +0x2C4 carries a separate HP budget that subordinate subsystems aggregate against. See `.claude/agent-memory/game-archaeology-specialist/sensor-hull-subsystem-validation-20260528.md`.
 
 ### Type ID namespaces (clarification)
 
@@ -306,9 +314,21 @@ Prior doc lines 31, 41 cited "type ID: 0x8138" (PowerSubsystem) and "type ID: 0x
 ### Cross-doc cascade — protocol leaf #19 reconciliation required
 
 > [!IMPORTANT]
-> **CASCADE TO PROTOCOL LEAF #19** [2026-05-28]: The slot 1 (+0x2C4) attribution in `docs/protocol/subsystem-integrity-hash.md` says HullSubsystem (0x8138). Binary truth: ship+0x2C4 is PowerSubsystem reactor (vtable 0x00892C98, instance class ID 0x8027). The 0x8138 is the **PowerProperty CLASS ID** (a different namespace from subsystem instance class IDs). The pre-correction name "Power Reactor" was right; leaf #19's HullSubsystem rename needs reverting.
+> **CASCADE TO PROTOCOL LEAF #19** [2026-05-28, rev 1]: The slot 1 (+0x2C4) attribution in `docs/protocol/subsystem-integrity-hash.md` says HullSubsystem (0x8138). Binary truth: ship+0x2C4 is PowerSubsystem reactor (vtable 0x00892C98, instance class ID 0x8027). The 0x8138 is the **PowerProperty CLASS ID** (a different namespace from subsystem instance class IDs). The pre-correction name "Power Reactor" was right; leaf #19's HullSubsystem rename needs reverting.
 >
 > Slots 4 (+0x2C8 SensorSubsystem) / 6 (+0x2D0 WarpEngineSubsystem) / 7 (+0x2D8 RepairSubsystem) / 8 (+0x2DC CloakingSubsystem) from leaf #19 STILL HOLD. This cross-doc cascade is being patched separately.
+
+> [!IMPORTANT]
+> **CASCADE TO PROTOCOL LEAF #19 (revision 2, 2026-05-28)** — META-CASCADE REVERSION. The rev 1 cascade above is itself superseded. Sensor/hull RE (see `.claude/agent-memory/game-archaeology-specialist/sensor-hull-subsystem-validation-20260528.md`) definitively proved that ship+0x2C4 IS HullSubsystem (vtable 0x00892C98, class 0x8027 — proved by literal vtable strings "HullClass" / "_p_HullClass" / "HullClassPtr"), NOT PowerSubsystem reactor.
+>
+> Meta-cascade history:
+>
+> 1. **Leaf #19 originally** — ship+0x2C4 = HullSubsystem **(CORRECT)**
+> 2. **Power-system C1 cascade (rev 1, above)** — "corrected" to PowerSubsystem reactor **(WRONG)**
+> 3. **Cascade-patch (leaf #19 + wire-format-spec, rev 1)** — reverted to match rev 1 power-system C1 **(PROPAGATED THE ERROR)**
+> 4. **Sensor/hull RE (this rev 2)** — definitively reverted to HullSubsystem **(FINAL BINARY TRUTH)**
+>
+> Binary truth: PowerSubsystem reactor (PoweredMaster, class 0x813E) actually lives at **ship+0x2B0**, via PoweredMaster_Ctor at 0x00563530 with vtable PTR_FUN_0088A1F0. The 8-of-11 vtable-shift framing in this doc's C1 still stands; only the slot 1 (+0x2C4) row of the table above has been corrected (vtable address 0x00892C98 unchanged — only the class identity flipped from PowerSubsystem reactor back to HullSubsystem). Slots 4 / 6 / 7 / 8 from leaf #19 STILL HOLD as before.
 
 ---
 

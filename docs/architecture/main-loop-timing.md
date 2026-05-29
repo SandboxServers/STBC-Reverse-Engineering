@@ -1,389 +1,383 @@
+---
+title: STBC Main Loop & Timing Architecture
+type: reference + explanation
+audience: RE engineers, OpenBC implementers
+validated: 2026-05-28
+methodology: FUNCTION_DOC_WORKFLOW_V5
+binary:
+  name: stbc.exe
+  size: 6182400
+  base: 0x00400000
+status: verified
+evidence:
+  - claim: "Stock main loop driver is PeekMessage spin (no WM_TIMER); idle path dispatches via vtable[0x80]"
+    address: 0x007b8790
+    function: Application_RunMessageLoopIteration
+    confidence: high
+    note: "Created this pass. Body: PeekMessageA -> (msg ? Translate/Dispatch : vtable[0x80](this)). Loop driver is FUN_007ba5a0 calling vtable[0x78] in a do/while."
+  - claim: "Per-frame tick entry point reached from idle path"
+    address: 0x00438e20
+    function: UtopiaApp_PerFrameTick
+    confidence: high
+    note: "Created this pass. Bound to UtopiaApp vtable slot 0x80 (0x00895b8c). Body runs the throttle gate then calls Application::Tick (FUN_006cdd20) and TGEventManager dispatch (FUN_0071e420)."
+  - claim: "60 Hz frame cap seeded at app construction"
+    address: 0x00437fea
+    function: TGApp_Ctor
+    confidence: high
+    note: "MOV [ESI+0x74], 0x3C888889. 0x3C888889 = 1.0f/60.0f = 0.01666667s = app[0x1d] (m_fMinFramePeriod). Base NiApplication uses 1/100; TGApp overrides to 1/60."
+  - claim: "49ms idle throttle fires only when GameSpy registered AND idle"
+    address: 0x00438e3c
+    function: UtopiaApp_PerFrameTick
+    confidence: high
+    note: "Gate: (qr_t==NULL) OR (qr_t[0xec]!=0) OR (timeGetTime() - DAT_0097F950 > 0x31). 0x31 = 49 decimal. Throttle anchor is DWORD at 0x0097F950 (last-tick timeGetTime). Effective floor ~20Hz when GameSpy idle."
+  - claim: "Scene-priority dispatcher computes adaptive budget from 14-sample rolling mean"
+    address: 0x0088bb28
+    function: null
+    confidence: high
+    note: "DAT_0088bb28 = 0x3FB2492492492492 (double) = 1/14. Used as divisor in FUN_0046f420 against the 16-sample frame-time ring at DAT_00981560 (excludes min+max). Min budget clamp DAT_0088bb20 (double) = 0.01s."
+  - claim: "TopWindow::Update body — drains TGTimer + TGEvent, ticks AI, runs scene-priority dispatcher"
+    address: 0x0043b4f0
+    function: TopWindow__Update
+    confidence: high
+    note: "Called from vtable[0x94] (UtopiaApp_FrameWork at 0x00438e60) in the natural chain; called directly via SetTimer 0xBCBC from proxy DLL. Sequence: TGTimerManager(gameTime), TGTimerManager(frameTime), TGEventManager, AITickScheduler, scene-priority dispatcher, scene work, render."
+  - claim: "AI scheduler does up to 4 cycles/ship/tick, capped at 6 evaluations before yielding"
+    address: 0x004721b0
+    function: Ship__AITickScheduler
+    confidence: high
+    note: "Inner: iVar8 = floor(currentTime - ship+0x20), clamp [1,4]; Ship__ProcessAITick at 0x004722d0 hard-caps at iVar9>6 then checks FUN_0071acc0 vs deadline. AI lock-time constant DAT_0088bb20 (float) = 2.0f."
+  - claim: "PoweredMaster::Update is the only 1Hz-strict subsystem"
+    address: 0x00563780
+    function: PoweredMaster_Update
+    confidence: high
+    note: "Gate: currentTime - ship+0xc0 > DAT_00892e20 (1.0f = 0x3F800000)."
+  - claim: "WeaponSystem child Update gates at 0.33s (3Hz per child)"
+    address: 0x005847d0
+    function: WeaponSystem__Update
+    confidence: high
+    note: "Inner per-child gate: child+0x12 (accumulator) > DAT_00892fc0 (0.33f = 0x3EA8F5C3)."
+  - claim: "StateUpdate emission is UNGATED — fires every main tick per ship per peer"
+    address: 0x0069ee50
+    function: MultiplayerGame__SendStateUpdates
+    confidence: high
+    note: "Called via Mpgame vtable slot 0x328 once per main tick. No internal rate gate; the dirty-flag system at Ship__WriteStateUpdate (0x005B17F0) is the only suppression mechanism. Force-resend gate is the per-field 1.0s timer (DAT_00888860)."
+  - claim: "Force-resend threshold (per-tracker absolute resync) is 1.0s"
+    address: 0x00888860
+    function: null
+    confidence: high
+    note: "DAT_00888860 = 0x3F800000 = 1.0f. Read at Ship__WriteStateUpdate (0x005b17f0) as `gameTime - tracker+0x4 > 1.0s` and `gameTime - tracker+0x24 > 1.0s` for the bForceResendPos gate."
+  - claim: "TGNetwork keepalive interval is 5.0s"
+    address: 0x0088bd58
+    function: null
+    confidence: high
+    note: "DAT_0088bd58 = 0x40A00000 = 5.0f. Read in TGWinsockNetwork_Update (FUN_006b4560) as `gameTime - WSN+0xc0 > 5.0s` for the connect-ping path."
+  - claim: "TGNetwork session timeout is 360s (6 min)"
+    address: null
+    function: TGWinsockNetwork_Ctor
+    confidence: high
+    note: "WSN+0xb4 seeded with 0x43b40000 = 360.0f at construction. Hard disconnect after 6 minutes silence."
+  - claim: "TGNetwork connect-retry interval is 45s"
+    address: null
+    function: TGWinsockNetwork_Ctor
+    confidence: high
+    note: "WSN+0xb8 seeded with 0x42340000 = 45.0f at construction. Boot-phase connect retry."
+  - claim: "Collision rate-limit gate is per-pair with 5 cooldown values"
+    address: 0x005a22a0
+    function: Ship__CollisionRateGate
+    confidence: high
+    note: "Ship vtable+0x13C. 5-way conditional table on player count + host/client + friendly-fire: 0.1f (0x3DCCCCCD) / 0.125f (0x3E000000) / 0.166667f (0x3E2B020C) / 0.25f (0x3E800000) / 0.5f (0x3F000000)."
+  - claim: "Stock has NO SetTimer/WM_TIMER for the main game tick"
+    address: null
+    function: null
+    confidence: high
+    note: "Negative claim. SetTimer call sites in stbc.exe: GameSpy query throttle, CRT thread sync. None route to TopWindow__Update or Application::Tick. The 33ms WM_TIMER described in pre-v5 versions of this doc is exclusive to the proxy DLL at src/proxy/ddraw_main/game_loop_and_bootstrap.inc.c:1410."
+companions:
+  - docs/networking/ack-outbox-deadlock.md
+  - docs/networking/packet-bundling.md
+  - docs/networking/netimmerse-transport-deep-dive.md
+  - docs/networking/multiplayer-flow.md
+supersedes:
+  - 2026-02-15
+---
+
 > [docs](../README.md) / [architecture](README.md) / main-loop-timing.md
 
 # STBC Main Loop & Timing Architecture
 
-## Executive Summary
+> [!NOTE]
+> **Stock STBC has NO WM_TIMER for the main game tick.** The natural tick is the PeekMessage spin loop at `Application_RunMessageLoopIteration` (0x007b8790); when no Windows message is pending, it dispatches via vtable[0x80] to `UtopiaApp_PerFrameTick` (0x00438e20). The 33ms WM_TIMER described in pre-v5 versions of this doc was an artifact of the **proxy DLL** (which fires WM_TIMER directly into `TopWindow__Update` at 0x0043b4f0 to drive game logic in minimized-headless mode). Stock runs unthrottled (capped at 60Hz frame rate); idle-throttles to 49ms (~20Hz) when GameSpy is idle (`qr_t[0xec] == 0`). See [v5-evidence-header.md](../guides/v5-evidence-header.md) for the standard. Source evidence: `.claude/agent-memory/game-archaeology-specialist/tick-rate-inventory-validation-20260528.md`.
 
-Bridge Commander uses the standard NetImmerse/Gamebryo `NiApplication` main loop pattern:
-a **PeekMessage-based busy loop** with **no Sleep, no fixed timestep, and no vsync waiting**.
-The tick rate is determined entirely by how fast the CPU can execute one frame.
+Reverse-engineered from stbc.exe via Ghidra decompilation. Two functions created this pass: `Application_RunMessageLoopIteration` (0x007b8790) and `UtopiaApp_PerFrameTick` (0x00438e20). Tick constants byte-confirmed from `.rdata` at the addresses cited in the evidence rows.
 
-In the **stock game with renderer**, the practical frame rate is bounded by:
-1. GPU vsync (if enabled in driver) or GPU render time
-2. A soft frame rate cap of **60 FPS** (`m_fMinFramePeriod = 1/60`)
-
-In the **stock dedicated server** (headless, no renderer), the loop runs as a **100% CPU busy loop**
-with no throttling whatsoever -- limited only by how fast the CPU can run through game logic.
-
-In **our proxy-based dedicated server**, we inject `GameLoopTimerProc` via Windows `SetTimer`,
-which runs at the multimedia timer resolution (~16ms = ~60 Hz by default).
+**Related docs**:
+- [ack-outbox-deadlock.md](../networking/ack-outbox-deadlock.md) — drained per main tick by `SendOutgoingPackets`; deadlock interacts with the cadences here
+- [packet-bundling.md](../networking/packet-bundling.md) — what `SendOutgoingPackets` actually does per tick
+- [netimmerse-transport-deep-dive.md](../networking/netimmerse-transport-deep-dive.md) — engine-level transport layer
+- [multiplayer-flow.md](../networking/multiplayer-flow.md) — end-to-end join flow that depends on these cadences
 
 ---
 
-## Architecture Overview
+## 1. Stock Main Loop Architecture [v5-validated 2026-05-28]
 
-### Class Hierarchy
-
-```
-NiApplication                  (engine base, Gb 1.2 source available)
-  +-- TGApp                    (Totally Games application layer)
-       +-- UtopiaApp           (Bridge Commander specific)
-```
-
-### Vtable Map (key slots)
-
-| Slot | Offset | Function | Address (UtopiaApp) | Notes |
-|------|--------|----------|---------------------|-------|
-| 0  | 0x00 | ~dtor | 0x006cdaf0 | |
-| 1  | 0x04 | Initialize | 0x007b7c70 | NiApp base (not overridden by UtopiaApp) |
-| 12 | 0x30 | EnableFrameRate | 0x006cdfd0 | Overridden |
-| 21 | 0x54 | UpdateInput | 0x006cddd0 | Overridden |
-| 24 | 0x60 | OnIdle | 0x006cdd20 (UtopiaApp) | **Key: called every frame** |
-| 29 | 0x74 | MeasureTime | 0x007b8780 | **STUB** (returns false always) |
-| 30 | 0x78 | Process | 0x007b8790 | **NOT overridden** (base NiApp) |
-| 31 | 0x7C | OnWindowResize | 0x006cdff0 | Overridden |
-| 37 | 0x94 | UpdateTime | 0x006cdc00 | TGApp time scaling |
-
-### Vtable Addresses
-
-| Class | Vtable Address | Notes |
-|-------|---------------|-------|
-| NiApplication (base) | 0x008988d4 | Set in FUN_007b7180 |
-| BC-mid (TGApp) | 0x00889a98 | Set in FUN_00437fb0 |
-| UtopiaApp (final) | 0x00895b8c | Set in FUN_006cd790 |
-
----
-
-## The Main Loop
-
-### Entry Point
+### Call chain
 
 ```
-entry() -> FUN_0086eff0 (WinMain equivalent)
-  -> FUN_00437f50() creates UtopiaApp (size 0xBC)
-  -> vtable[1]()  = Initialize
-  -> FUN_007ba5a0() = MainLoop
-  -> vtable[2]()  = Terminate
+WinMain (FUN_0086eff0)
+ └── Application_RunMessageLoop (FUN_007ba5a0)
+      └── do { vtable[0x78]() } while (!=0)
+           └── Application_RunMessageLoopIteration (0x007b8790)
+                ├── PeekMessageA -> if (msg) { TranslateMessage; DispatchMessageA }
+                └── if (!msg) vtable[0x80]()       <- per-frame idle dispatch
+                     └── UtopiaApp_PerFrameTick (0x00438e20)
+                          ├── 49ms timeGetTime throttle (only when GameSpy registered + idle)
+                          └── Application::Tick (FUN_006cdd20)
+                                ├── vtable[0x94]()  -> UtopiaApp_FrameWork (0x00438e60)
+                                │     ├── Pause-state machine (FUN_006cdb90)
+                                │     ├── Render passes (FUN_0070fdb0 / FUN_0070fdf0)
+                                │     └── TopWindow::Update (0x0043b4f0)  <-- the actual game tick
+                                ├── 60 Hz frame-rate cap (app[0x1d] gate)
+                                ├── DirectInput poll (FUN_006e6430)
+                                └── app[0x19]++  (frame counter)
+                          └── TGEventManager dispatch (FUN_0071e420)
 ```
 
-### MainLoop (FUN_007ba5a0)
+### PeekMessage idle dispatch — no Sleep, no WaitMessage
+
+The loop driver `FUN_007ba5a0` (Application::RunMessageLoop) is a tight `do { vtable[0x78](&retval); } while (!=0);` over `Application_RunMessageLoopIteration` (0x007b8790). The iteration body is the standard NiApplication PeekMessage pattern:
 
 ```c
-void MainLoop() {
-    int retval;
-    do {
-        // Process() returns false on WM_QUIT
-        result = this->Process(&retval);  // vtable[30]
-    } while (result != false);
-}
-```
-
-Assembly at 0x007ba5a0:
-```asm
-007ba5a0: PUSH ECX                    ; local for retval
-007ba5a1: MOV  ECX, [0x009a09d0]      ; ECX = g_Clock (= NiApp singleton)
-007ba5a7: LEA  EDX, [ESP]             ; &retval
-007ba5ab: PUSH EDX
-007ba5ac: MOV  EAX, [ECX]             ; vtable
-007ba5ae: CALL [EAX+0x78]             ; vtable[30] = Process()
-007ba5b1: TEST AL, AL
-007ba5b3: JNZ  0x007ba5a1             ; loop while Process returns true
-007ba5b5: MOV  EAX, [ESP]
-007ba5b9: POP  ECX
-007ba5ba: RET
-```
-
-### Process() (FUN_007b8790, vtable slot 30)
-
-**NOT overridden by BC** -- uses the stock NiApplication implementation.
-
-```c
-bool NiApplication::Process(int* pRetval) {
+bool Application::RunMessageLoopIteration(int* pRetval) {
     MSG msg;
-    if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-        if (msg.message == WM_QUIT) {
-            *pRetval = msg.wParam;
-            return false;  // exit main loop
-        }
+    if (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) {
+        if (msg.message == WM_QUIT) { *pRetval = msg.wParam; return false; }
         TranslateAccelerator(...);
         TranslateMessage(&msg);
-        DispatchMessage(&msg);
+        DispatchMessageA(&msg);
     } else {
-        this->OnIdle();  // vtable[32], offset 0x80
+        this->vtable[0x80](this);   // <-- UtopiaApp_PerFrameTick
     }
-    return true;  // continue looping
+    return true;
 }
 ```
 
-**Key insight**: This is a standard Win32 PeekMessage idle loop. When there are no Windows messages,
-it calls OnIdle(). There is **no Sleep(), no WaitMessage(), no yield**. If OnIdle returns quickly,
-the loop immediately calls PeekMessage again.
+There is no `Sleep`, no `WaitMessage`, no `MsgWaitForMultipleObjects` in this loop. When PeekMessage returns 0, the per-frame tick fires immediately. **The loop runs as fast as the CPU allows** unless the throttle gate inside `UtopiaApp_PerFrameTick` engages.
 
-### OnIdle() -- UtopiaApp override (FUN_006cdd20, vtable slot 32)
+### 60 Hz frame-rate cap is a render gate only
+
+Application::Tick (`FUN_006cdd20`) compares `app[0x1d] + app[0x1e] <= app[0x15]` to set a `readyToRender` flag. `app[0x1d]` (m_fMinFramePeriod) is seeded with `0x3C888889` = 1.0f/60.0f = 0.01666667s at construction (`TGApp_Ctor`, 0x00437fea). This cap gates rendering readiness — not game-logic execution. The TopWindow::Update body runs every iteration of the main loop; the renderer only swaps when the frame cap allows.
+
+Base `NiApplication` uses 1/100 (100 Hz cap) by default. TGApp overrides to 1/60 in its constructor.
+
+### 49ms idle throttle (the GameSpy-driven floor)
+
+`UtopiaApp_PerFrameTick` (0x00438e20) gates Application::Tick on:
 
 ```c
-void UtopiaApp::OnIdle() {
-    this->UpdateTime();           // vtable[37] -- time computation + scaling
-
-    // Frame rate limiter check
-    if (m_fMinFramePeriod + m_fLastFrame <= m_fAccumTime) {
-        m_fLastFrame = m_fAccumTime;
-        this->readyToRender = true;
-    } else {
-        this->readyToRender = false;
-    }
-
-    // Frame rate display
-    if (m_bFrameRateEnabled && m_pkFrameRate) {
-        m_pkFrameRate->TakeSample();
-        m_pkFrameRate->Update();
-    }
-
-    // Sound update
-    FUN_006e6420();
-    FUN_006e6430(&DAT_009992f0);
-
-    m_iClicks++;  // +0x64
-
-    // State machine for app transitions
-    if (this->appState == 1) {
-        this->BeginGame();    // vtable[40]
-        this->appState = 2;
-    }
-    if (this->appState == 3) {
-        this->EndGame();      // vtable[41]
-        this->appState = 0;
-    }
+if (qr_t == NULL || qr_t[0xec] != 0 || (timeGetTime() - DAT_0097F950) > 49) {
+    DAT_0097F950 = timeGetTime();           // anchor last-tick
+    Application__Tick();                     // FUN_006cdd20
+    TGEventManager__Dispatch();              // FUN_0071e420
 }
 ```
 
-**CRITICAL**: `MeasureTime()` (vtable slot 29) is a **stub** in BC's NI 3.1 build -- it
-always returns false. The Gb 1.2 NiApplication::OnIdle() checks MeasureTime() as a frame rate
-gate, but BC's overridden OnIdle() does its own check directly against
-`m_fMinFramePeriod + m_fLastFrame <= m_fAccumTime`.
-
-The frame rate limiter only gates **rendering readiness** (the `readyToRender` flag). It does NOT
-prevent OnIdle from running. Game logic (via MainTick) runs every iteration regardless.
-
-### MainTick (FUN_0043b4f0, vtable slot ~61 in BC-mid)
-
-Called from OnIdle -> UpdateTime -> eventually reaches MainTick. Actually, looking more carefully,
-MainTick is in the BC-mid vtable at slot 61 (offset 0xF4) and is called from the scene graph update
-path at step 10 (FUN_0043b790).
-
-**Wait** -- re-checking the call graph: MainTick (0x0043b4f0) is referenced from vtable data at
-0x00889b8c, which is BC-mid vtable slot 61. From the decompilation of OnIdle, it calls vtable[37]
-(UpdateTime at 0x006cdc00). Let me trace more carefully.
-
-Actually, MainTick is the **BC-mid's override of the NiApplication OnIdle equivalent** -- it's what
-gets called as the main game frame. The scene update function FUN_0043b790 (called FROM MainTick)
-does the actual game update.
-
-### MainTick Call Sequence (FUN_0043b4f0)
-
-```
-1. FUN_0071a9e0(0x99c6b0)            -- NiClock::Update (reads timeGetTime/QPC)
-2. FUN_006dc490(0x0097f898, gameTime) -- TGTimerManager#1.Update(gameTime)
-3. FUN_006dc490(0x0097f810, frameTime)-- TGTimerManager#2.Update(frameTime)
-4. FUN_006da2c0(0x0097f838)           -- TGEventManager.ProcessEvents
-5. FUN_004721b0(0x9817a8)             -- Update (purpose TBD)
-6. FUN_0046f420()                     -- Frame budget scheduler (updateables)
-7. FUN_00443ac0()                     -- Save game processing
-8. FUN_004447f0()                     -- Load game filename
-9. FUN_00444840()                     -- Load game data
-10. FUN_0043b790()                    -- Scene graph update + Python OnIdle
-11. vtable[0x54] if renderer exists   -- Renderer::Update(frameTime)
-12. FUN_004433e0() or renderer path   -- Render frame / display
-13. FUN_00727a40(0x99d040)            -- Scene manager update
-14. FUN_0070f7e0(0x0099ba00, 1)       -- Post-frame update
-```
+The 49 decimal lives as an immediate at 0x00438e3c. The condition reads: "tick only if GameSpy isn't registered, OR GameSpy is active, OR at least 49ms have elapsed." In practice the third arm becomes the throttle when GameSpy is registered but idle (`qr_t[0xec] == 0`) — effectively ~20Hz minimum cadence. Default (unthrottled) PeekMessage spin gives 60-200+ Hz depending on workload.
 
 ---
 
-## Time Sources
+## 2. Proxy DLL Difference [v5-validated 2026-05-28]
 
-### NiClock Object (0x0099c6b0)
+The proxy DLL (this project's `ddraw.dll`) does NOT use the natural Application::Tick chain. Instead it installs a Windows `SetTimer(hwnd, 0xBCBC, 33, GameLoopTimerProc)` that calls `TopWindow__Update` (0x0043b4f0) directly at 33ms intervals. See `src/proxy/ddraw_main/game_loop_and_bootstrap.inc.c:1410`.
 
-A global timer object, separate from the NiApplication singleton. Updated once per MainTick.
+| Aspect | Stock | Proxy |
+|--------|-------|-------|
+| Driver | PeekMessage spin (`Application_RunMessageLoopIteration` 0x007b8790) | `SetTimer 0xBCBC` -> WM_TIMER -> `GameLoopTimerProc` |
+| Wakeup | Whenever the message queue is empty | Every 33ms (Windows multimedia timer) |
+| Tick entry | `UtopiaApp_PerFrameTick` (0x00438e20) -> Application::Tick -> TopWindow::Update | `TopWindow__Update` (0x0043b4f0) directly — skips Application::Tick |
+| Frame-rate cap | 60 Hz gate on rendering (`app[0x1d] = 1/60`) | Bypassed (TopWindow::Update runs on every timer fire) |
+| Effective rate | ~60-200 Hz unthrottled / ~20 Hz idle | ~30 Hz (33ms timer + ~5ms work) |
+| Sleep behavior | None — 100% CPU when active | Implicit yield between timer fires |
 
-| Offset | Type | Name | Description |
-|--------|------|------|-------------|
-| +0x08 | DWORD | lastTimeMs | Previous timeGetTime() value |
-| +0x0C | float | accumTimeSec | Running total wall-clock seconds |
-| +0x10 | DWORD | accumTimeMs | Running total wall-clock milliseconds |
-| +0x14 | float | deltaTimeSec | Frame delta in seconds |
-| +0x18 | DWORD | deltaTimeMs | Frame delta in milliseconds |
-| +0x1C | bool | useQPC | If true, use QueryPerformanceCounter |
-| +0x20 | LARGE_INTEGER | qpcBase | QPC base value (set on first update) |
-| +0x28 | LONGLONG | qpcFreq | QPC frequency (from QueryPerformanceFrequency) |
-| +0x34 | bool | resetFlag | Forces re-read of base time on next update |
-| +0x38 | int | frameCount | Incremented each update |
+**Why the proxy diverges**: the dedicated-server use case requires headless operation in a minimized window. Minimized message-pump behavior changes under WM_PAINT/WM_ACTIVATE, and the natural Application::Tick chain can stall. The proxy bypasses the chain entirely by driving TopWindow::Update from WM_TIMER.
 
-**FUN_0071a9e0** (NiClock::Update):
+**Implication for OpenBC**: OpenBC currently matches the proxy (30Hz fixed). It does NOT match stock (which runs unthrottled / 60Hz-render-capped). Wire-rate parity tests against stock clients should account for this gap — see Section 7.
+
+---
+
+## 3. TopWindow::Update Tick Chain [v5-validated 2026-05-28]
+
+`TopWindow__Update` (0x0043b4f0) is the real per-tick work — called from both the natural chain (via UtopiaApp_FrameWork at 0x00438e60, vtable slot 0x94) and the proxy (directly from WM_TIMER).
+
 ```c
-void NiClock::Update() {
-    frameCount++;
-    if (resetFlag) {
-        resetFlag = false;
-        lastTimeMs = timeGetTime();
-    }
-    DWORD now = timeGetTime();
-    DWORD deltaMs = now - lastTimeMs;
-    lastTimeMs = now;
-    deltaTimeMs = deltaMs;
-    float deltaSec = deltaMs * 0.001f;  // DAT_00894a1c = 0.001
-    accumTimeMs += deltaMs;
-    deltaTimeSec = deltaSec;
-    accumTimeSec += deltaSec;
-    if (useQPC) {
-        QueryPerformanceCounter(&qpcCurrent);
-    }
+void TopWindow__Update(int* this) {
+    FUN_0071a9e0();                                             // ?
+    TGTimerManager__Update(*(Clock+0x90));                      // gameTime — fires scheduled timers
+    TGTimerManager__Update(*(Clock+0x54));                      // frameTime — fires scheduled timers
+    TGEventManager__ProcessQueue();                             // drain event queue (no rate gate)
+    Ship__AITickScheduler();                                    // 0x004721b0 — AI batcher
+    FUN_0046f420();                                             // scene-priority dispatcher (14-sample rolling mean)
+    FUN_00443ac0();                                             // TopWindow scene work
+    FUN_004447f0();                                             // ?
+    FUN_00444840();                                             // ?
+    FUN_0043b790();                                             // TopWindow tail
+    // ... selective render (FUN_004433e0)
 }
 ```
 
-**FUN_0071acc0** (NiClock::GetCurrentTimeInSec):
-```c
-double NiClock::GetCurrentTimeInSec() {
-    if (useQPC) {
-        LARGE_INTEGER now;
-        QueryPerformanceCounter(&now);
-        return (double)(now - qpcBase) / (double)qpcFreq;
-    }
-    return (double)(timeGetTime() - lastTimeMs) * 0.001;
-}
-```
+The two `TGTimerManager::Update` calls are critical: one uses `gameTime` (Clock+0x90, time-scaled — can be slowed/sped via `UtopiaModule.SetTimeRate`), the other uses `frameTime` (Clock+0x54, wall-clock). Both drain fully each tick — any timer whose due time has passed fires this tick.
 
-### NiApplication Time Fields (g_Clock = 0x009a09d0)
-
-| Offset | Type | Gb 1.2 Name | Description |
-|--------|------|-------------|-------------|
-| +0x54 | float | m_fCurrentTime | Wall-clock time in seconds (passed to TGTimerManager#2) |
-| +0x58 | float | m_fLastTime | Previous m_fCurrentTime (-1.0 = uninitialized) |
-| +0x5C | float | m_fDeltaTime | Frame delta in seconds |
-| +0x60 | float | m_fAccumTime | Accumulated time in seconds |
-| +0x64 | int | m_iClicks | Frame counter |
-| +0x74 | float | m_fMinFramePeriod | **1/60 = 0.01667** (BC override from base 1/100) |
-| +0x78 | float | m_fLastFrame | Last frame's accumTime (for rate limiter) |
-
-### TGApp Time Fields (g_Clock + 0x8C)
-
-| Offset | Type | Name | Description |
-|--------|------|------|-------------|
-| +0x8C | int | ??? | Unknown (initialized 0) |
-| +0x90 | float | gameTime | Scaled game time (passed to TGTimerManager#1) |
-| +0x94 | float | timeScaleMax | Time scale upper bound |
-| +0x98 | float | ??? | Unknown (initialized 0) |
-| +0x9C | float | timeRate | Game time rate multiplier (default 1.0) |
-| +0xA0 | float | maxTimeRate | Maximum allowed time rate (default 1.0) |
-| +0xA4 | bool | ??? | Flag (default true) |
-
-The `gameTime` at +0x90 advances as `gameTime += deltaTime * timeRate`. When timeRate=1.0,
-gameTime tracks wall-clock time. The SWIG function `UtopiaModule.SetTimeRate()` modifies +0x9C.
+`TGEventManager::ProcessQueue` similarly drains fully. There is no per-tick event budget; queued events all dispatch before the tick returns.
 
 ---
 
-## TGTimerManager
+## 4. Per-System Tick Gates [v5-validated 2026-05-28]
 
-Two instances:
-- **0x0097F898**: Updated with `gameTime` (g_Clock+0x90) -- game-logic timers
-- **0x0097F810**: Updated with `frameTime` (g_Clock+0x54) -- wall-clock timers
+Every per-tick subsystem in the binary, ordered by frequency.
 
-**FUN_006dc490** (TGTimerManager::Update):
-Walks a sorted list of TGTimer objects. For each timer whose fire time <= current time,
-posts the timer's event to the TGEventManager. Handles repeating timers by rescheduling.
+### Main loop (the driver itself)
 
----
+| System | Address | Rate | Constant source | Wire impact |
+|--------|---------|------|-----------------|-------------|
+| Application_RunMessageLoopIteration | 0x007b8790 | Unthrottled (PeekMessage spin) | n/a | None directly |
+| UtopiaApp_PerFrameTick idle throttle | 0x00438e20 | ~20 Hz floor when GameSpy idle | immediate 49 @ 0x00438e3c | None directly |
+| Application::Tick frame-rate cap | FUN_006cdd20 | 60 Hz render cap | `0x3C888889` = 1/60 @ app[0x1d] (seeded at 0x00437fea) | Render only |
+| Proxy GameLoopTimerProc | (proxy DLL) | 30 Hz (33ms) | `SetTimer(hwnd, 0xBCBC, 33, ...)` | Drives all packet I/O via TopWindow::Update |
 
-## Frame Budget Scheduler (FUN_0046f420)
+### Per-main-tick (run every main tick)
 
-This is the **game update dispatcher** that calls registered updateable objects (ships, AI, physics, etc.).
+| System | Address | Gate | Constant | Wire impact |
+|--------|---------|------|----------|-------------|
+| TGTimerManager::Update (gameTime) | FUN_006dc490 | none — drains queue | n/a | Posts events that may emit packets |
+| TGTimerManager::Update (frameTime) | FUN_006dc490 | none — drains queue | n/a | Posts events that may emit packets |
+| TGEventManager::ProcessQueue | FUN_006da2c0 | none — drains queue | n/a | Dispatches all queued events |
+| Ship__AITickScheduler | 0x004721b0 | up to 4 cycles/ship/tick, 6-eval cap | floor[1,4]; hard-cap 6 | Posts AI events (BUILDER_DONE 0x800017 etc.) |
+| TGWinsockNetwork::Update | FUN_006b2620 | none | n/a | Drives `SendOutgoingPackets` (see [packet-bundling.md](../networking/packet-bundling.md)) |
+| SendOutgoingPackets | 0x006b55b0 | none | n/a | All outbound UDP per peer |
+| ProcessIncomingPackets | 0x006b5c90 | none | n/a | All inbound UDP processing |
+| MultiplayerGame::SendStateUpdates | 0x0069ee50 | **ungated** | n/a | StateUpdate (0x1C) per ship per peer every tick |
+| Ship__WriteStateUpdate | 0x005b17f0 | per-field dirty flags + 1.0s force-resend | DAT_00888860 = 1.0f | StateUpdate payload suppression only |
+| PoweredSubsystem::Update | FUN_00562470 | none | n/a | Power state in StateUpdate |
+| RepairSubsystem::Update | FUN_005652a0 | none | n/a | Posts events 0x800074 (REPAIRED), 0x800075 (TIME_TO_REPAIR) |
+| CloakingSubsystem::Update | FUN_0055e500 | none | engage time 5.0s, fail threshold 0.8f | Cloak state in StateUpdate flag 0x40 |
+| ShieldGenerator::BoostShield | FUN_0056a420 | none | DAT_0088bacc = 0.166667f power fraction | StateUpdate shield fields |
 
-Key behavior:
-- Maintains a **16-sample ring buffer** of frame times (at DAT_00981560)
-- Computes an **average frame time** (excluding min/max outliers) as the budget
-- Objects are organized into **4 priority tiers** (1-3 + high-priority tier 0)
-- Each tier gets time-sliced: objects update until the budget is exhausted
-- Uses a **round-robin counter** (DAT_009815e4) to alternate which tier gets first pick
-- If budget remains after the first tier, subsequent tiers can use it
+### Sub-rate (gated below main tick)
 
-This ensures heavy objects (like AI pathfinding) don't starve lightweight ones (like input processing).
+| System | Address | Gate | Constant | Wire impact |
+|--------|---------|------|----------|-------------|
+| PoweredMaster::Update | 0x00563780 | `currentTime - ship+0xc0 > 1.0s` (1 Hz strict) | DAT_00892e20 = 1.0f | Battery state in StateUpdate |
+| WeaponSystem child Update | FUN_005847d0 inner | `child+0x12 > 0.33s` (~3 Hz per child) | DAT_00892fc0 = 0.33f | Drives phaser recharge / torpedo reload, surfaces in StateUpdate flag 0x80 |
+| Collision per-pair cooldown | 0x005a22a0 | 5-way conditional table | 0.1f / 0.125f / 0.166667f / 0.25f / 0.5f | CollisionEffect (0x15) per pair |
 
----
+### Super-rate (multiple cycles per main tick)
 
-## What Determines Tick Rate?
+| System | Address | Cap | Notes |
+|--------|---------|-----|-------|
+| AI ProcessAITick | 0x004722d0 | up to 4 cycles/ship/tick, 6-eval budget | Soft real-time catch-up if delta is large |
 
-### Stock Game (with Renderer)
+### Subsystem Update master gate
 
-1. **Main loop**: `PeekMessage` busy loop, no sleep
-2. **Frame rate limiter**: `m_fMinFramePeriod = 1/60` (60 FPS cap)
-   - Only gates rendering readiness, NOT game logic execution
-   - OnIdle still runs even when frame is "too fast"
-3. **GPU bottleneck**: `SwapBuffers()` / `Present()` blocks if vsync is on
-4. **Effective rate**: Typically 30-60 FPS depending on GPU, monitor, vsync settings
-5. **Game logic runs every iteration** of the main loop (not frame-rate-limited)
-
-### Stock Dedicated Server (Headless)
-
-1. **Main loop**: Same PeekMessage busy loop
-2. **No renderer**: The `SwapBuffers` / `Present` path is never reached
-3. **Frame rate limiter**: Still 1/60, but only gates a `readyToRender` flag that nothing checks
-4. **No Sleep anywhere**: None of the 4 Sleep call sites are in the main loop:
-   - `FUN_006acda0` (Sleep wrapper) -- GameSpy query response loop only
-   - `py_time_sleep` (0x00768330) -- Python `time.sleep()` only
-   - 0x0085867b, 0x0085cd47 -- CRT thread synchronization, Sleep(1)
-5. **Result**: **100% CPU busy loop** at thousands of FPS
-6. **Game time advances correctly** because deltaTime is computed from timeGetTime()
-
-### Our Proxy Server (GameLoopTimerProc)
-
-We bypass the native main loop entirely. Our `GameLoopTimerProc` is called by Windows `SetTimer`
-at approximately 60 Hz (16ms intervals). Each invocation calls:
-1. `UTOPIA_MAIN_TICK(UTOPIA_APP_OBJ, NULL)` -- the same MainTick as the native loop
-2. `TGNETWORK_UPDATE(wsn, NULL)` -- explicit network pump
-
-This gives us a stable ~60 Hz tick rate without burning 100% CPU.
+All subsystem Update bodies are gated on `DAT_0097fa89 != 0 AND (DAT_0097fa89 != 0x01 OR DAT_0097fa8a != 0)` — server runs subsystem updates; clients run them too but the state is read-only on the client.
 
 ---
 
-## Sleep Usage in stbc.exe
+## 5. Network Cadence Constants [v5-validated 2026-05-28]
 
-Only 4 call sites in the entire binary, **none in the main loop**:
+The cadences that bound multiplayer state replication.
 
-| Address | Context | Duration |
-|---------|---------|----------|
-| 0x006acda5 | GameSpy query loop (`FUN_006aa680`) | 10ms |
-| 0x00768988 | `py_time_sleep` (Python `time.sleep()`) | variable |
-| 0x0085867b | CRT thread sync | 1ms |
-| 0x0085cd47 | CRT thread sync | 1ms |
+| Constant | Address | Value | Read at | Meaning |
+|----------|---------|-------|---------|---------|
+| Frame cap | app[0x1d] (seeded 0x00437fea) | 1/60 = 0.01667s | FUN_006cdd20 | 60 Hz render readiness |
+| Idle throttle | imm 0x31 @ 0x00438e3c | 49 ms | UtopiaApp_PerFrameTick | ~20Hz floor when GameSpy idle |
+| Force-resend (pos/rot) | DAT_00888860 | 1.0f | Ship__WriteStateUpdate (0x005b17f0) | Forces absolute pos resync every 1s |
+| Keepalive interval | DAT_0088bd58 | 5.0f | TGWinsockNetwork_Update (FUN_006b4560) | Internal connect ping when no peer activity |
+| Connect retry | WSN+0xb8 (ctor 0x42340000) | 45.0f | TGWinsockNetwork_Update (boot path) | Boot-phase peer connect retry |
+| Session timeout | WSN+0xb4 (ctor 0x43b40000) | 360.0f | inferred from peer last-recv | Hard disconnect after 6 min silence |
+| Stale-disconnect threshold | 0x008958cc | 15.0f | SendOutgoingPackets post-scan | Triggers peer disconnect after 15s no traffic |
+| GameSpy heartbeat | hardcoded | 30s, max 10 attempts | qr_t::Heartbeat | LAN/master server presence |
+| AI lock-time bonus | DAT_0088bb20 (float) | 2.0f | Ship__ProcessAITick (0x004722d0) | AI cycle bonus on delta overshoot |
+| PoweredMaster 1Hz | DAT_00892e20 | 1.0f | PoweredMaster_Update (0x00563780) | Battery + reactor tick |
+| WeaponSystem 3Hz | DAT_00892fc0 | 0.33f | WeaponSystem__Update (FUN_005847d0) | Per-weapon-child gate |
+| Scene-priority min budget | DAT_0088bb20 (double) | 0.01 | FUN_0046f420 | Min per-group budget |
+| Scene-priority divisor | DAT_0088bb28 | 1/14 (double) | FUN_0046f420 | 14-sample rolling-mean divisor |
+
+**Net effect on StateUpdate traffic**: At proxy 30 Hz with 8 players and 16 trackers each, base emission rate is ~3,840 send sites/sec across all peers, heavily reduced by per-field dirty-flag suppression. Stock client would run the same loop at 60+ Hz, doubling base emission.
 
 ---
 
-## Key Constants
+## 6. NetImmerse Adaptive Scene-Priority Scheduler [v5-validated 2026-05-28]
 
-| Address | Value | Name | Usage |
-|---------|-------|------|-------|
-| 0x00894a1c | 0.001f | MS_TO_SEC | timeGetTime delta -> seconds |
-| 0x008958cc | 15.0f | NET_TIME_BUDGET | Network processing time budget (seconds) |
-| BC ctor | 0x3c888889 (1/60) | m_fMinFramePeriod | Frame rate limiter period |
-| NiApp ctor | 0x3c23d70a (1/100) | m_fMinFramePeriod_base | Base class default (100 FPS cap) |
+`FUN_0046f420` is the per-frame work dispatcher that calls registered updateable objects (ships, AI, physics). It uses a NetImmerse-style adaptive deadline.
+
+### Algorithm
+
+1. **Sample buffer**: 16-sample ring at `DAT_00981560`, circular index `DAT_009815E0 & 0xF`. Each entry is a frame time.
+2. **Mean computation**: Excludes min and max from the average:
+   ```
+   mean = (sum - min - max) / 14
+   ```
+   The divisor `1/14` lives at `DAT_0088bb28` (double) = `0x3FB2492492492492`.
+3. **Per-group budget**: 4 priority groups (0-3). Group 0 (highest) runs first; remaining budget cascades down to groups 1, 2, 3.
+4. **Min budget clamp**: `DAT_0088bb20` (double) = 0.01s — a group always gets at least 10ms of budget regardless of frame timing.
+5. **Round-robin**: `DAT_009815E4` rotates which group gets first pick across ticks.
+
+### Group iteration
+
+`FUN_0046f610` iterates the list at `DAT_00981494[group*6]`, calling each entry's `vtable[0](deadline)` until budget exhausted.
+
+### Implication
+
+High-priority objects (rendered ships, active AI) can starve low-priority ones (idle scene props) when the frame is loaded. This explains observed "AI freeze" reports under heavy combat load — when group 0 burns the full budget, groups 1-3 may skip ticks entirely.
 
 ---
 
-## Implications for OpenBC
+## 7. OpenBC Parity Implications
 
-1. **No fixed timestep**: BC uses variable deltaTime everywhere. All physics, damage, repair, power
-   systems multiply by `dt`. A reimplementation MUST use variable timestep or carefully convert.
+### Critical-must-match
 
-2. **No Sleep in main loop**: The stock dedicated server burns 100% CPU. A reimplementation should
-   add explicit Sleep/yield to maintain target tick rate without wasting CPU.
+1. **Per-system tick gates MUST match.** PoweredMaster at 1Hz, WeaponSystem child at 3Hz, AI at up to 4 cycles/ship/tick. Wrong rates cause wrong shield/power/weapon state on the wire.
+2. **Force-resend interval is 1.0s.** Position/rotation absolute resyncs every 1s regardless of dirty flag — receivers depend on this to prevent drift.
+3. **StateUpdate is UNGATED per main tick.** Every ship emits a StateUpdate for every peer every tick (suppression only via dirty flags). Skipping ticks breaks dead-reckoning on clients.
+4. **Session timeout is 360s.** Clients silent for >6 min get hard-disconnected.
 
-3. **Two timer managers**: Game timers (scaled by timeRate) and wall-clock timers (unscaled) are
-   separate systems. timeRate can be modified via Python (`UtopiaModule.SetTimeRate()`).
+### Important-to-match
 
-4. **Frame budget scheduler**: The updateable priority system ensures fair time-slicing across
-   game objects. This is not strictly necessary for a reimplementation but explains why the stock
-   game remains responsive even under heavy load.
+5. **Main tick rate**: OpenBC currently runs ~30 Hz (matching the proxy). Stock runs ~60+ Hz. The wire format tolerates both, but observation density on the wire will differ (more StateUpdates per second on stock).
+6. **Idle throttle**: When GameSpy is registered but idle, drop to ~20Hz. Avoids CPU burn on a stalled dedicated server.
+7. **Scene-priority budget**: A reimplementation can use a simpler scheduler if it can keep tick latency under 33ms. The adaptive algorithm matters when frames are over budget.
 
-5. **Network is pumped from MainTick**: `TGWinsockNetwork::Update` (0x006b4560) is called from
-   the frame budget scheduler as a registered updateable, not directly from MainTick. It has a
-   15-second time budget for processing incoming messages before yielding.
+### Safe to differ
+
+8. **Frame-rate cap (60 Hz render gate)**: only affects rendering, irrelevant to headless server.
+9. **49ms idle anchor**: implementation detail; any throttle to ~20Hz when no players present is equivalent.
+10. **AI cycle bonus** (2.0f lock-time): tuning value; matches catch-up semantics, not wire-observable.
+
+---
+
+## 8. Cross-Refs
+
+- [packet-bundling.md](../networking/packet-bundling.md) — what `SendOutgoingPackets` does every tick (4-pass drain, 255-msg cap, 512-byte MTU)
+- [ack-outbox-deadlock.md](../networking/ack-outbox-deadlock.md) — the per-tick ACK retransmit gate that interacts with these cadences
+- [netimmerse-transport-deep-dive.md](../networking/netimmerse-transport-deep-dive.md) — engine-layer transport
+- [multiplayer-flow.md](../networking/multiplayer-flow.md) — how cadences interact during join handshake
+- [stateupdate.md](../protocol/stateupdate.md) — the per-tick wire payload these cadences drive
+
+---
+
+## 9. Open Questions
+
+1. **app[0x27] = 0.25f semantics**: seeded in ctor but no usage trace yet. Possibly auto-pause delay.
+2. **FUN_006e6420 identity**: appears to be an empty stub; not load-bearing.
+3. **SensorSubsystem Update rate**: no dedicated function found this pass; assumed to run at the generic per-tick subsystem rate. Worth a follow-up.
+4. **Stock client actual tick rate when not GPU-bound**: needs instrumentation; estimate is 60-200 Hz uncapped, ~60 Hz with vsync.
+5. **DAT_0099c6bc network-time anchor writer**: all callers READ it; the writing path was not located this pass.
+
+---
+
+## 10. Functions Created This Pass
+
+- `Application_RunMessageLoopIteration` @ 0x007b8790 (PeekMessage iteration body)
+- `UtopiaApp_PerFrameTick` @ 0x00438e20 (per-frame idle dispatch + 49ms throttle)
+- `UtopiaApp_FrameWork` @ 0x00438e60 (vtable slot 0x94)
+- `Application_OnPauseTransition` @ 0x006cdf70
+- `TGWinsockNetwork_Update` @ 0x006b2620 (vtable slot 2)
+
+Ghidra saved successfully.

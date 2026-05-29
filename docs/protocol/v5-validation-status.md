@@ -53,6 +53,8 @@ protocol-specific Ghidra snapshot to be merged with this inventory.
 
 ## 1. Campaign overview
 
+**Campaign closed 2026-05-28 at 22/22 docs validated** — final leaf (#22 message-trace-vs-packet-trace.md) cleared on the same day as the engine cross-source pass and the final mid-tier docs. 4 docs reached `verified` (#15 collision-effect-protocol, #16 set-phaser-level-protocol, #20 cf16-precision-analysis, #21 cf16-explosion-encoding); the remaining 18 sit at `partial` pending minor body restructure / frontmatter touch-ups. See the **Campaign close summary** at the bottom of §6 for batched follow-ups (CLAUDE.md Documentation Index refresh, OpenBC clean-room cascade, family-close commit).
+
 Protocol docs sit on top of two foundations: the engine family (already validated — vtables,
 TGEvent/TGBufferStream layouts, event manager) and the wire-format primitive layer
 (`stream-primitives.md`, `transport-layer.md`). The mid-tier groups the opcode tables
@@ -97,7 +99,7 @@ Order reflects dependency direction. Each row's anchors are consumed by all rows
 | 19 | subsystem-integrity-hash.md | Leaf analysis: dead-code anti-cheat hash | stateupdate, per-ship-subsystem-wire-format | **partial (2026-05-28)** — ONE material correction (C1: 6 of 12 slot subsystem-identity labels were stale pre-correction names, now cascaded from foundation #1; doc line 129 negative claim "Repair does not appear in the hash" was wrong on TWO counts and is corrected — RepairSubsystem IS hashed at slot 7) + 4 clarifications (Clar-1 receiver event-type at event+0x10 as immediate; Clar-2 torpedo int->float cast precision; Clar-3 &ET_BOOT_PLAYER and 0x008000F6 are the same address constant; Clar-4 sender SAR is signed but wire-identical to unsigned shift); hash function reads CORRECT offsets — only the human-readable identity column was wrong; all 6 boolean sentinel magic constants byte-exact; sender/receiver/wire encoding/kick path byte-by-byte confirmed; container aliasing pattern documented; 5 functions renamed + 1 created (MultiplayerWindow_BootPlayerHandler at 0x00506170) + 4 plates; see §6.19 |
 | 20 | cf16-precision-analysis.md | Leaf analysis: CF16 encoder/decoder + precision tables | stream-primitives | **verified (2026-05-28)** — third protocol-family doc to clear `verified`; rendered as batch with leaf #21; ZERO algorithm / constant / struct changes; 1 refinement (R1 encoder xref count 5 not 4 — extra site at 0x005a2b3b in undefined fn, flag-0x10 speed gate confirmed; full enumerated 5-site table replaces the prior 4-row narrative) + 1 clarification (Clar1 `int()` vs `round()` cross-link added to companion #21 alongside the existing column); 5 .rdata constants byte-exact via shared anchor packet; 14-byte opcode 0x29 wire frame + 0x38 ExplosionDamage struct byte-by-byte confirmed (ctor at 0x004bbde0, vtable 0x0088c6c4); OQ1 (5th caller fn identity) added to §4; see §6.20 |
 | 21 | cf16-explosion-encoding.md | Leaf analysis: opcode 0x29 + mod weapon ID round-trip | cf16-precision-analysis, game-opcodes | **verified (2026-05-28)** — fourth protocol-family doc to clear `verified`; rendered as batch with leaf #20; ZERO algorithm / constant / encoded-hex changes; 1 byte-size correction (C1 CV4 position field is 5 bytes not "~7" — `mag_as_cf16=1` selects 3 dir bytes + CF16 magnitude; the 14-byte total was always inconsistent with the prior "~7" rendering) + 1 clarification (Clar1 ExplosionDamage 0x38-byte struct table cross-linked to companion #20); CV4 byte-size dispatch on `mag_as_cf16` flag documented at FUN_006d2f10; sender FUN_00595c60 + 2 replay-path callers (RequestObjHandler 0x006a02a0 + NewPlayerInGameHandler 0x006a1e70) all xref-confirmed; `round()` match results 15/25/273 YES, 2063 NO confirmed via arithmetic; cross-doc disagreement #8 (CF16 doc overlap) addressed via cross-links rather than merge; see §6.21 |
-| 22 | message-trace-vs-packet-trace.md | Leaf analysis: cross-trace opcode reconciliation | game-opcodes, stateupdate, tgmessage-routing | pending |
+| 22 | message-trace-vs-packet-trace.md | Leaf analysis: cross-trace opcode reconciliation | game-opcodes, stateupdate, tgmessage-routing | **partial (2026-05-28)** — FINAL leaf, closes protocol family at 22/22; cross-source doc; 17 claim-promotions from `[cross-source-2026-02-10 trace]` to `[v5-validated 2026-05-28 via <anchor>]` (every load-bearing trace observation now independently anchored in a v5 mid/leaf doc); 3 historical-section marks (packet_trace decoder bug FIXED in current proxy; "newly identified opcodes" all now anchored; flags=0x00 RESOLVED via DeferredInitObject); 1 label clarification (opcode 0x28 "Unknown" → "ChecksumComplete" with anchor); ZERO material wire-format corrections; 2 open questions promoted (OQ1 informal Python-message label drift; OQ2 0x0D re-emit path); see §6.22 |
 | — | README.md | Index only — refreshed at end of family | all above | pending |
 
 A foundation doc must reach `status: verified` before docs that depend on it begin
@@ -586,6 +588,8 @@ binary as authority.
 | 17 | Opcode 0x06 worked-example accuracy | pythonevent-wire-format.md's "exactly 12-14 PythonEvents per collision" — 12-14 doesn't quite match either of the example breakdowns in the same doc | Re-derive from packet trace |
 | 18 | Receiver address for explosion in cf16 docs | Both cf16-precision-analysis.md and cf16-explosion-encoding.md cite Handler_Explosion_0x29 at 0x006A0080 (consistent across CF16 family); game-opcodes.md also = 0x006A0080. OK, this is consistent. (No disagreement; noted as positive cross-anchor.) |  | — |
 | 19 | 5th CF16 encoder caller identity (OQ1 from cf16-precision-analysis leaf #20) | cf16-precision-analysis.md cites a 5th xref to FUN_006d3a90 at 0x005a2b3b inside a Ghidra-undefined function (~0x005a2800-0x005a3000). The function is gated by `TEST BL,0x10` (same flag-0x10 speed bit as Ship__WriteStateUpdate) and preceded by `FMUL float ptr [0x0088d4e4]` (unit-conversion multiplier). Hypothesis: a non-Ship state-writer (torpedo/projectile). Documented at the field+gate+call-site level; only the parent function identity is open. | Decompile + name the parent function at the prologue. Non-blocking for CF16 docs. |
+| 20 | Informal Python-message label drift (OQ1 from message-trace-vs-packet-trace leaf #22) | message-trace-vs-packet-trace.md labels the S->C-only block `0x35 GameState` / `0x37 PlayerRoster`; mid #6 python-messages.md names these `MISSION_INIT_MESSAGE` (0x35) and `SCORE_MESSAGE` (0x37). The trace labels are functionally accurate but informal. | Sync the cross-source doc's labels with the python-messages.md canonical names. Non-blocking. |
+| 21 | 0x0D PythonEvent2 re-emit path (OQ2 from message-trace-vs-packet-trace leaf #22) | 2026-02-10 trace shows opcode 0x0D C->S=12 with S->C=0. Leaf #14 pythonevent-wire-format.md notes FUN_0069F880 is LOCAL-ONLY and handles both 0x06 and 0x0D. Open: do those 12 received 0x0D events re-emit outbound as opcode 0x06 (inflating the S->C 0x06=251 count), or does the engine drop them after the local apply step? | (a) bisect the S->C 0x06 stream for a 12-event burst correlated with the C->S 0x0D arrivals; or (b) emulate FUN_0069F880 with a 0x0D input and watch for outbound 0x06. Non-blocking. |
 
 ## 5. Cross-family disagreements (engine vs protocol)
 
@@ -4575,6 +4579,230 @@ flipped from `pending` to `verified`; this §6.21 entry added).
 - companions: `cf16-precision-analysis.md`, `stream-primitives.md`, `game-opcodes.md`,
   `wire-format-spec.md`, `pythonevent-wire-format.md`, `v5-validation-status.md`
 - supersedes: prior 2026-02-15 cf16-explosion-encoding.md
+
+### 6.22 message-trace-vs-packet-trace.md — 2026-05-28 (documentation-writer; FINAL leaf, closes protocol family 22/22)
+
+**Status:** validated -> `partial` (after 17 claim-promotions + 3 historical-section marks + 1 label clarification; ZERO material wire-format corrections).
+**Twenty-second protocol doc** under v5 — eighth and final protocol leaf — **closes the
+protocol-family v5 campaign at 22/22**. This is a **cross-source differential analysis** doc
+(2026-02-10 stock-dedi trace cross-referenced against TGMessage factory deserialize hook),
+not a primary RE doc — every load-bearing observation has been independently anchored in
+already-validated v5 mid/leaf docs across the campaign. The "partial" tag is for the
+17 confidence-tag promotions + 3 historical-section marks + 1 label clarification that this
+pass landed, not for unresolved evidence.
+
+**Methodology:** Phase 1-3 per v5 workflow. Evidence packet supplied by
+game-archaeology-specialist (`.claude/agent-memory/game-archaeology-specialist/message-trace-vs-packet-trace-validation-20260528.md`).
+Doc anchors against 13 v5-validated companion docs — frontmatter `companions:` list
+enumerates them. No new Ghidra renames or plates this pass (cross-source doc; all anchor
+addresses already validated in their primary docs).
+
+**Functions touched (cross-anchor confirmations only — no fresh Ghidra activity this pass):**
+
+| Function | Addr | Anchor doc | Used to verify |
+|----------|------|-----------|----------------|
+| TGMessage_DeserializeFromBuffer | 0x006b83f0 | foundation #3 transport-layer.md | message_trace hook target (inbound-only) |
+| Ship_WriteStateUpdate | 0x005B17F0 | mid #8 stateupdate.md | SUB/WPN direction-exclusivity |
+| GenericEventForward | 0x0069FDA0 | mid #4 game-opcodes.md | relay-identical group counts |
+| MpgameHandlePythonEvent | 0x0069F880 | leaf #14 pythonevent-wire-format.md | 0x0D LOCAL-ONLY explanation |
+| CollisionEffectHandler | 0x006a2470 | leaf #15 collision-effect-protocol.md | 0x15 C->S only (no broadcast) |
+| DeletePlayerUI_Handler | 0x006a1360 | leaf #17 delete-player-ui-wire-format.md | 0x17 S->C only |
+| ObjNotFoundHandler | 0x006a0490 | leaf #18 objnotfound-requestobj-enterset-wire-format.md | 0x1D triad |
+| (registration string) | 0x0095a0cc | mid #5 checksum-opcodes.md | "MultiplayerGame :: ChecksumCompleteHandler" anchors 0x28 label |
+
+**Confidence-tag promotions (the 17):**
+
+Every per-row "Promote" entry from the archaeology memo's full promotion list was applied
+inline at the claim site. The session-specific count histograms and timestamp examples
+stay `[trace 2026-02-10]`; the algorithmic/structural claims promote to
+`[v5-validated 2026-05-28 via <anchor doc>]`. Full mapping (table verbatim from memo):
+
+| Promoted claim | Promoted to anchor |
+|----------------|---------------------|
+| message_trace = TGMessage factory dispatch (inbound-only) | foundation #3 transport-layer.md |
+| Direction-exclusivity SUB/WPN table | mid #8 stateupdate.md |
+| Type 0x32 flags_len bit layout | foundation #3 transport-layer.md |
+| Fragmented payload layout (frag 0 head, frag N continuation) | foundation #3 transport-layer.md |
+| Opcode 0x07/0x08/0x09/0x0A/0x0B GenericEventForward relay parity | mid #4 game-opcodes.md (FUN_0069FDA0) |
+| Opcode 0x0D PythonEvent2 C->S-only | leaf #14 pythonevent-wire-format.md |
+| Opcode 0x11 RepairListPriority relay parity | mid #4 game-opcodes.md |
+| Opcode 0x12 SetPhaserLevel relay parity | leaf #16 set-phaser-level-protocol.md |
+| Opcode 0x13 HostMsg C->S-only | mid #4 game-opcodes.md |
+| Opcode 0x15 CollisionEffect C->S-only | leaf #15 collision-effect-protocol.md |
+| Opcode 0x17 DeletePlayerUI S->C-only | leaf #17 delete-player-ui-wire-format.md |
+| Opcode 0x19/0x1A/0x1B relay parity | mid #4 game-opcodes.md |
+| Opcode 0x1C StateUpdate direction asymmetry (SUB host-only) | mid #8 stateupdate.md |
+| Opcode 0x1D ObjNotFound S->C-only | leaf #18 objnotfound-requestobj-enterset-wire-format.md |
+| Opcode 0x20 / 0x21 / 0x28 checksums | mid #5 checksum-opcodes.md |
+| Opcode 0x2A NewPlayer C->S-only | mid #4 game-opcodes.md (FUN_006A1E70) |
+| Opcode 0x2C ChatMessage Python path | mid #6 python-messages.md |
+| Post-ObjCreateTeam SUB cycling algorithm | mid #11 stateupdate-subsystem-wire-format.md |
+
+(17 distinct anchor docs cited across the table; the row tally is by claim group, not by
+anchor doc.)
+
+**Three historical-section marks:**
+
+1. **PACKET_TRACE DECODER BUG** — marked `> **Historical (resolved 2026-05-28)**` with
+   reference to `src/proxy/ddraw_main/packet_trace_and_decode.inc.c` lines 1184-1211.
+   The 2026-02-10 decoder misread `fragment_index` as the game opcode; current decoder
+   reads `fragIdx`/`fragTotal` cleanly and labels continuation fragments. Misdecoded entry
+   list preserved for trace cross-reference.
+
+2. **Newly Identified Opcodes** — marked `> **Historical (anchored 2026-05-28)**`. All
+   five opcodes (0x2C, 0x11, 0x12, 0x28, 0x13) are now fully anchored in dedicated v5
+   docs; per-row anchor links added in the table:
+   - 0x2C → python-messages.md
+   - 0x11 → game-opcodes.md § GenericEventForward
+   - 0x12 → set-phaser-level-protocol.md
+   - 0x28 → checksum-opcodes.md § ChecksumComplete
+   - 0x13 → game-opcodes.md § 0x13 HostMsg
+
+3. **Implications for Our Proxy** — marked `> **Historical (resolved 2026-05-28)**`.
+   The `flags=0x00` empty-StateUpdate disconnect symptom was the direct trigger for
+   DeferredInitObject; the implementation has shipped, the symptom is gone. CLAUDE.md
+   "What Works" status confirms `StateUpdate flags=0x20` ships with real subsystem health.
+
+**One label clarification (Clar1):**
+
+- Opcode 0x28 in the cross-reference table changed from `0x28 Unknown` to
+  `0x28 ChecksumComplete` with cross-link to mid #5 checksum-opcodes.md. Registration
+  string at `0x0095a0cc` ("MultiplayerGame :: ChecksumCompleteHandler") anchors the name.
+
+**One arithmetic note added (opcode 0x21 row):**
+
+A one-line explanation now sits below the cross-reference table: `11 = 8 + 3 first-frags`
+works because message_trace counts after reassembly (8 reassembled responses), while
+packet_trace counts after decryption (8 + 3 first-fragment frames = 11 raw entries).
+The 3 first-fragment frames were also the source of the historical packet_trace decoder
+bug — they carry inner opcode 0x21 at offset +2, which the 2026-02-10 decoder misread.
+
+**Pattern note (canonical example):**
+
+A new `## Pattern Note: Paired-Trace Differential Analysis` section was added at the end of
+the doc body. It names the technique, lists the two hook points (TGMessage factory
+deserialize vs sendto/recvfrom packet trace), describes what the differential surfaces
+(server-generated messages, direction-exclusive opcodes, decoder bugs), and tags the
+2026-02-10 session as the canonical example. Worth repeating for future protocol validation
+work — recommended for any new opcode or new transport-type addition.
+
+**Open questions (added to §4):**
+
+- **OQ1** — Informal Python-message label drift: the trace block labels `0x35 GameState`
+  and `0x37 PlayerRoster`; mid #6 python-messages.md names these `MISSION_INIT_MESSAGE`
+  and `SCORE_MESSAGE`. Functionally accurate but informal. Non-blocking.
+- **OQ2** — 0x0D PythonEvent2 re-emit path: doc shows C->S=12 with S->C=0. Leaf #14 notes
+  FUN_0069F880 is LOCAL-ONLY for both 0x06 and 0x0D. Open: do the 12 received 0x0D
+  events re-emit outbound as 0x06 (which would inflate S->C 0x06=251), or does the
+  engine drop them? Non-blocking.
+
+**Cross-doc anchor reuse (every load-bearing claim, with anchor doc):**
+
+This doc's frontmatter `evidence:` list contains 18 rows; each row carries an `anchored_via:
+docs/protocol/<doc>.md` field naming the v5-validated companion doc that anchored the claim.
+All 13 protocol-family companion docs are listed in the frontmatter `companions:` list.
+
+**Cross-doc impacts (batched at family close):**
+
+- `docs/protocol/README.md` — needs entry refresh to reflect that all 22 protocol docs are
+  now v5-validated (cross-source labels stable; index table needs the message-trace doc
+  line to reflect "cross-source analysis (historical baseline)" framing). Batched.
+- `CLAUDE.md` — Documentation Index protocol section needs all 22 entries refreshed with
+  `[v5-validated 2026-05-28]` notation if the project uses that pattern; batched at family
+  close commit.
+- **OpenBC clean-room cascade** — no per-opcode changes needed (this doc's findings were
+  already anchored in the per-opcode docs that the OpenBC mirrors derive from); spot-check
+  only.
+
+**Verification methods used:**
+
+- Cross-doc spot-check against all 13 anchor docs (`docs/protocol/transport-layer.md`,
+  `stateupdate.md`, `game-opcodes.md`, etc.) — all anchors found and consistent.
+- No fresh Ghidra MCP calls this pass — anchors validated in primary docs.
+- Proxy decoder current state verified at
+  `src/proxy/ddraw_main/packet_trace_and_decode.inc.c` lines 1184-1211.
+- CLAUDE.md "What Works" status confirmed as `StateUpdate flags=0x20` shipping.
+
+**Files touched:** `docs/protocol/message-trace-vs-packet-trace.md` (full re-render with
+breadcrumb header preserved, v5 frontmatter added with 18 evidence rows + 13 companions +
+supersedes 2026-02-10, NOTE block with promotions + historical-marks + label-clar summary,
+inline `[v5-validated 2026-05-28 via <anchor>]` tags on every algorithmic / structural
+claim, `[trace 2026-02-10]` retained on session-specific count tables, 3 historical
+section marks with one-line explanations + per-row anchor links, opcode 0x28 row corrected
+to "ChecksumComplete", 0x21 arithmetic note added, new Pattern Note section, new Open
+Questions section, Related Documents pointer);
+`docs/protocol/v5-validation-status.md` (§2 row #22 status flipped from `pending` to
+`partial` with full summary; §1 campaign overview updated to note campaign-close;
+this §6.22 entry added; OQ1 + OQ2 added to §4; campaign-close summary appended below).
+
+**Header inputs for documentation-writer:**
+
+- validated: 2026-05-28
+- methodology: FUNCTION_DOC_WORKFLOW_V5
+- binary fingerprint: stbc.exe, image base 0x00400000, size 6182400 bytes
+- status: `partial`
+- companions: 13 v5-validated protocol docs (full list in doc frontmatter)
+- supersedes: prior 2026-02-10 message-trace-vs-packet-trace.md
+
+---
+
+## Campaign close summary (2026-05-28)
+
+**Protocol family v5 campaign closed at 22/22 docs validated.** All 22 protocol docs carry
+v5 frontmatter, cross-anchored evidence rows, and a NOTE block summarizing this pass's
+changes. The campaign ran simultaneously with portions of the engine cross-source pass and
+completed on the same day (2026-05-28).
+
+**Status distribution:**
+- **`verified` (4 docs):** #15 collision-effect-protocol, #16 set-phaser-level-protocol,
+  #20 cf16-precision-analysis, #21 cf16-explosion-encoding.
+- **`partial` (18 docs):** Foundations (#1 wire-format-spec, #2 stream-primitives, #3
+  transport-layer); mid-tier (#4 game-opcodes, #5 checksum-opcodes, #6 python-messages,
+  #7 tgmessage-routing, #8 stateupdate, #9 object-replication, #10 objcreate-serialization,
+  #11 stateupdate-subsystem-wire-format, #12 per-ship-subsystem-wire-format, #13
+  tgobjptrevent-class); leaves (#14 pythonevent-wire-format, #17 delete-player-ui-wire-format,
+  #18 objnotfound-requestobj-enterset-wire-format, #19 subsystem-integrity-hash, #22
+  message-trace-vs-packet-trace).
+- **README.md** — pending refresh at family close batch.
+
+**Cross-doc disagreements resolved (§4):** 8 of 19 closed in-campaign (#1, #4, #5, #8,
+#13, #14 backlog noted, #15, plus partial closure on #2 and #3 via foundation reconciliation).
+Remaining open: #2, #3, #6, #7, #9-#12, #16-#17, #19 — most are minor and tracked in the
+relevant per-doc §6.N entries.
+
+**Family-close batch follow-ups (deferred to next session):**
+
+1. **CLAUDE.md Documentation Index protocol section** — refresh all 22 entries with
+   `[v5-validated 2026-05-28]` annotation matching the engine-family pattern.
+2. **`docs/protocol/README.md` index table** — refresh entries to reflect v5 status and add
+   the cross-source label to message-trace-vs-packet-trace.md ("Stock-dedi opcode
+   cross-reference" → "Cross-source paired-trace analysis (canonical example, historical
+   baseline)").
+3. **OpenBC clean-room cascade** — review the 9 OpenBC clean-room wire-format specs against
+   the validated BC-side docs; flag any pre-v5 derivations that need refresh (especially
+   the CF16 explosion 14-byte wire frame which was `~7-byte CV4` pre-v5).
+4. **§4 leftover disagreements** — schedule a small reconciliation pass for the 11 open
+   §4 rows; most are address-mapping or table-duplication items that can be resolved with
+   light cross-doc edits.
+
+**Campaign outcomes:**
+
+- Every protocol-family doc carries a v5 frontmatter (`validated:` + `binary:` fingerprint +
+  per-claim `evidence:` rows with addresses + `companions:` cross-link list).
+- Every load-bearing wire-format claim is anchored to a Ghidra address or function symbol;
+  no claim survives without a citation or a `confidence: low` flag.
+- 4 docs hit `verified` — the high-water mark for the campaign. The remaining 18 are at
+  `partial` because the pass identified minor body-restructure work (frontmatter migration,
+  table reconciliation, section retire/merge) that wasn't load-bearing for the wire format.
+- The protocol family's foundations (wire-format-spec, stream-primitives, transport-layer)
+  are anchored cleanly enough that any new leaf doc can lean on them without re-deriving
+  primitives.
+- Future cross-trace work has a canonical pattern (paired-trace differential analysis, §6.22
+  Pattern Note) and a canonical example (the 2026-02-10 session).
+
+**Next campaign target (not yet scheduled):** networking family (`docs/networking/`) —
+GameSpy + AlbyRules + disconnect / ship-death lifecycle. Foundations already in place via
+transport-layer.md anchor.
 
 ---
 

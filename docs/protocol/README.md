@@ -4,6 +4,12 @@
 
 Wire formats, opcodes, and serialization for BC's multiplayer protocol.
 
+> **v5 campaign closed 2026-05-28 — all 22 protocol docs v5-validated.** 4 cleared `verified`
+> (collision-effect-protocol, set-phaser-level-protocol, cf16-precision-analysis,
+> cf16-explosion-encoding); 18 sit at `partial` pending minor body restructure /
+> frontmatter touch-ups. See [v5-validation-status.md](v5-validation-status.md) campaign
+> close summary for details.
+
 ## Wire Format (split from monolith)
 
 | Document | Contents |
@@ -30,7 +36,7 @@ Wire formats, opcodes, and serialization for BC's multiplayer protocol.
 | [cf16-precision-analysis.md](cf16-precision-analysis.md) | CF16 precision tables and mod compatibility |
 | [cf16-explosion-encoding.md](cf16-explosion-encoding.md) | CF16 explosion encoding analysis |
 | [objcreate-serialization.md](objcreate-serialization.md) | Full object serialization chain |
-| [message-trace-vs-packet-trace.md](message-trace-vs-packet-trace.md) | Stock-dedi opcode cross-reference |
+| [message-trace-vs-packet-trace.md](message-trace-vs-packet-trace.md) | Cross-source paired-trace analysis (canonical example; 2026-02-10 historical baseline) |
 | [tgmessage-routing.md](tgmessage-routing.md) | TGMessage routing: relay-all, no whitelist, star topology |
 | [objnotfound-requestobj-enterset-wire-format.md](objnotfound-requestobj-enterset-wire-format.md) | Opcodes 0x1D/0x1E/0x1F triad: object recovery + scene transition |
 

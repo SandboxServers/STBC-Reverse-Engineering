@@ -1,8 +1,131 @@
 > [docs](../README.md) / [networking](README.md) / gamespy-discovery.md
 
+---
+title: GameSpy Discovery & Master Server Protocol — RE Analysis
+type: reference + explanation
+audience: re-engineer
+validated: 2026-05-28
+methodology: FUNCTION_DOC_WORKFLOW_V5
+binary:
+  name: stbc.exe
+  size: 6182400
+  base: 0x00400000
+status: partial
+evidence:
+  - claim: "qr_handle_query at 0x006ac1e0 — dispatcher loops query-type table at 0x0095a71c with 8 entries (basic/info/rules/players/status/packets/echo/secure)"
+    address: 0x006ac1e0
+    function: qr_handle_query
+    confidence: high
+    note: "Table at 0x0095a71c byte-confirmed (8 DWORD entries → 8 query-type strings)."
+  - claim: "gs_rc4_cipher at 0x006ac050 — modified GameSpy QR1 PRGA: i = (data[n] + 1 + i) % 256 (standard RC4 is i = (i+1) % 256)"
+    address: 0x006ac050
+    function: gs_rc4_cipher
+    confidence: high
+    note: "Decompile shows uVar5 = (uint)(byte)(*(char *)(iVar4 + param_3) + '\\x01' + (char)uVar5) — byte-confirmed."
+  - claim: "qr_send_heartbeat at 0x006aca60 — formats `\\heartbeat\\<port>\\gamename\\bcommander` from 0x0095a904, sendto to master sockaddr at DAT_00995880"
+    address: 0x006aca60
+    function: qr_send_heartbeat
+    confidence: high
+    note: "Format string at 0x0095a904 byte-confirmed; %d arg = *(undefined4 *)(param_1 + 0xe4), %s arg = param_1 + 8 (gamename buffer)."
+  - claim: "SL_create_broadcast_socket at 0x006aa720 — socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP) + setsockopt(SOL_SOCKET, SO_BROADCAST), stores socket at ServerList+0x88"
+    address: 0x006aa720
+    function: SL_create_broadcast_socket
+    confidence: high
+    note: "socket(2, 2, 0x11); setsockopt(s, 0xffff, 0x20, ...). Result stored at param_1+0x88 (byte offset)."
+  - claim: "SL_send_lan_broadcast at 0x006aa770 — htons port loop, sendto `\\status\\` (8 bytes from 0x0095a554) to 255.255.255.255 across port range"
+    address: 0x006aa770
+    function: SL_send_lan_broadcast
+    confidence: high
+    note: "Source string at 0x0095a554, length 8; broadcast socket read from ServerList+0x88."
+  - claim: "qr_heartbeat_tick at 0x006abd80 — 30000ms interval, max 10 repetitions (counter at qr_t+0xE8), stale window 300,001ms"
+    address: 0x006abd80
+    function: qr_heartbeat_tick
+    confidence: high
+    note: "Constants byte-confirmed: 30000 < DVar2 - uVar1; '\\n' < cVar3 (10 max); 0x493e1 (300,001) stale-window check; counter at qr_t+0xE8; socket at qr_t+0x04; last-tick at qr_t+0xD8."
+  - claim: "gs_validate_encode at 0x006abf70 — standard base64 (3 bytes → 4 chars) using gs_base64_char mapping at 0x006ac020"
+    address: 0x006abf70
+    function: gs_validate_encode
+    confidence: high
+    note: "Output for 6-byte challenge = exactly 8 chars + NUL."
+  - claim: "SL_master_connect at 0x006aa4c0 — TCP client path: recv → strstr `\\secure\\` → RC4 → base64 → send auth + list request"
+    address: 0x006aa4c0
+    function: SL_master_connect
+    confidence: high
+    note: "Reads secret key from ServerList+0x2c (byte offset). Client-side only."
+  - claim: "GameSpy::ctor at 0x0069bfa0 — sets vtable at 0x00895564, +0xED=0, +0xEE=1 (QR/host mode), +0xEF=0, loads TGL, registers handler 0x60006"
+    address: 0x0069bfa0
+    function: GameSpy__ctor
+    confidence: high
+    note: "Flag offsets at +0xED/+0xEE/+0xEF byte-confirmed."
+  - claim: "GameSpy::Tick at 0x0069c440 — branching: if (+0xED==0) return; else if (+0xEE!=0) qr-mode; else server-list mode"
+    address: 0x0069c440
+    function: GameSpy__Tick
+    confidence: high
+    note: "Branch structure matches Section 12 pseudocode."
+  - claim: "SL_start_update at 0x006ab620 — case 0/1/2/default mode dispatch (case 0 = Internet, case 2/3 = LAN)"
+    address: 0x006ab620
+    function: SL_start_update
+    confidence: high
+  - claim: "qr_send_packet at 0x006ac550 — appends `\\queryid\\%d.%d` from 0x0095a8c4, calls sendto"
+    address: 0x006ac550
+    function: qr_send_packet
+    confidence: high
+    note: "%d args: qr_t+0xDC (query seq, accessed as param_1[0x37] in some sites), qr_t+0xE0 (fragment counter, param_1[0x38])."
+  - claim: "Secret key `\"Nm3aZ9\"` constructed on stack in FUN_0069c3a0 (GameSpy::InitBrowser); stored at qr_t+0x48 and ServerList+0x2C (both byte offsets)"
+    address: 0x0069c3a0
+    function: GameSpy__InitBrowser
+    confidence: high
+    note: "Stack literal byte-confirmed: 0x4e/0x6d/0x33/0x61/0x5a/0x39/0x00 = 'N','m','3','a','Z','9','\\0' (6 chars + NUL). Passed to FUN_006aa100 as param_3."
+  - claim: "GameSpy vtable at 0x00895564 — 11 slots (scalar_deleting_destructor + 10 method slots)"
+    address: 0x00895564
+    function: null
+    confidence: high
+    note: "All 11 slot addresses byte-read and match Section 12 table verbatim."
+  - claim: "Master server hostname 0x0095a4fc is the RUNTIME-MUTABLE target of masterserver.txt override (overwritten via _strncpy width 0x40 in FUN_006aa100); 0x0095a594 is the IMMUTABLE canonical source"
+    address: 0x006aa100
+    function: null
+    confidence: high
+    note: "FUN_006aa100 contains `_strncpy(s_stbridgecmnd01_activision_com_0095a4fc, local_100, 0x40)`. Fallback path copies from 0x0095a594 to 0x0095a4fc when masterserver.txt is absent. The 0x0095a834 third instance role is OQ3."
+  - claim: "Dead code at 0x006ab558 — Ghidra has not disassembled this block. Raw bytes contain dead error-message RVAs (`Unable to resolve master`, `Connection to master reset`) but were never linked into the executable's reachable graph"
+    address: 0x006ab558
+    function: null
+    confidence: high
+    note: "`disassemble_function` returns 'No function found'. Stronger than 'no xrefs' — Ghidra does not recognize the address as code."
+  - claim: "qr_t struct (CORRECTED 2026-05-28): byte 0x04=heartbeat socket; byte 0x48=secret key buffer; byte 0xD8=last heartbeat timestamp; byte 0xDC=query seq counter; byte 0xE0=fragment counter; byte 0xE4=active flag AND heartbeat port (NOT 'packet counter'); byte 0xE8=heartbeat repetition counter (max 10)"
+    address: 0x006abd80
+    function: qr_heartbeat_tick
+    confidence: high
+    note: "C1 — see body. Pre-v5 table mixed DWORD indices with byte offsets. qr_t[0x37] (SOCKET*-indexed) and qr_t+0xDC (byte-indexed) refer to the SAME byte. FUN_006abce0 reads `param_1[0x39]` (DWORD idx 0x39 = byte 0xE4) as the active flag; FUN_006aca60 reads `*(undefined4 *)(param_1 + 0xe4)` as the heartbeat-port %d argument — same field, dual role."
+  - claim: "ServerList struct (CORRECTED 2026-05-28): byte 0x88 = broadcast socket (NOT byte 0x22). Shared field used by both LAN broadcast (FUN_006aa770) and TCP master connect (FUN_006aa4c0)"
+    address: 0x006aa720
+    function: SL_create_broadcast_socket
+    confidence: high
+    note: "C2 — see body. Pre-v5 doc said `+0x22 SOCKET Broadcast socket`. 0x22 was a DWORD index (0x22 * 4 = 0x88). Decompile: FUN_006aa720 stores at `param_1 + 0x88` (byte); FUN_006aa770 reads from `param_1 + 0x88`; FUN_006aa4c0 (TCP master connect) also uses `param_1 + 0x88` — confirming it's a shared socket field."
+  - claim: "ServerList+0x2C secret key — byte offset 0x2C (DWORD idx 0xB → byte 0x2C, both notations consistent here). Read by FUN_006aa4c0 at `param_1 + 0x2c`"
+    address: 0x006aa4c0
+    function: SL_master_connect
+    confidence: high
+    note: "C1-companion. The +0x2C value is unambiguous because DWORD-idx 0xB and byte-offset 0x2C land on the same byte."
+  - claim: "qr_t+0xC8..+0xD4 callback table (basic/info/rules/players) — listed in pre-v5 doc; not byte-confirmed this pass"
+    address: null
+    function: null
+    confidence: low
+    note: "OQ1 — see Open Questions. Spot-checked FUN_006ac5f0 (basic builder) but the callback-table location was not confirmed."
+companions:
+  - docs/networking/gamespy-crypto-analysis.md
+  - docs/protocol/transport-layer.md
+  - docs/networking/network-protocol.md
+  - docs/networking/multiplayer-flow.md
+supersedes:
+  - 2026-02-16
+---
+
 # GameSpy Discovery & Master Server Protocol
 
-Complete reverse-engineered analysis of Star Trek: Bridge Commander's GameSpy integration: LAN discovery, query/response protocol, and master server heartbeat. Verified against live stock dedicated server traces (2026-02-16).
+> [!NOTE]
+> This doc is `status: partial`. **Algorithm + address claims byte-confirmed at high confidence**. 4 struct-offset table corrections needed (qr_t and ServerList layout tables mix DWORD indices with byte offsets — clarification). Master server hostname mechanism corrected: `0x0095a4fc` is the runtime-mutable target of `masterserver.txt`; `0x0095a594` is the immutable canonical source. RC4 PRGA modification, secret key `"Nm3aZ9"`, heartbeat timing (30s / max 10), vtable slots (11 at `0x00895564`), and base64 encoder all byte-confirmed. **C1** rewrites the qr_t Layout table in consistent byte-offset notation and renames `qr_t+0xE4` from "packet counter" to "active flag / heartbeat port number". **C2** corrects `ServerList` broadcast socket from "+0x22" to byte `+0x88` (the pre-v5 value was a DWORD index). **C3** retitles `qr_t+0xE4` references throughout the heartbeat narrative. **C4** rewrites the "duplicate master hostname" claim — `0x0095a4fc` is mutable, `0x0095a594` is immutable. **R1** sharpens the dead-code claim at `0x006ab558` to note that Ghidra has not even disassembled the block. See [v5-evidence-header.md](../guides/v5-evidence-header.md) for the standard. Source evidence: `.claude/agent-memory/game-archaeology-specialist/networking-foundation-gamespy-discovery-validation-20260528.md`.
+
+Complete reverse-engineered analysis of Star Trek: Bridge Commander's GameSpy integration: LAN discovery, query/response protocol, and master server heartbeat. Verified against live stock dedicated server traces (2026-02-16) and byte-confirmed against `stbc.exe` (2026-05-28).
 
 ## Overview
 
@@ -153,7 +276,7 @@ The client polls its broadcast socket each frame:
 
 ---
 
-## 2. Wire Format
+## 2. Wire Format [v5-validated 2026-05-28]
 
 ### Query Packet (Client → Server)
 ```
@@ -184,10 +307,10 @@ If password-protected, hostname gets `*` prefix:
 
 **gamemode values**: `"openplaying"` = game in progress and accepting players, `"settings"` = in lobby
 
-### Response Fragmentation
-- Maximum packet payload: **1349 bytes** (0x545)
+### Response Fragmentation [v5-validated 2026-05-28]
+- Maximum packet payload: **1349 bytes** (0x545) — enforced at `FUN_006ac660` (`qr_append_fragment`)
 - Fragments split at backslash boundaries
-- Each fragment gets `\queryid\N.M` — N = query sequence, M = fragment index within query
+- Each fragment gets `\queryid\N.M` — N = query sequence (`qr_t+0xDC`), M = fragment index within query (`qr_t+0xE0`)
 - Final fragment includes `\final\` (and optionally `\validate\<hash>`)
 
 ### Validation (Internet mode only)
@@ -216,16 +339,20 @@ This was verified by hooking `connect()`, `send()`, and `recv()` on the stock de
 3. **Server responds** with full status response (same as LAN query)
 4. **Master adds server** to its list and makes it available to clients
 
-### Master Server Addresses
+### Master Server Addresses [v5-validated 2026-05-28]
 
-Addresses in the binary:
-- `0x0095a4fc`: `"stbridgecmnd01.activision.com"` (original Activision, dead since ~2012)
-- `0x0095a594`: same (duplicate)
-- `0x0095a834`: same (duplicate)
+> [!IMPORTANT]
+> **C4 — Pre-v5 doc treated the three hostname addresses as identical duplicates. They are not.** Two of them play distinct, load-bearing roles in the `masterserver.txt` override mechanism.
 
-The master server sockaddr is stored at `0x00995880`. When the master server hostname doesn't resolve (which it doesn't anymore), this stays zeroed and heartbeats silently fail.
+| Address | Role | Evidence |
+|---------|------|----------|
+| `0x0095a4fc` | **Runtime-mutable target** of `masterserver.txt` override | `FUN_006aa100` calls `_strncpy(s_stbridgecmnd01_activision_com_0095a4fc, local_100, 0x40)` — overwrites in-place with width 0x40. |
+| `0x0095a594` | **Immutable canonical source** | Same function — fallback path copies from `0x0095a594` to `0x0095a4fc` when `masterserver.txt` is absent. |
+| `0x0095a834` | Third instance — role not fully traced this pass | See Open Question OQ3. |
 
-**333networks support**: When a `masterserver.txt` file exists in the game directory with a hostname or IP, the stock dedi resolves it and populates the sockaddr. Heartbeats are then sent to the 333networks master server (e.g. `81.205.81.173:27900`).
+The original Activision hostname (`stbridgecmnd01.activision.com`) has been dead since ~2012. The master server sockaddr is stored at `0x00995880`. When hostname resolution fails (e.g. the canonical hostname no longer exists), this sockaddr stays zeroed and heartbeats silently fail (`sendto` returns -1 to `0.0.0.0:0`).
+
+**333networks support — why it works**: When a `masterserver.txt` file exists in the game directory with a hostname or IP, the stock dedi resolves it and populates the sockaddr at `0x00995880`. The mechanism is **runtime overwrite of `0x0095a4fc`** (not a separate config path) — `FUN_006aa100` `strncpy`'s the resolved hostname into the original Activision hostname slot with width `0x40` (64 bytes). Heartbeats are then sent to the 333networks master server (e.g. `81.205.81.173:27900`).
 
 ### Verified Master Server Verification Queries (from stock dedi trace)
 
@@ -257,7 +384,10 @@ With state change notification:
 \heartbeat\0\gamename\bcommander\statechanged\1
 ```
 
-**Heartbeat port value**: `\heartbeat\0` — the stock dedi reports port 0. This is the port offset from the base game port, meaning "use the default query port" (22101). The master server uses this to know which port to send verification queries to.
+**Heartbeat port value** [v5-validated 2026-05-28]: `\heartbeat\0` — the stock dedi reports port 0. The `%d` argument in the format string is `*(undefined4 *)(qr_t + 0xE4)` — this field serves a **dual role as both the heartbeat port number AND the QR active flag**. When the field is 0, you get `\heartbeat\0` (matching what stock traces show). When non-zero, it indicates the port offset from the base game port and the master server uses this to know which port to send verification queries to. See Section 4 qr_t Layout C1 for the field-naming correction.
+
+> [!NOTE]
+> **C3 — `qr_t+0xE4` was mislabeled as "packet counter" in the pre-v5 doc.** Decompile evidence: `FUN_006abce0` reads `param_1[0x39]` (DWORD idx 0x39 = byte 0xE4) as the active flag (`if (param_1[0x39] != 0)`); `FUN_006aca60` reads `*(undefined4 *)(param_1 + 0xe4)` as the heartbeat-port `%d` argument. Same field, same byte, two roles — when zero, the QR system is inactive AND the wire reports port 0.
 
 **`\statechanged\1`**: Indicates the first state-change notification (player joined/left or game state changed). The `statechanged` flag tells the master server to re-query the game server for updated info.
 
@@ -265,13 +395,13 @@ With state change notification:
 
 Sent via `sendto()` to the master server sockaddr at `0x00995880` using the heartbeat socket at `qr_t+0x04`.
 
-### Heartbeat Timing
+### Heartbeat Timing [v5-validated 2026-05-28]
 
 **`FUN_006abd80`** at `0x006abd80` (qr_heartbeat_tick):
 
-- Sends heartbeat every **30 seconds** (30000ms check)
-- Tracks count at `qr_t+0xE8` — stops after **10 heartbeats** (counter > `'\n'` = 10)
-- First heartbeat sent immediately (when `qr_t+0xD8` timestamp is 0 or stale > 300,001ms)
+- Sends heartbeat every **30 seconds** (30000ms check — `30000 < DVar2 - uVar1` byte-confirmed)
+- Tracks count at `qr_t+0xE8` (byte offset) — stops after **10 heartbeats** (counter > `'\n'` = 10)
+- First heartbeat sent immediately (when `qr_t+0xD8` timestamp is 0 or stale > 300,001 ms — `0x493e1` byte-confirmed)
 - Heartbeat socket at `qr_t+0x04` must not be `INVALID_SOCKET` (-1)
 
 ### Client Master Server Browsing (TCP, Client-Side Only)
@@ -364,32 +494,51 @@ Filter/list format at `0x0095a5cc`:
 | +0xEE | byte | Flag: isHost (1=server, 0=client) |
 | +0xEF | byte | Flag: queryOnly (skip heartbeat, LAN mode) |
 
-### qr_t Layout (estimated from field access patterns)
+### qr_t Layout (CORRECTED 2026-05-28, byte offsets) [v5-validated-corrected]
 
-| Offset | Type | Field |
-|--------|------|-------|
-| +0x00 | SOCKET | Query socket (receives GameSpy queries) |
-| +0x04 | SOCKET | Heartbeat socket (sends to master server) |
-| +0x48 | char[~48] | Secret key buffer (holds `"Nm3aZ9"`, Ghidra shows +0x12 with DWORD* typing) |
-| +0x37 | DWORD | Query sequence counter (incremented per query) |
-| +0x38 | DWORD | Fragment counter within current query |
-| +0x3A | byte | Flag (cleared at start of query handling) |
-| +0xC8 | callback* | basic_callback (builds basic response section) |
-| +0xCC | callback* | info_callback (builds info response section) |
-| +0xD0 | callback* | rules_callback (builds rules response section) |
-| +0xD4 | callback* | players_callback (builds players response section) |
-| +0xD8 | DWORD | Last heartbeat timestamp (GetTickCount) |
-| +0xE4 | int | Packet counter (for queryid generation) |
-| +0xE8 | byte | Heartbeat repetition counter (stops at 10) |
+> [!IMPORTANT]
+> **C1 — Pre-v5 table mixed DWORD indices (e.g. `+0x37`, `+0x38`) with byte offsets (e.g. `+0x48`, `+0xE4`).** Decompile-side, Ghidra renders the same field two different ways depending on the cast: `qr_t[0x37]` (SOCKET*-indexed = DWORD-indexed) and `qr_t + 0xDC` (byte-indexed) refer to the **same byte**. The table below uses byte offsets exclusively, with the DWORD index annotated for cross-reference. The `+0xE4` "Packet counter" entry is also corrected — see note below table.
 
-### ServerList Layout (partial)
+| Byte offset | DWORD idx | Type | Field |
+|-------------|-----------|------|-------|
+| 0x00 | 0 | SOCKET | Query socket (receives GameSpy queries) |
+| 0x04 | 1 | SOCKET | Heartbeat socket (sends to master server) |
+| 0x08 | 2 | char[] | Gamename buffer (holds `"bcommander"`, used as `%s` in heartbeat format) |
+| 0x48 | 0x12 | char[~48] | Secret key buffer (holds `"Nm3aZ9"`) |
+| 0xC8 | 0x32 | callback* | basic_callback (builds basic response section) `[OQ1]` |
+| 0xCC | 0x33 | callback* | info_callback (builds info response section) `[OQ1]` |
+| 0xD0 | 0x34 | callback* | rules_callback (builds rules response section) `[OQ1]` |
+| 0xD4 | 0x35 | callback* | players_callback (builds players response section) `[OQ1]` |
+| 0xD8 | 0x36 | DWORD | Last heartbeat timestamp (GetTickCount) — stale window 300,001 ms |
+| 0xDC | 0x37 | DWORD | Query sequence counter (`queryid` N) |
+| 0xE0 | 0x38 | DWORD | Fragment counter within query (`queryid` M) |
+| **0xE4** | **0x39** | DWORD | **Active flag AND heartbeat port number** (NOT "packet counter") |
+| 0xE8 | 0x3A | byte | Heartbeat repetition counter (max 10) |
 
-| Offset | Type | Field |
-|--------|------|-------|
-| +0x22 | SOCKET | Broadcast socket (for LAN queries) |
-| +0x23 | DWORD | Last activity timestamp (for 3-second timeout) |
-| +0x2C | char[] | Secret key buffer (holds `"Nm3aZ9"`, used for validate hash) |
-| +0x88 | SOCKET | TCP socket (master server connection) |
+**Field-naming evidence**:
+
+- `qr_t+0xDC` (query seq): `FUN_006ac1e0` reads as `*(int *)(param_1 + 0xdc)` (byte-indexed) and increments. `FUN_006ac550` accesses the same byte as `param_1[0x37]` (SOCKET*-indexed) for the `\queryid\N.M` `%d` argument.
+- `qr_t+0xE0` (fragment counter): `FUN_006ac550` writes `param_1[0x38] = SVar2 + 1;` — DWORD index 0x38 = byte 0xE0.
+- `qr_t+0xE4` (active flag + heartbeat port — **C1 correction**): `FUN_006abce0` (`qr_process_queries`) gates query processing on `if (param_1[0x39] != 0)` — DWORD idx 0x39 = byte 0xE4. **The same field** is read by `FUN_006aca60` (`qr_send_heartbeat`) as `*(undefined4 *)(param_1 + 0xe4)` and formatted as the heartbeat port number (`\heartbeat\<port>`). When the field is 0 the QR system is "inactive" AND the wire reports port 0.
+- `qr_t+0xE8` (heartbeat counter): `FUN_006abd80` increments and compares against `'\n'` (10). DWORD idx 0x3A = byte 0xE8.
+
+The callback-table addresses at `qr_t+0xC8..+0xD4` (OQ1) were spot-checked via `FUN_006ac5f0` (basic builder) but the callback-table location was not byte-confirmed this pass. Defer to a deeper qr_t struct dig if needed.
+
+### ServerList Layout (CORRECTED 2026-05-28, byte offsets) [v5-validated-corrected]
+
+> [!IMPORTANT]
+> **C2 — Pre-v5 doc said `+0x22 SOCKET Broadcast socket`.** The value `0x22` was a DWORD index (0x22 * 4 = 0x88). The byte-offset truth is `+0x88`, and the same field is used for **both** LAN broadcast (UDP) and TCP master connect — it is a shared socket field, not two separate slots. Same mixing-of-bases issue as C1.
+
+| Byte offset | DWORD idx | Type | Field |
+|-------------|-----------|------|-------|
+| 0x2C | 0xB | char[] | Secret key buffer (holds `"Nm3aZ9"`, used for validate hash) |
+| 0x88 | 0x22 | SOCKET | **Shared socket** — UDP broadcast (LAN scan) AND TCP master connect |
+| 0x8C | 0x23 | DWORD | Last activity timestamp (3-second timeout) |
+
+**Field-access evidence**:
+
+- `+0x88` shared socket — `FUN_006aa720` (`SL_create_broadcast_socket`) stores the UDP broadcast socket at `param_1 + 0x88`; `FUN_006aa770` (`SL_send_lan_broadcast`) reads from `param_1 + 0x88`; `FUN_006aa4c0` (`SL_master_connect`, TCP) also uses `param_1 + 0x88`. The LAN-vs-Internet mode dispatch in `SL_start_update` selects which kind of socket gets created, but the slot is shared.
+- `+0x2C` secret key — the +0x2C value is unambiguous because DWORD index 0xB and byte offset 0x2C land on the same byte. `FUN_006aa4c0` reads from `param_1 + 0x2c`. The same `"Nm3aZ9"` constructed in `GameSpy::InitBrowser` (`0x0069c3a0`) is stored here for the client-side browsing path.
 
 ---
 
@@ -700,24 +849,21 @@ After receiving the list, the client immediately sends `\status\` UDP queries to
 
 ---
 
-## 10. Challenge-Response Crypto (GameSpy QR1 SDK)
+## 10. Challenge-Response Crypto (GameSpy QR1 SDK) [v5-validated 2026-05-28]
 
 The validate hash computation used in both server-side `\secure\`/`\validate\` exchange and client-side master server auth. Fully reverse-engineered from the binary — the algorithm is the well-known GameSpy QR1 SDK crypto, widely reimplemented in open-source projects (OpenSpy, gslist, etc.).
 
 ### Secret Key
 
-**`"Nm3aZ9"`** — 6 bytes, hardcoded. Constructed on stack in `GameSpy::InitBrowser` (0x0069c3a0):
-```c
-strncpy(local_c, "Nm3aZ9", 7);
-```
+**`"Nm3aZ9"`** — 6 bytes, hardcoded. Constructed on stack in `GameSpy::InitBrowser` (`0x0069c3a0`). The stack literal is byte-confirmed: bytes `0x4e 0x6d 0x33 0x61 0x5a 0x39 0x00` = `'N' 'm' '3' 'a' 'Z' '9' '\0'` (6 chars + NUL), set via individual stack stores then passed to `FUN_006aa100` as `param_3`.
 
 Not present as a standalone string in the data section — only exists as a stack-constructed literal. Stored at:
-- `qr_t+0x48` (byte offset, Ghidra shows +0x12 with DWORD* typing) — server-side QR path
-- `ServerList+0x2C` — client-side browsing path
+- `qr_t+0x48` (byte offset; same field is reachable as `qr_t[0x12]` if cast to `DWORD*`) — server-side QR path
+- `ServerList+0x2C` (byte offset; DWORD idx 0xB) — client-side browsing path
 
 ### Algorithm: Modified RC4 + Base64
 
-**Step 1: Modified RC4 Cipher** (`gs_rc4_cipher` at 0x006ac050)
+**Step 1: Modified RC4 Cipher** (`gs_rc4_cipher` at `0x006ac050`) [v5-validated 2026-05-28]
 
 Standard RC4 Key Scheduling Algorithm (KSA): initialize S-box [0..255], permute using key bytes. The **modification** is in the Pseudo-Random Generation Algorithm (PRGA):
 
@@ -726,7 +872,13 @@ Standard RC4:  i = (i + 1) % 256
 GameSpy QR1:   i = (data[n] + 1 + i) % 256
 ```
 
-The plaintext byte itself is mixed into the S-box index before encryption. This is the signature difference of GameSpy's QR1 SDK variant. The encryption is in-place — the challenge buffer is modified directly.
+The plaintext byte itself is mixed into the S-box index before encryption. This is the signature difference of GameSpy's QR1 SDK variant. The encryption is in-place — the challenge buffer is modified directly. Decompile evidence:
+
+```c
+uVar5 = (uint)(byte)(*(char *)(iVar4 + param_3) + '\x01' + (char)uVar5);
+```
+
+That is precisely `i = (data[n] + 1 + i) % 256` (byte-confirmed against the binary 2026-05-28).
 
 **Step 2: Base64 Encode** (`gs_validate_encode` at 0x006abf70)
 
@@ -899,7 +1051,9 @@ Master server registration works via pure UDP heartbeats. The stock dedi with `m
 
 ## 12. GameSpy Object Internals (Deep Dive)
 
-### GameSpy Vtable (PTR_FUN_00895564)
+### GameSpy Vtable (`PTR_FUN_00895564`) [v5-validated 2026-05-28]
+
+All 11 slot addresses byte-read against `stbc.exe` and match the table verbatim.
 
 | Slot | Address | Name |
 |------|---------|------|
@@ -954,22 +1108,58 @@ Event handlers:
 
 Both registered in FUN_0069c4e0 via FUN_006da130.
 
-### Dead Code: QR Initialization (0x006ab558-0x006ab5BF)
+### Dead Code: QR Initialization (`0x006ab558`-`0x006ab5BF`) [v5-validated 2026-05-28]
 
-A block of code exists at 0x006ab558-0x006ab5BF that references:
-- "Unable to resolve master" (0x0095a6e4)
-- "Connection to master reset" (0x0095a6c8)
+A block of bytes exists at `0x006ab558`-`0x006ab5BF` that contains RVA references to:
+- "Unable to resolve master" (`0x0095a6e4`)
+- "Connection to master reset" (`0x0095a6c8`)
 
-This code would resolve the master server hostname and fill `to_00995880` (the heartbeat destination sockaddr), and likely create/bind the QR UDP socket. However, **Ghidra finds no xrefs to this code block** -- it is completely unreachable. This is dead code from the GameSpy QR1 SDK that was compiled into the binary but never called.
+This code would resolve the master server hostname and fill `to_00995880` (the heartbeat destination sockaddr), and likely create/bind the QR UDP socket.
+
+> [!NOTE]
+> **R1 — stronger than "no xrefs".** Pre-v5 doc said Ghidra finds no xrefs to this block. The v5 validation pass found a stronger statement: **Ghidra does not recognize `0x006ab558` as code at all.** `disassemble_function` returns "No function found". The bytes exist as raw data containing dead error-message RVAs but were never disassembled — they have never been linked into the executable's reachable graph. This is dead code from the GameSpy QR1 SDK that was compiled into the binary but never called.
 
 ### Why QR Never Self-Activates
 
 1. GameSpy constructor sets `+0xEE=1` (QR mode) and `+0xDC=0` (qr_t pointer)
-2. Tick function calls `FUN_006abca0(NULL)` which uses static qr_t at 0x0095a740
+2. Tick function calls `FUN_006abca0(NULL)` which uses static qr_t at `0x0095a740`
 3. Static qr_t is entirely zeroed -- all fields are 0
-4. `qr_process_incoming_queries` checks `qr_t[0x39]` (active flag) -- it's 0, so returns immediately
+4. `qr_process_incoming_queries` checks `qr_t[0x39]` (active flag — byte 0xE4, **see C1**) -- it's 0, so returns immediately
 5. `qr_process_heartbeat_timer` checks `qr_t+0x04` (heartbeat socket) against -1 -- socket 0 IS != -1, so it would try to send... but:
 6. The `to_00995880` sockaddr is zeroed (family=0, port=0, addr=0.0.0.0) -- sendto() to 0.0.0.0:0 fails silently
 7. No code ever calls the qr_init function to create/bind sockets, resolve master hostname, or set the active flag
 
 The stock dedicated server works around this by having the proxy DLL set up the QR system externally.
+
+---
+
+## 13. Open Questions
+
+Items that need follow-up investigation. These are documented here to surface debt rather than silently drop.
+
+### OQ1 — `qr_t+0xC8..+0xD4` callback table not byte-confirmed
+
+The pre-v5 doc lists basic/info/rules/players callback pointers at `qr_t+0xC8`, `+0xCC`, `+0xD0`, `+0xD4`. v5 spot-checked `FUN_006ac5f0` (the basic builder) but did not confirm the actual callback-table location in `qr_t`. The doc body still uses these offsets as a working theory; treat them as `confidence: low` until a deeper qr_t struct dig confirms the field addresses.
+
+### OQ2 — Heartbeat `sendto` rc=-1 with `masterserver.txt` present
+
+In the stock dedi trace, the heartbeat to `81.205.81.173:27900` returned `SOCKET_ERROR` (-1). The master sockaddr at `0x00995880` would stay zeroed if `masterserver.txt` resolution failed, but the trace indicates `masterserver.txt` was present — so the resolution presumably succeeded. Despite the failed `sendto`, three 333networks master servers (`150.230.23.146`, `116.202.247.76`, `49.13.114.72`) still queried the dedi back on port 27901. Hypotheses worth pursuing:
+- The heartbeat socket at `qr_t+0x04` may not be properly bound when `\heartbeat\` is formatted.
+- Firewall may be blocking outbound UDP to port 27900.
+- The `\heartbeat\0` port value (qr_t+0xE4 = 0) may be rejected by the master.
+- Inbound master queries may come from a separate discovery mechanism (cached server from a prior session, or another client's query traffic).
+
+Unresolved this pass.
+
+### OQ3 — `0x0095a834` third hostname instance
+
+Pre-v5 doc treated `0x0095a834` as a third duplicate of the master hostname string. v5 verified the runtime-mutable (`0x0095a4fc`) and immutable canonical (`0x0095a594`) roles (see C4), but the `0x0095a834` role was not fully traced this pass. Possibilities: a third runtime cache, a debug-string copy, or genuinely a duplicate. Defer to a string-xref sweep.
+
+---
+
+## Cross-Anchors
+
+- **Companion**: [docs/networking/gamespy-crypto-analysis.md](gamespy-crypto-analysis.md) — full crypto algorithm depth; Section 10 of this doc cross-links there.
+- **Anchor (shared socket / cipher boundary)**: [docs/protocol/transport-layer.md](../protocol/transport-layer.md).
+- **Family index**: [docs/networking/README.md](README.md).
+- **Engine anchors** (UtopiaModule base `0x0097FA00`, TGWinsockNetwork at `+0x78`, GameSpy at `+0x7C`): pre-validated by protocol-family foundations. Confirmed at `FUN_0069c580` via `DAT_0097fa78`.

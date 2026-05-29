@@ -196,13 +196,13 @@ evidence:
     function: MultiplayerGame__RequestObjEventHandler
     completeness: high
     confidence: high
-    note: "575-byte body; newly defined in Ghidra this pass. The `\"NoMe\"` group is `all peers except self`; the 0x1D / 0x1F senders broadcast to `\"NoMe\"`, NOT to host(0) (host(0) is only the relay target on the receiver-side NULL-found fallback in 0x1F)."
+    note: "575-byte body; newly defined in Ghidra this pass. The `\"NoMe\"` group is `all peers except self`; the 0x1D / 0x1F senders broadcast to `\"NoMe\"`, NOT to host(0) (host(0) is only the relay target on the receiver-side NULL-found fallback in 0x1F). Function renamed 2026-05-28 per docs/networking/disconnect-flow.md — SWIG plate is `MultiplayerGame__EnterSetHandler` per FUN_0069efe0 binding (string at 0x0095a0a8); dual-opcode behavior unchanged."
   - claim: "0x1F sender suppresses emission when ship's current set name == `\"warp\"`; sends 0x1F only when ship IS in warp AND currentSetName != `\"warp\"`"
     address: 0x006a07d0
     function: MultiplayerGame__RequestObjEventHandler
     completeness: high
     confidence: high
-    note: "C2 correction — DAT_008d8ab8 is the literal 5 bytes `\"warp\\0\"`, NOT the `default space combat set name`. Sender uses strcmp(currentSetName, DAT_008d8ab8) to gate."
+    note: "C2 correction — DAT_008d8ab8 is the literal 5 bytes `\"warp\\0\"`, NOT the `default space combat set name`. Sender uses strcmp(currentSetName, DAT_008d8ab8) to gate. Function renamed 2026-05-28 per docs/networking/disconnect-flow.md — SWIG plate is `MultiplayerGame__EnterSetHandler`; behavior unchanged."
   - claim: "DAT_008d8ab8 is the literal C-string `\"warp\\0\"` (5 bytes including NUL), the `in-warp-tunnel` set name sentinel"
     address: 0x008d8ab8
     function: null
@@ -214,7 +214,7 @@ evidence:
     function: MultiplayerGame__EnterSetEventHandler
     completeness: high
     confidence: high
-    note: "Newly defined in Ghidra this pass. Single DATA xref from FUN_0069efe0 at 0x0069eff9 (SWIG handler registration)."
+    note: "Newly defined in Ghidra this pass. Single DATA xref from FUN_0069efe0 at 0x0069eff9 (SWIG handler registration). Function renamed 2026-05-28 per docs/networking/disconnect-flow.md — actual SWIG plate is `MultiplayerGame__DisconnectHandler` (event 0x60003 ET_NETWORK_DISCONNECT, binding string at 0x0095a1f0); empty body in MP because cleanup runs via transport layer."
   - claim: "TGSceneGraph__GetObjectByID at 0x00434e00 resolves an object ID via factory class tag 0x8003"
     address: 0x00434e00
     function: TGSceneGraph__GetObjectByID
@@ -289,6 +289,8 @@ supersedes:
 
 > [!NOTE]
 > This doc is `status: partial`. The handler addresses, dispatcher routing, and structural semantics of the triad (0x1D requests recovery, 0x1E carries the response, 0x1F handles in-system-warp set transitions) are v5-validated. **Three material wire-format / data-constant corrections** plus **two address-mapping corrections** are applied. Per-claim sections are linked from the bullets. **(C1)** the EnterSet `setName` field is length-prefixed (`uint32 len + N bytes`), NOT null-terminated. **(C2)** the gate constant at `0x008d8ab8` is the literal string `"warp"` — the in-warp-tunnel sentinel — NOT the `default space combat set name`; 0x1F is sent during warp transitions to named warp-target sub-sets, not during normal combat. **(C3)** `DAT_008e5c18` is `FLT_MAX` (the DamageableObject `undamaged` sentinel), NOT a `small positive HP threshold`; the 0x1E gate is therefore stricter than the doc implied — only never-damaged + alive objects are served. **(C4)** `GetPlayerSlotFromObjID` lives at `0x006a19a0`, NOT `0x005a2030` (which is `ShipReadSpecies`). **(C5)** `0x006a7770` is `MakeObjIDFromPlayerSlot` (the INVERSE) and is not called by the triad. Plus two clarifications: **(Clar1)** the triad uses raw `TGBufferStream` primitives only and bypasses `TGFactory_DeserializeObject` — these are command (RPC) messages, not event objects (new subsection below). **(Clar2)** `IsLocalPlayerShip` is host-mode-aware: on a dedicated server, opcode 0x03 is selected for every team-bearing ship, not one local player. See [v5-evidence-header.md](../guides/v5-evidence-header.md) for the standard. Source evidence: `.claude/agent-memory/game-archaeology-specialist/objnotfound-triad-validation-20260528.md`.
+>
+> **Post-validation update (2026-05-28 via networking leaf #10 disconnect-flow)**: Function-name attributions at 0x006a0a20 and 0x006a07d0 were corrected in Ghidra plates after this doc rendered. **0x006a0a20** is the `MultiplayerGame__DisconnectHandler` stub (event 0x60003 ET_NETWORK_DISCONNECT), NOT an EnterSet stub. **0x006a07d0** carries the SWIG-registered name `MultiplayerGame__EnterSetHandler` per FUN_0069efe0 binding (string at 0x0095a0a8); its dual-opcode body (sends BOTH 0x1D ObjNotFound when ship NOT in warp AND 0x1F EnterSet when ship IN warp + destination != "warp") remains as documented. See `docs/networking/disconnect-flow.md` for the binding-table evidence chain.
 
 ---
 
@@ -519,7 +521,7 @@ The inverse is at `0x006a7770` (`MakeObjIDFromPlayerSlot`): `*(int*)(this+0x10) 
 **Handler:** `MultiplayerGame__EnterSetHandler` @ `0x006a05e0`
 **Python constant:** `App.VERIFY_ENTER_SET_MESSAGE`
 **Direction:** Client → Host
-**Event handler (stub):** `MultiplayerGame__EnterSetEventHandler` @ `0x006a0a20` (empty body — single RET, 3 bytes; SWIG-registered as "Enter game set")
+**Event handler attribution corrected 2026-05-28**: There is NO EnterSet event handler at `0x006a0a20`. That address is the `MultiplayerGame__DisconnectHandler` stub (event 0x60003 ET_NETWORK_DISCONNECT, binding string at `0x0095a1f0`) — see `docs/networking/disconnect-flow.md` for the binding-table evidence chain. The original cited stub registered as "Enter game set" was a misattribution from the pre-v5 doc; no separate event handler is registered for the 0x1F EnterSet receive path beyond the dispatcher entry at `0x006a05e0`.
 
 ### Purpose
 
@@ -790,8 +792,8 @@ The function constructs an obj ID **from** a player slot (multiplies by `0x40000
 | 0x006a0490 | `MultiplayerGame__ObjNotFoundHandler` (opcode 0x1D)                       |
 | 0x006a02a0 | `MultiplayerGame__RequestObjHandler` (opcode 0x1E)                        |
 | 0x006a05e0 | `MultiplayerGame__EnterSetHandler` (opcode 0x1F)                          |
-| 0x006a07d0 | `MultiplayerGame__RequestObjEventHandler` (client-side sender for 0x1D / 0x1F) |
-| 0x006a0a20 | `MultiplayerGame__EnterSetEventHandler` (stub, single RET)                |
+| 0x006a07d0 | `MultiplayerGame__RequestObjEventHandler` (client-side sender for 0x1D / 0x1F) — **renamed 2026-05-28**: SWIG plate is `MultiplayerGame__EnterSetHandler` per FUN_0069efe0 binding (string at 0x0095a0a8); dual-opcode behavior unchanged |
+| 0x006a0a20 | `MultiplayerGame__EnterSetEventHandler` (stub, single RET) — **renamed 2026-05-28**: actually `MultiplayerGame__DisconnectHandler` stub (event 0x60003 ET_NETWORK_DISCONNECT, binding string at 0x0095a1f0); empty in MP because cleanup runs via transport layer — see `docs/networking/disconnect-flow.md` |
 | 0x006a19a0 | `GetPlayerSlotFromObjID` **(C4 — corrected; was 0x005a2030)**             |
 | 0x006a7770 | `MakeObjIDFromPlayerSlot` (INVERSE; **not called by the triad**, C5)      |
 | 0x00434e00 | `TGSceneGraph__GetObjectByID` (factory IsA 0x8003)                        |
@@ -834,7 +836,7 @@ Cross-reference these against [`docs/engine/rtti-class-catalog.md`](../engine/rt
 
 ## Open Questions
 
-- SWIG registration string for the empty stub at `0x006a0a20` — the doc labels it "Enter game set" but the actual registration string passed in `FUN_0069efe0` (the single DATA xref site at `0x0069eff9`) has not been verified byte-for-byte. To resolve, decompile `FUN_0069efe0` and read the string-pointer argument to whatever registration call references `0x006a0a20`.
+- ~~SWIG registration string for the empty stub at `0x006a0a20`~~ **CLOSED 2026-05-28** via networking leaf #10 (disconnect-flow): `FUN_0069efe0` binds `0x006a0a20` to string at `0x0095a1f0` = `"MultiplayerGame :: DisconnectHandler"` (registered for event 0x60003 ET_NETWORK_DISCONNECT, empty in MP because real cleanup runs via transport layer). The original "Enter game set" attribution was wrong; see `docs/networking/disconnect-flow.md` for evidence.
 - Class-ID table cross-reference: confirm the IsA tags `0x8003` / `0x8006` / `0x8007` / `0x8008` map to canonical names (likely `TGSceneGraph-anchored object` / `PhysicsObjectClass` / `DamageableObject` / `ShipClass`) against [`docs/engine/rtti-class-catalog.md`](../engine/rtti-class-catalog.md). The triad provides independent confirmation that these IDs partition the cast hierarchy, but the catalog mapping is still pending.
 - `MultiplayerGame__EnterSetHandler` (0x006a05e0) calls `TGBufferStream__ReadString_HeapAlloc(stream, -1)` while the sender path `MultiplayerGame__RequestObjEventHandler` (0x006a07d0) writes via `WriteString` (vtable+0x6c + vtable+0x14). Verified that both encodings are symmetric — both length-prefixed — but the call shape differs at the source level. The reason for the helper-vs-vtable-direct asymmetry has not been investigated.
 

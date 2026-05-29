@@ -1,6 +1,119 @@
 > [docs](../README.md) / [networking](README.md) / fragmented-ack-bug.md
 
+---
+title: Fragmented Reliable Message ACK Bug — Reverse Engineering Analysis
+type: explanation + reference
+audience: RE engineers, OpenBC implementers
+validated: 2026-05-28
+methodology: FUNCTION_DOC_WORKFLOW_V5
+binary_fingerprint: stbc.exe (base 0x400000, 32-bit Windows)
+status: partial
+supersedes:
+  - 2026-02-19
+evidence:
+  - claim: "TGHeaderMessage::WriteToBuffer — ACK serializer (type + seq + flags + [frag_idx])"
+    address: 0x006bd190
+    function: TGHeaderMessage_Serialize
+    completeness: medium
+    effective: 53.5
+    confidence: high
+    note: "vtable[2] slot of TGHeaderMessage. Emits 4-byte (non-fragment) or 5-byte (fragment) ACK. Symmetric with factory at 0x006bd1f0."
+  - claim: "TGHeaderMessage factory / ACK deserializer — bare code (NOT a function in Ghidra DB)"
+    address: 0x006bd1f0
+    function: null
+    confidence: high
+    note: "96-byte raw disasm byte-confirmed; allocates 0x44 TGHeaderMessage, sets msg.seq, msg.is_fragmented, msg.is_below_0x32, msg.frag_idx. Reached via factory table DAT_009962d8."
+  - claim: "HandleReliableReceived — creates per-fragment ACK entries in peer+0x9C with 4-field dedup"
+    address: 0x006b61e0
+    function: HandleReliableReceived
+    completeness: medium
+    effective: 31.6
+    confidence: high
+    note: "4-field match: seq + is_below_0x32 + is_fragmented + frag_idx. Cross-anchored from ack-outbox-deadlock.md."
+  - claim: "HandleACK — searches retransmit queue peer+0x80, removes one matching entry per call"
+    address: 0x006b64d0
+    function: HandleACK
+    completeness: medium
+    effective: 33.6
+    confidence: high
+    note: "4-field match logic confirmed: is_below_0x32, seq, fragment status, frag_idx. Returns after removing ONE entry."
+  - claim: "SendOutgoingPackets — 3-queue worker (ACK-outbox pass 1+2, retransmit, first-send)"
+    address: 0x006b55b0
+    function: SendOutgoingPackets
+    completeness: low
+    effective: 0.0
+    confidence: high
+    note: "271-line worker; effective_score 0.0 expected for worker functions. Pass 1 (retx<3) + Pass 2 (retx>=3, gated, cleanup at retx>=9 via FUN_006b78d0). See ack-outbox-deadlock.md for full gate analysis."
+  - claim: "ProcessIncomingPackets — receive loop, ACK creation, dispatch queueing"
+    address: 0x006b5c90
+    function: ProcessIncomingPackets
+    confidence: high
+    note: "Factory table at DAT_009962d4; type-0x01 ACK factory slot at DAT_009962d8 = 0x006bd1f0."
+  - claim: "EnqueueReceived (QueueForDispatch) — routes unreliable to peer+0x70, reliable to peer+0x8C"
+    address: 0x006b6ad0
+    function: EnqueueReceived
+    confidence: high
+    note: "ACKs (type 0x01) are unreliable -> peer+0x70. No seq check, no fragment reassembly."
+  - claim: "DispatchReceivedMessages — switch case 1 -> HandleACK confirmed"
+    address: 0x006b5f70
+    function: DispatchReceivedMessages
+    confidence: high
+    note: "Switch at LAB_006b60b6: case 0 -> FUN_006b63a0 (data), case 1 -> HandleACK, case 3 -> FUN_006b6640 (connack), case 4 -> FUN_006b6a70 (boot), case 5 -> FUN_006b6a20 (disconnect)."
+  - claim: "ReassembleFragments — 256-element array indexed by frag_idx, clears +0x3C after reassembly, removes consumed fragments from DISPATCH queue (NOT retransmit queue)"
+    address: 0x006b6cc0
+    function: ReassembleFragments
+    confidence: high
+    note: "Clar2 — second-pass cleanup loop calls FUN_00718cf0 and decrements piVar8[6] (count). Cleanup scope is dispatch queue only."
+  - claim: "FragmentMessage — sets +0xF (is_fragmented)=1, +0x39=fragment_index on each clone"
+    address: 0x006b8720
+    function: FragmentMessage
+    confidence: high
+    note: "vtable[7] slot of TGMessage. Forces is_reliable=1 on original; fragments share seq, differ on frag_idx."
+  - claim: "TGMessage constructor — sizeof 0x40, vtable 0x008958d0"
+    address: 0x006b82a0
+    function: TGMessage_Ctor
+    confidence: high
+    note: "PUSH 0x40 at 0x006b8300 confirms allocation size. Sets +0x14 seq, +0x18 retx_count, +0x1C/+0x20/+0x24 floats, +0x2C backoff_mode=1, +0x30/+0x34 floats=1.0f, +0x3D=1."
+  - claim: "TGMessage::GetType returns 0x32"
+    address: 0x006b9430
+    function: TGMessage_GetType
+    confidence: high
+    note: "MOV EAX,0x32; RET — bare. Determines is_below_0x32 boundary."
+  - claim: "TGHeaderMessage::GetType returns 0x01"
+    address: 0x006bdc20
+    function: TGHeaderMessage_GetType
+    confidence: high
+    note: "MOV EAX,0x01; RET — bare. ACK type identifier."
+  - claim: "Wire format (4-byte non-fragment / 5-byte fragment ACK): byte[0]=0x01, bytes[1..2]=LE u16 seq, byte[3] bit 0=is_fragmented + bit 1=is_below_0x32, [byte[4]=frag_idx if fragmented]"
+    address: 0x006bd190
+    function: TGHeaderMessage_Serialize
+    confidence: high
+    note: "Byte-confirmed in both serializer (0x006bd190) and factory (0x006bd1f0) — symmetric encoding."
+  - claim: "C1 — 'Root Cause: Missing Cleanup in SendOutgoingPackets' (original line 628-638) is BINARY-WRONG; SendOutgoingPackets pass-2 at retx>=9 DOES call FUN_006b78d0 to remove the entry. The deadlock is the pass-2 gate, not a missing cleanup path."
+    address: 0x006b55b0
+    function: SendOutgoingPackets
+    confidence: high
+    note: "Defers to ack-outbox-deadlock.md (leaf #9, verified). Pass-2 gate `(msg_count > 0 OR peer+0xBC != 0) AND peer+0xB4 > 0` is the actual deadlock mechanism."
+companions:
+  - docs/networking/ack-outbox-deadlock.md
+  - docs/networking/netimmerse-transport-deep-dive.md
+  - docs/networking/network-protocol.md
+  - docs/protocol/wire-format-spec.md
+---
+
 # Fragmented Reliable Message ACK Bug — Reverse Engineering Analysis
+
+> [!NOTE]
+> **BIPARTITE doc — wire format + Ghidra-verified analysis byte-confirmed.** First half is `verified`-quality reference for ACK encoding (4-field matching, 4/5-byte wire layout, TGMessage/TGHeaderMessage layouts, all 13 function addresses). Second half's "Root Cause: Missing Cleanup" claim (original line 628-638) is binary-wrong; deferred to [ack-outbox-deadlock.md](ack-outbox-deadlock.md) which has the actual deadlock mechanism (pass-2 gate flow control). Bug 1 (fragment retransmission) root cause remains an OQ — requires client-side runtime instrumentation. Status: `partial`.
+>
+> - **C1 (HIGH)**: "Root Cause: Missing Cleanup in SendOutgoingPackets" is binary-wrong; replaced with deferral to `ack-outbox-deadlock.md`. ACK entries DO have a removal path at retx>=9 via FUN_006b78d0; the deadlock is the pass-2 gate, not absence of cleanup.
+> - **C2 (MEDIUM)**: Hypothesis #1 "retransmit count limit of 3" is the pass-1 gate, not a hard limit. Pass-2 processes retx>=3 and cleans up at retx>=9, gated on the deadlock condition.
+> - **C3 (LOW)**: Function naming pairing for FUN_006b8700 / FUN_006b8670 — leaf #9 anchors FUN_006b8670 as `SetRetransmitCount`. Consistent with this doc; no contradiction.
+> - **Clar1**: "Stock dedi has same bug" framing is correct for Bug 1 (asymmetric client-side); Bug 2 is the same deadlock from leaf #9, present on both sides.
+> - **Clar2**: ReassembleFragments cleanup loop removes consumed fragments from the **dispatch queue** (not the retransmit queue) — byte-confirmed in FUN_006b6cc0.
+> - **Clar3**: SendHelper (FUN_006b5080) same-seq + counter-bump-ONCE verified; counter increment is OUTSIDE the per-fragment loop.
+>
+> **Historical preservation**: The "Ghidra-Verified Analysis (2026-02-19)" embedded asm listings are byte-confirmed current. The hypothesis chain (#1-#7 -> "FINAL Assessment") is preserved as investigation history. See `.claude/agent-memory/game-archaeology-specialist/networking-leaf-fragmented-ack-bug-validation-20260528.md` for the full re-validation memo.
 
 ## Observable Behavior
 
@@ -91,7 +204,7 @@ Inherits all TGMessage fields. Additional:
 
 ---
 
-## ACK Wire Format (Type 0x01)
+## ACK Wire Format (Type 0x01) [v5-validated 2026-05-28]
 
 Serializer: `FUN_006bd190` (TGHeaderMessage::WriteToBuffer)
 Deserializer: `FUN_006bd1f0` (TGHeaderMessage factory)
@@ -174,7 +287,7 @@ For each transport message in a received UDP packet:
 4. **If reliable** (`msg+0x3A != 0`): call `FUN_006b61e0` (create ACK to send back)
 5. Call `FUN_006b6ad0` (queue for dispatch)
 
-### ACK Creation (Server Side) — FUN_006b61e0 (HandleReliableReceived)
+### ACK Creation (Server Side) — FUN_006b61e0 (HandleReliableReceived) [v5-validated 2026-05-28]
 
 Called once per received reliable message (including individual fragments):
 
@@ -205,7 +318,7 @@ For each message, looks up peer via `msg+0x0C` (sender ID), then dispatches by G
 
 ACK messages (type 0x01) are unreliable, so they go through the unreliable dispatch queue. They are NOT fed through fragment reassembly (reassembly only applies to reliable messages in `FUN_006b6ad0`).
 
-### ACK Handler (Client Side) — FUN_006b64d0 (HandleACK)
+### ACK Handler (Client Side) — FUN_006b64d0 (HandleACK) [v5-validated 2026-05-28]
 
 Called with `(ACK_message, peer_ptr)`. Searches the peer's retransmit queue (`peer+0x80`):
 
@@ -222,7 +335,7 @@ For each entry in retransmit queue:
 
 **Critical**: The function returns after removing **ONE** matching entry. For per-fragment ACKs, each ACK call removes the corresponding fragment entry.
 
-### Fragment Reassembly (Receive Side) — FUN_006b6cc0
+### Fragment Reassembly (Receive Side) — FUN_006b6cc0 [v5-validated 2026-05-28]
 
 Called from `FUN_006b6ad0` when a reliable fragmented message is received:
 
@@ -232,14 +345,18 @@ Called from `FUN_006b6ad0` when a reliable fragmented message is received:
 4. Checks if fragment 0 exists (it carries `total_frags` at `+0x38`)
 5. If ALL fragments collected: allocates combined buffer, copies payload in order
 6. Clears `is_fragmented` flag (`+0x3C = 0`) on the reassembled message
-7. Removes consumed fragments from the queue
+7. Removes consumed fragments from the **dispatch queue** (NOT the retransmit queue — Clar2 scope clarification)
 8. Returns the reassembled message
+
+> [!NOTE]
+> **Clar2 (2026-05-28)**: The cleanup loop calls `FUN_00718cf0(piVar4)` and decrements `piVar8[6]` (dispatch queue count). The retransmit queue (peer+0x80) is NOT touched here — that scope distinction matters for Bug 1 OQ1 below.
 
 ---
 
-## Ghidra-Verified Analysis (2026-02-19)
+## Ghidra-Verified Analysis (2026-02-19) [v5-validated 2026-05-28]
 
-All five priority functions have been decompiled and verified via Ghidra MCP and raw objdump disassembly. The previous analysis (without Ghidra) was largely correct but incomplete. This section supersedes the earlier hypotheses.
+> [!NOTE]
+> **Historical archaeology note**: The section header date reflects the original investigation. The embedded asm listings below ARE byte-confirmed current under v5 re-validation — they survived byte-for-byte cross-check at 0x006bd1f0 (96 bytes), 0x006bd190 (ACK serializer), 0x006b61e0 (HandleReliableReceived), 0x006b64d0 (HandleACK), 0x006b5c90 (ProcessIncomingPackets), 0x006b6ad0 (QueueForDispatch), 0x006b5f70 (DispatchReceivedMessages), and 0x006b9430 / 0x006bdc20 (GetType bare functions). All five priority functions have been decompiled and verified via Ghidra MCP and raw objdump disassembly.
 
 ### ACK Factory / Deserializer — 0x006bd1f0 (VERIFIED)
 
@@ -471,6 +588,9 @@ Every code path has been verified correct:
 
 ## Root Cause Analysis
 
+> [!NOTE]
+> **Historical preamble (2026-05-28)**: The following hypothesis chain documents the investigation process from 2026-02. The **FINAL Assessment: Two Distinct Bugs** subsection plus the v5 correction (C1 below) supersede the individual hypotheses. Read the chain for archaeological context; rely on the FINAL Assessment + the "Root Cause: Pass-2 Gate Deadlock" (C1 replacement) for current behavior reasoning.
+
 ### Eliminated Hypotheses
 
 The following hypotheses from the previous analysis are now eliminated by Ghidra verification:
@@ -484,6 +604,8 @@ The following hypotheses from the previous analysis are now eliminated by Ghidra
 ### Surviving Hypotheses (Require Runtime Verification)
 
 **Hypothesis #1 (ACK delivery failure)**: The ACK-outbox queue (`peer+0x9C`) is processed with a **retransmit count limit of 3** and a timer check (FUN_006b8700). A freshly-created ACK has retransmit count 0 and last_send_time = creation_time. If the timer interval is too long, the ACK might not be sent in the same tick as it's created. If it IS sent but the UDP packet is lost, the ACK retransmits up to 3 times. However, this cannot explain persistent failure -- the server creates NEW ACKs for each retransmitted fragment set, so even if old ACKs expire, new ones should succeed.
+
+> **Clarification (2026-05-28)** [v5-correction per docs/networking/ack-outbox-deadlock.md]: The "limit of 3" is the **pass-1 gate** (`retx < 3`), NOT a hard limit. Pass-2 (`retx >= 3`) DOES process retransmits AND has a cleanup at `retx >= 9` via `FUN_006b78d0` — but pass-2 itself is gated on the deadlock condition described in C1 below. See `ack-outbox-deadlock.md` § 2 for the two-pass filter ranges and the cleanup threshold.
 
 **Hypothesis #2 (Retransmit re-queuing)**: When a reliable message is retransmitted from `peer+0x80`, the code at 0x006b57e7 calls WriteToBuffer to serialize it, then at 0x006b5930+ moves it BACK to the retransmit queue (`peer+0x80`) with updated timestamps. It does NOT create duplicates -- it reuses the same message object. **ELIMINATED as "duplicate entries" but CONFIRMED as "stays in queue".**
 
@@ -625,17 +747,24 @@ The most revealing evidence: after the initial handshake, HandleACK is called wi
 
 These are **stale ACKs from the remote peer's ackOutQ** being endlessly retransmitted. The local retxQ is already empty (original messages cleared), so HandleACK walks an empty queue and returns without doing anything. But the remote side never stops sending them because the ACK entries are never removed from its outbox.
 
-### Root Cause: Missing Cleanup in SendOutgoingPackets
+### Root Cause: Pass-2 Gate Deadlock [v5-correction 2026-05-28 — defers to ack-outbox-deadlock.md]
 
-The `SendOutgoingPackets` function (0x006b55b0) processes the ACK-outbox queue and serializes each ACK into the outgoing packet. After serialization, it increments the retransmit count and updates the timestamp — **but it never checks whether the ACK has been successfully delivered or whether the retransmit count exceeds a limit**.
+> [!IMPORTANT]
+> **C1 supersession**: The original section here — "Root Cause: Missing Cleanup in SendOutgoingPackets" — is **binary-wrong** and has been replaced. The preserved evidence above (server/client observations, retx climbing to 7-8, HandleACK firing against empty retxQ) is correct; the *interpretation* of that evidence as "no code path removes ACK entries" is what's wrong.
 
-The dedup logic in `HandleReliableReceived` (0x006b61e0) only prevents creating a *new* ACK entry when a duplicate reliable message arrives — it "refreshes" the existing entry's timer. But once an ACK entry is in the outbox, **there is no code path that removes it**.
+The ACK accumulation mechanism is NOT a "missing cleanup path" as originally hypothesized. `SendOutgoingPackets` (0x006b55b0) DOES have a pass-2 cleanup at `retx >= 9` via `FUN_006b78d0` — but pass-2 itself is gated on:
 
-The result:
+```
+(msg_count > 0 OR peer+0xBC != 0) AND peer+0xB4 > 0
+```
+
+When that gate doesn't fire (idle peer, no disconnect signal), pass-2 doesn't run and entries are stuck at whatever retx they currently hold. See [ack-outbox-deadlock.md](ack-outbox-deadlock.md) for the byte-confirmed gate logic at `0x006b5a01-0x006b5a1f` and the supersession of this doc's earlier hypothesis. The trace data preserved above captures the path INTO this deadlock — retx climbing 3 → 7 → 8 while the pass-2 gate stays closed — not a missing-cleanup absence.
+
+The result (preserved from runtime evidence):
 - ACK entries accumulate for the entire session duration
 - Each outbound packet carries ALL accumulated ACKs (4-5 bytes each)
 - By mid-game: 38+ stale ACK entries = ~190 bytes of overhead per packet
-- retx counts grow indefinitely (observed up to retx=8 within 6 seconds of connect)
+- retx counts grow indefinitely (observed up to retx=8 within 6 seconds of connect) — not because there is no cleanup, but because the pass-2 gate prevents the cleanup branch from running
 
 ### Relationship to the Fragment ACK Bug
 
@@ -647,7 +776,7 @@ The fragment ACK bug (fragments retransmitting despite correct ACKs) and the ack
 
 2. **ACK-outbox leak**: ACK entries in the outbox are NEVER removed, regardless of whether they're fragment ACKs or non-fragment ACKs. Every ACK ever created stays in the outbox forever, growing the per-packet overhead monotonically.
 
-### Valentine's Day Battle Trace (2026-02-14)
+### Valentine's Day Battle Trace (2026-02-14) [preserved historical evidence]
 
 A 34-minute, 3-player active combat session (136 MB / 2.6M lines) was analyzed for fragment ACK evidence. **Zero fragmented ACK entries were found in client packets** across the entire trace. All observed ACK messages were non-fragmented (4-byte ACKs, flags byte with bit 0 = 0).
 
@@ -678,3 +807,32 @@ This provides additional evidence that the fragment ACK bug (Bug 1) and the ACK-
 | 0x006bd120 | TGHeaderMessage::Constructor | Sets vtable to 0x008959ac |
 | 0x006bd190 | TGHeaderMessage::WriteToBuffer | ACK serializer (type + seq + flags + [frag_idx]) |
 | 0x006bd1f0 | TGHeaderMessage::ReadFromBuffer | ACK factory/deserializer |
+
+---
+
+## Open Questions
+
+### OQ1 (UNRESOLVED): Bug 1 root cause — what clears the client's retransmit queue before per-fragment ACKs arrive?
+
+The FINAL Assessment concludes (above): "fragments were already cleared by an earlier mechanism (possibly the whole-message ACK or fragment reassembly path), but the server's per-fragment ACKs arrive after that and find nothing to remove." This is observationally correct (the trace shows `retxQ=0` when the per-fragment ACKs arrive at HandleACK) but does NOT anchor WHICH mechanism clears the client's retransmit queue.
+
+Constraints from validated code:
+- **HandleACK** matches **one fragment per call** (4-field match: seq + is_below_0x32 + is_fragmented + frag_idx); it cannot clear three entries in one invocation.
+- **ReassembleFragments** (FUN_006b6cc0, Clar2) only touches the **dispatch queue**, NOT the retransmit queue. The retransmit queue still holds the original 3 fragment messages after reassembly.
+- **No whole-message ACK exists** — each fragment generates its own ACK with distinct `frag_idx`; HandleACK only matches per-fragment.
+
+Candidate hypotheses worth investigating with client-side instrumentation:
+- The CLIENT treats its outgoing fragments differently — possibly clearing retx fragments on a session-state transition during the checksum phase (not via ACK receipt at all).
+- The fragments share `seq=0x0200` but the retx queue had distinct entries that were each individually ACKed in an in-order burst BEFORE the trace's first ACK-DIAG snapshot captured the state.
+
+**Required next step**: Client-side runtime instrumentation hooked into the moment `retxQ` transitions from 3 to 0 for the fragmented seq. Until then, OQ1 remains UNRESOLVED.
+
+### OQ2: Is Bug 1 checksum-phase-only?
+
+The Valentine's Day Battle Trace (above) observed **zero fragmented ACK entries** across 34 minutes of active combat with 3 players. The 91-second Feb 19 checksum-exchange trace observed endless fragmented retransmission. This is consistent with the hypothesis that:
+
+- During the **checksum/settings exchange**, large reliable messages (~3 KB checksum data) get fragmented and trigger Bug 1.
+- During **combat**, individual TGMessages are small (<1024 bytes) and never fragment — so Bug 1 simply never triggers post-checksum.
+
+If confirmed, Bug 1 is a **checksum-phase-only bug in practice**. Confirmation requires a wire trace showing `fragments=0` throughout combat (Valentine's Day analysis already supports this — formalizing the framing here for completeness).
+

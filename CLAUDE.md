@@ -227,6 +227,8 @@ Then opcode 0x01 (single byte).
 - [docs/protocol/tgmessage-routing.md](docs/protocol/tgmessage-routing.md) - TGMessage routing RE: relay-all, star topology, mod compatibility
 
 ### Networking
+> **v5 validation status (2026-05-28)**: Networking family campaign closed at 11/11 docs validated (2 verified + 9 partial). See [docs/networking/v5-validation-status.md](docs/networking/v5-validation-status.md) for the per-doc tracker.
+
 - [docs/networking/network-protocol.md](docs/networking/network-protocol.md) - Protocol architecture, event system, handler tables
 - [docs/networking/multiplayer-flow.md](docs/networking/multiplayer-flow.md) - Complete client/server join flow (connect → play)
 - [docs/networking/gamespy-discovery.md](docs/networking/gamespy-discovery.md) - GameSpy LAN/internet discovery, master server, QR1 crypto

@@ -367,9 +367,14 @@ void __thiscall Handler_NewPlayerInGame_0x2A(this=MultiplayerGame, param_1=messa
                 if (ship == NULL || (ship->health >= threshold && !ship->isDead)):
                     // Build ObjCreate message
                     byte opcode = 2;  // ObjCreate
-                    if (HasTeam(object)):
-                        opcode = 3;   // ObjCreateTeam
-                        // Include team byte from ship->+0x2E4
+                    if (HasOwningPlayer(object)):                     // IsLocalPlayerShip-style check
+                        opcode = 3;   // ObjCreateTeam (historical name)
+                        // Include net_player_id byte from ship->+0x2E4
+                        // [v5-correction 2026-05-29: was "team byte"; the
+                        //  byte stored at ship+0x2E4 is the owning player's
+                        //  NetPlayerID, not a team-membership tag. Stock BC
+                        //  has no C++ team field. AI ships have +0x2E4 == 0.
+                        //  Source: gamemode-system-validation-20260529 memo.]
                     byte playerSlot = GetSlotFromObjectID(object->objID);
                     // Call object->vtable+0x10C (WriteToStream)
                     int dataLen = object->WriteToStream(buffer+opcode_size, 0x400-opcode_size);

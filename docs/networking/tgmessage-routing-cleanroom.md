@@ -128,6 +128,31 @@ For the reverse engineering analysis with full decompiled code, see
 > (validated 2026-05-28). See [v5-evidence-header.md](../guides/v5-evidence-header.md) for
 > the validation standard.
 
+> [!NOTE]
+> **Pass 1 reshape (2026-05-29) — 2 per-opcode policy refinements.** Host-event-emission
+> catalog work (memo `host-event-emission-catalog-20260529`) confirms two policy rows
+> previously marked **LOCAL-ONLY** are actually wire-active relays:
+>
+> - **0x1A BeamFire** — stock host DOES relay client-input BeamFire to the `Forward`
+>   group. The receive handler is `FUN_0069FBB0`. The host's own beam fires (when the
+>   host is a player) also call `FUN_00575480` to broadcast. The host never **originates**
+>   BeamFire from simulation — only relays client-input — so the "no server-generated
+>   beam" framing is still correct, but the relay path is real. OpenBC parity: **keep the
+>   relay**; do not move 0x1A to local-only.
+> - **0x29 Explosion** — server emits opcode 0x29 ONLY in catch-up paths
+>   (`RequestObjHandler @ 0x006A02A0` and `NewPlayerInGameHandler @ 0x006A1E70`, both
+>   calling `FUN_00595C60`). It is NOT emitted per-tick from combat simulation; per-tick
+>   damage replicates via 0x1C StateUpdate and `0x06` PythonEvent (`OBJECT_EXPLODING`).
+>   The earlier "(S→C only)" tag was correct as far as direction but did not capture the
+>   catch-up-only nuance that OpenBC needs to honor.
+>
+> Pass 1 also confirms `REPAIR_COMPLETED (0x800074)` and `REPAIR_CANNOT_BE_COMPLETED
+> (0x800075)` DO emit as wire opcode 0x06 PythonEvent under the host-only
+> `DAT_0097FA8A != 0` gate — see [docs/gameplay/repair-system.md](../gameplay/repair-system.md)
+> § Host-side wire emission for the byte anchors.
+>
+> Source: [.claude/agent-memory/game-archaeology-specialist/host-event-emission-catalog-20260529.md](../../.claude/agent-memory/game-archaeology-specialist/host-event-emission-catalog-20260529.md).
+
 ---
 
 ## Overview
@@ -355,10 +380,10 @@ from [docs/protocol/tgmessage-routing.md](../protocol/tgmessage-routing.md):
 | 0x17 | DeletePlayerUI | **LOCAL-ONLY** | No relay call |
 | 0x18 | DeletePlayerAnim | **LOCAL-ONLY** | No relay call observed |
 | 0x19 | TorpedoFire | Forward | TorpedoFireHandler — same Clone+SendToGroup pattern |
-| 0x1A | BeamFire | **LOCAL-ONLY** | No relay call observed |
+| 0x1A | BeamFire | **Forward** (relayed) [Pass 1 refinement 2026-05-29] | Receive handler `FUN_0069FBB0` clones to "Forward" group; host never originates from sim, only relays client-input |
 | 0x1B | TorpTypeChange | Forward | GenericEventForward |
 | 0x1C | StateUpdate | Forward (server-generated) | Server also generates for owned objects |
-| 0x29 | Explosion | **LOCAL-ONLY** (S→C only) | Server-generated only |
+| 0x29 | Explosion | **Catch-up only (S→C)** [Pass 1 refinement 2026-05-29] | `FUN_00595C60` emits ONLY from `RequestObjHandler @ 0x006A02A0` and `NewPlayerInGameHandler @ 0x006A1E70`; NOT per-tick combat |
 | 0x2A | NewPlayerInGame | **LOCAL-ONLY** | Triggers join handshake locally |
 
 **Implementation rule for OpenBC:** Implement relay **inside each handler**, after the
@@ -513,15 +538,18 @@ Mods can also reuse stock Python opcodes by replacing the Python handlers.
 
 For a clean-room reimplementation, the following behaviors must be preserved:
 
-1. [v5-correction 2026-05-28 per docs/protocol/tgmessage-routing.md] **The host MUST
-   relay each game message according to its per-opcode relay policy** (see the Per-Handler
-   Relay table above). Most game opcodes (movement, weapon fire, generic event forwards)
-   relay via the per-handler `Forward`-group helper. PythonEvent opcodes (0x06, 0x0D) and
-   several others (0x13 HostMsg, 0x14 DestroyObject, 0x15 CollisionEffect, 0x17
-   DeletePlayerUI, 0x18 DeletePlayerAnim, 0x1A BeamFire, 0x29 Explosion) are **LOCAL-ONLY**
-   at the handler and **MUST NOT** be relayed by the server. Following the pre-v5
-   transport-level relay model causes duplicate event delivery and is the documented OpenBC
-   parity bug.
+1. [v5-correction 2026-05-28 per docs/protocol/tgmessage-routing.md; Pass 1 refinement 2026-05-29]
+   **The host MUST relay each game message according to its per-opcode relay policy**
+   (see the Per-Handler Relay table above). Most game opcodes (movement, weapon fire,
+   generic event forwards, **including 0x1A BeamFire**) relay via the per-handler
+   `Forward`-group helper. PythonEvent opcodes (0x06, 0x0D) and several others (0x13
+   HostMsg, 0x14 DestroyObject, 0x15 CollisionEffect, 0x17 DeletePlayerUI, 0x18
+   DeletePlayerAnim) are **LOCAL-ONLY** at the handler and **MUST NOT** be relayed by
+   the server. **Opcode 0x29 Explosion is server-emitted ONLY during catch-up paths**
+   (RequestObj reply, NewPlayerInGame join): clients never send 0x29 and the host never
+   emits 0x29 from per-tick combat — per-tick damage replicates via 0x1C StateUpdate and
+   0x06 PythonEvent (OBJECT_EXPLODING). Following the pre-v5 transport-level relay model
+   causes duplicate event delivery and is the documented OpenBC parity bug.
 
 2. [v5-validated 2026-05-28 via docs/protocol/tgmessage-routing.md] **The game opcode byte
    MUST NOT be examined during the routing fan-out itself.** The SendToGroup primitive
@@ -561,13 +589,16 @@ For a clean-room reimplementation, the following behaviors must be preserved:
 
 A headless dedicated server reimplementation must:
 
-1. [v5-correction 2026-05-28 per docs/protocol/tgmessage-routing.md] **Implement
-   per-opcode relay inside each handler, after the local effect.** Do NOT implement a
-   single transport-level relay; that produces duplicate delivery on the local-only
-   opcodes (0x06 PythonEvent, 0x0D PythonEvent2, 0x13 HostMsg, 0x14, 0x15, 0x17, 0x18,
-   0x1A, 0x29). The Forward-group fan-out is the canonical mechanism for relaying
-   handlers; replicate the `Clone -> SendToGroup("Forward")` sequence per handler that
-   should forward.
+1. [v5-correction 2026-05-28 per docs/protocol/tgmessage-routing.md; Pass 1 refinement 2026-05-29]
+   **Implement per-opcode relay inside each handler, after the local effect.** Do NOT
+   implement a single transport-level relay; that produces duplicate delivery on the
+   local-only opcodes (0x06 PythonEvent, 0x0D PythonEvent2, 0x13 HostMsg, 0x14, 0x15,
+   0x17, 0x18). **Opcode 0x1A BeamFire IS relayed** via the Forward group at handler
+   `FUN_0069FBB0` — do not move it to the local-only set. **Opcode 0x29 Explosion is
+   emitted only during catch-up paths** (RequestObj, NewPlayerInGame); implement as a
+   replay-on-join emitter, not a per-tick relay. The Forward-group fan-out is the
+   canonical mechanism for relaying handlers; replicate the
+   `Clone -> SendToGroup("Forward")` sequence per handler that should forward.
 
 2. [v5-correction 2026-05-28 per docs/protocol/tgmessage-routing.md] **Create the
    "NoMe" and "Forward" groups during server-side multiplayer initialization**, NOT in

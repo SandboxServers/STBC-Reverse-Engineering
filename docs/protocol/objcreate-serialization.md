@@ -4,7 +4,7 @@
 title: ObjCreate/ObjCreateTeam Serialization Format (Opcodes 0x02/0x03)
 type: reference
 audience: re-engineer
-validated: 2026-05-28
+validated: 2026-05-29
 methodology: FUNCTION_DOC_WORKFLOW_V5
 binary:
   name: STBC.exe
@@ -161,6 +161,21 @@ evidence:
 > `ShipReadSpecies` — resolves cross-doc disagreement #1; flag for
 > `objnotfound-requestobj-enterset-wire-format.md` re-check).
 >
+> **Pass 2 correction (2026-05-29) — `ship+0x2E4` is `NetPlayerID`, not
+> `team_id`.** Wire byte 2 on opcode `0x03` is the **owning player's network
+> ID truncated to a signed byte**, not a team-membership tag. Stock BC has no
+> C++ team field; "teams" are pure Python state in Mission2.py. The wire byte
+> is byte-identical (1 byte, signed) so the parser is unchanged, but the
+> field semantics are different: receivers must treat the byte as
+> `(i8)(int)playerID`. Confirmed via three independent binary anchors:
+> `GetShipFromPlayerID @ 0x006A1AA0` (walks ships matching `ship+0x2E4 ==
+> playerID`), `IsLocalPlayerShip @ 0x005AE140` (host: `return ship+0x2E4 !=
+> 0` — true for any player-owned ship), `ShipClass_GetNetPlayerID SWIG @
+> 0x0060B8C0` (bytes `8B 82 E4 02 00 00` = `MOV EAX, [EDX+0x2E4]`, exposed to
+> Python as `pShip.GetNetPlayerID()` and consumed by Mission1.py for kill
+> credit). Source: `.claude/agent-memory/game-archaeology-specialist/gamemode-system-validation-20260529.md`
+> ("Major doc correction" section).
+>
 > See [docs/guides/v5-evidence-header.md](../guides/v5-evidence-header.md) for
 > the standard.
 
@@ -192,7 +207,11 @@ Offset  Size  Type    Field
 0       1     u8      opcode              0x02 or 0x03
 1       1     i8      owner_player_slot   0-15, which player owns this object
 [if opcode == 0x03:]
-2       1     i8      team_id             Team assignment (typically 2 or 3)
+2       1     i8      net_player_id       Owning player's NetID, written to ship+0x2E4.
+                                          [v5-correction 2026-05-29 via gamemode-system-validation memo —
+                                           prior label "team_id" was wrong; field is NetPlayerID, used by
+                                           kill-credit path. Cast (i8)(int)playerID — works because stock
+                                           NetIDs are small slot indices.]
 [end if]
 +0      var   data    serialized_object   TG factory-created object stream
 ```
@@ -457,7 +476,8 @@ Byte-exact match verified this pass.
 MpgameHandleObjCreate(MultiplayerGame *this, TGMessage *msg, char bWithTeam)
   │
   ├─ Extract raw buffer: TGMessage::GetData(msg) [FUN_006B8530] → data_ptr + size
-  ├─ Read owner_slot (byte 1), team_id (byte 2, only if bWithTeam)
+  ├─ Read owner_slot (byte 1), net_player_id (byte 2, only if bWithTeam)
+  │    [v5-correction 2026-05-29: byte 2 is NetPlayerID, not team_id]
   │
   ├─ Swap active player context:
   │    Save DAT_0097FA84 (current slot) and DAT_0097FA8C (current obj ID base)
@@ -500,7 +520,10 @@ MpgameHandleObjCreate(MultiplayerGame *this, TGMessage *msg, char bWithTeam)
   │    └─ return ship*
   │
   ├─ Restore player context (DAT_0097FA84, DAT_0097FA8C, DAT_0095B07D)
-  ├─ If bWithTeam: ship+0x2E4 = team_id
+  ├─ If bWithTeam: ship+0x2E4 = net_player_id
+  │    [v5-correction 2026-05-29: stores NetPlayerID; this is what
+  │     GetShipFromPlayerID @ 0x006A1AA0 and IsLocalPlayerShip @
+  │     0x005AE140 read back. 0 means AI/no owner.]
   │
   ├─ Host-relay loop (iterate 16 PlayerSlots at MultiplayerGame+0x74, stride 0x18):
   │    For each slot whose ID differs from BOTH the sender AND our own ID:
@@ -555,7 +578,9 @@ Full message (after TGNetwork framing):
 03 00 02 08 80 00 00 FF FF FF 3F 01 00 00 B0 42 00 00 84 C2 00 00 92 C2 ...
 ^^ ^^ ^^ ^^^^^^^^^^^ ^^^^^^^^^^^ ^^ ^^^^^^^^^^^ ^^^^^^^^^^^ ^^^^^^^^^^^
 |  |  |  class 8008   obj 3FFF..  |  X=88.0      Y=-66.0     Z=-73.0
-|  |  team=2                      species=1 (AKIRA)
+|  |  net_player_id=2              species=1 (AKIRA)
+|  |  [v5-correction 2026-05-29: was annotated "team=2"; binary stores
+|  |   this byte at ship+0x2E4 which is NetPlayerID. Value 2 = player slot 2.]
 |  owner=0 (host)
 opcode 0x03
 ```
@@ -578,13 +603,15 @@ inspection alone. The binary settles it via `CompressedVector4_ReadVirtual`.
 03 00 02 08 80 00 00 FF FF FF 3F 05 00 00 18 42 00 00 44 C2 00 00 0C C2 ...
 ^^ ^^ ^^ ^^^^^^^^^^^ ^^^^^^^^^^^ ^^ ^^^^^^^^^^^ ^^^^^^^^^^^ ^^^^^^^^^^^
 |  |  |  class 8008   obj 3FFF..  |  X=38.0      Y=-49.0     Z=-35.0
-|  |  team=2                      species=5 (SOVEREIGN)
+|  |  net_player_id=2              species=5 (SOVEREIGN)
 |  owner=0 (host)
 opcode 0x03
 ```
 
-Both: same player (slot 0), same team (2), same object ID base — but different
-ship species and spawn positions.
+Both: same owner (slot 0), same `net_player_id` (= player 2 owns these
+spawned ships), same object ID base — but different ship species and spawn
+positions. [v5-correction 2026-05-29: byte 2 reannotated from "team=2" to
+"net_player_id=2" per gamemode-system-validation memo.]
 
 ## Ghidra Functions Documented in This Validation
 

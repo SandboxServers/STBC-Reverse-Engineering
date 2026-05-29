@@ -531,7 +531,14 @@ if (hasHash != 0) {
             TGEvent* event = FUN_006bb840(eventObj);              // TGEvent ctor
             *(uint32_t*)((char*)event + 0x10) = 0x008000F6;       // event_type at +0x10  (Clar-1, Clar-3)
             FUN_006d62b0(event, (int)mpGame);                     // SetSrcDest
-            *(int*)((char*)event + 0x28) = this->playerSlot;      // *(this + 0x2E4)
+            *(int*)((char*)event + 0x28) = this->net_player_id;   // *(this + 0x2E4) — NetPlayerID
+                                                                  // [v5-clarification 2026-05-29:
+                                                                  //  ship+0x2E4 is the owning player's
+                                                                  //  NetPlayerID per gamemode-system-
+                                                                  //  validation memo; was labeled
+                                                                  //  "playerSlot" — close synonym but
+                                                                  //  semantically the NetID, not slot
+                                                                  //  index, on the wire.]
             FUN_006da2a0(&DAT_0097f838, event);                   // PostEvent (TGEventManager singleton)
         }
     }

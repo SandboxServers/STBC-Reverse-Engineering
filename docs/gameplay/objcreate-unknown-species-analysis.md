@@ -2,10 +2,10 @@
 title: ObjCreate Handler — Unknown Species Behavior Analysis
 type: reference
 audience: RE engineers, OpenBC implementers
-validated: 2026-05-28
+validated: 2026-05-29
 methodology: FUNCTION_DOC_WORKFLOW_V5
 binary_fingerprint: stbc.exe (base 0x400000, 32-bit Windows)
-status: verified
+status: partial
 supersedes: []
 evidence:
   - claim: "MpgameHandleObjCreate handler entry (opcode 0x02/0x03 family); signature void __thiscall(MultiplayerGame *, TGMessage *, char isTeam)"
@@ -33,9 +33,10 @@ evidence:
   - claim: "header_len = 2 for opcode 0x02, 3 for opcode 0x03 (MOV EDX,0x2 / MOV EDX,0x3)"
     address: 0x0069F620
     confidence: high
-  - claim: "team_id = (signed char)buffer[2]: MOVSX ESI,byte ptr [EAX + 0x2]"
+  - claim: "net_player_id = (signed char)buffer[2]: MOVSX ESI,byte ptr [EAX + 0x2]"
     address: 0x0069F667
     confidence: high
+    note: "[v5-correction 2026-05-29 via gamemode-system-validation memo] Prior label team_id was wrong; the byte is the owning player's NetPlayerID truncated to a signed byte, written to ship+0x2E4 in Step 5. Three anchors: GetShipFromPlayerID @ 0x006A1AA0, IsLocalPlayerShip @ 0x005AE140, ShipClass_GetNetPlayerID @ 0x0060B8C0."
   - claim: "Slot stride 0x18 (LEA EBP,[ESI + ESI*0x2] then *0x8) and slot base in MultiplayerGame at +0x84 (LEA EBP,[EBX + EBP*0x8 + 0x84])"
     address: 0x0069F620
     confidence: high
@@ -46,9 +47,10 @@ evidence:
     address: 0x00430730
     confidence: high
     note: "class-category second filter is practically irrelevant since stock objects are all 0x8002"
-  - claim: "Team write: piVar5[0xB9] = local_10 (ship+0x2E4)"
+  - claim: "NetPlayerID write: piVar5[0xB9] = local_10 (ship+0x2E4)"
     address: 0x005A1F50
     confidence: high
+    note: "[v5-correction 2026-05-29] Memory location unchanged (ship+0x2E4, == piVar5[0xB9] as int-indexed alias). Field semantic relabeled team -> NetPlayerID per gamemode-system-validation memo."
   - claim: "TGWinsockNetwork at DAT_0097FA78 (matches CLAUDE.md global table)"
     address: 0x0097FA78
     confidence: high
@@ -194,6 +196,8 @@ companions:
 > - **Clar-1** (Section "Step 8 / Tracker reads ship state"): tracker init at `FUN_0047DAB0` reads more than position — it pulls orientation via `vtable[0xAC]`, angular velocity via `vtable[0xB0]`, and computes a velocity magnitude via `FUN_005A05A0`. Pre-v5 doc was correct but understated.
 > - **Clar-2** (Section "Ship_Deserialize Pipeline"): the `TGFactoryCreate` returns-0-and-crashes vector is **real** (decomp confirms `return 0` on missing class) but **theoretical for opcodes 0x02/0x03** — the only class IDs ever sent on the wire for this opcode family are `0x8008` (Ship) and `0x8009` (Torpedo), both factory-registered. Crash requires malicious modding or wire-level packet injection.
 > - **Two OQs** added at the end: (1) ship-offset NULL claims in the impact table are reasonable inference but not directly anchored; (2) "stream desynchronization" risk in Potential Risks #2 is overstated and corrected in this revision.
+>
+> **Pass 2 correction (2026-05-29) — `ship+0x2E4` is `NetPlayerID`, not "team".** The wire byte 2 on opcode `0x03` and the corresponding `piVar5[0xB9]` store the owning player's NetID, not a team-membership tag. Stock BC has no C++ team field. Three binary anchors: `GetShipFromPlayerID @ 0x006A1AA0`, `IsLocalPlayerShip @ 0x005AE140`, `ShipClass_GetNetPlayerID SWIG @ 0x0060B8C0`. Wire size, parser, and impact-table semantics (SET-from-handler, high confidence) are unchanged; only the label changes. **Status downgraded `verified` → `partial`** to reflect the load-bearing field relabel pending family-close sweep. Source: `.claude/agent-memory/game-archaeology-specialist/gamemode-system-validation-20260529.md`.
 
 Reverse-engineered from `stbc.exe` binary (Ghidra decompilation + disassembly) and verified against the shipped `Multiplayer/SpeciesToShip.py` Python source.
 
@@ -235,10 +239,10 @@ DAT_0095b07d = 0;
 owner_slot = (signed char)buffer[1];
 header_len = 2;
 
-// If ObjCreateTeam, read team_id (byte 2)
+// If ObjCreateTeam, read net_player_id (byte 2) [v5-correction 2026-05-29: was "team_id"]
 // MOVSX ESI,byte ptr [EAX + 0x2] @ 0x0069F667
 if (isTeam) {
-    team_id = (signed char)buffer[2];
+    net_player_id = (signed char)buffer[2];  // owning player's NetID cast to signed byte
     header_len = 3;
 }
 ```
@@ -283,13 +287,23 @@ if (ship == NULL) goto exit;  // HandleObjCreateDeserialize returned NULL -> don
 > [!NOTE]
 > `ObjectLookupByID` at `0x00430730` has a subtle second filter: even if the object ID is found, the entry must satisfy `vtable[8](0x8002)` (class-category test), or the function returns NULL. So a found-but-wrong-category entry yields a false "no duplicate" verdict. Practically irrelevant since stock game objects are all class category `0x8002`.
 
-### Step 5: Assign Team [v5-validated 2026-05-28]
+### Step 5: Assign NetPlayerID [v5-correction 2026-05-29]
 
 ```c
 if (isTeam) {
-    ship->team = team_id;  // piVar5[0xB9] = local_10 -> ship+0x2E4
+    ship->net_player_id = net_player_id;  // piVar5[0xB9] = local_10 -> ship+0x2E4
+                                          // [v5-correction 2026-05-29: was labeled "team",
+                                          //  actually stores owning player's NetPlayerID.
+                                          //  GetShipFromPlayerID @ 0x006A1AA0 reads this back
+                                          //  to map playerID -> ship pointer.]
 }
 ```
+
+The pre-v5 doc called this byte "team assignment". Per the Pass 2
+archaeology memo (`game-archaeology-specialist/gamemode-system-validation-20260529.md`),
+the byte stored at `ship+0x2E4` is the owning player's `NetPlayerID`, not a
+team ID. Stock BC has no C++ team field; "teams" in multiplayer DM are pure
+Python state in Mission2.py. AI ships have `ship+0x2E4 == 0`.
 
 ### Step 6: Network Check
 
@@ -543,7 +557,7 @@ When a ship is created without successful species initialization:
 | ship+0x284 (subsystem list) | EMPTY | medium — see OQ-1 | StateUpdate sends flags=0x00 (no subsystem data) |
 | ship+0x128 / +0x130 (damage handlers) | NULL/EMPTY | medium — see OQ-1 | `DoDamage` skips this ship (gates on ship+0x140) |
 | ship+0x140 (damage target) | NULL | medium — see OQ-1 | No damage processing possible |
-| ship+0x2E4 (team) | SET (from handler) | high (byte-confirmed via `piVar5[0xB9]`) | Team assignment happens after deserialization |
+| ship+0x2E4 (NetPlayerID) [v5-correction 2026-05-29: was "team"] | SET (from handler) | high (byte-confirmed via `piVar5[0xB9]`) | Owning player's NetID stored after deserialization. Consumed by GetShipFromPlayerID, IsLocalPlayerShip, and Python pShip.GetNetPlayerID(). |
 | Network tracker | CREATED (0x58 bytes) | high (byte-confirmed via NiAlloc(0x58)) | Position tracking exists but reads default/zero position |
 | ship+0xF0 (flag) | CLEARED to 0 | high (byte-confirmed @ `0x0069F81E`) | Handler clears this after tracker attachment |
 
@@ -552,7 +566,7 @@ When a ship is created without successful species initialization:
 ```
 TIME ---------------------------------------------------------------------->
 
-1. Parse envelope (owner_slot, team_id)
+1. Parse envelope (owner_slot, net_player_id)  [v5-correction 2026-05-29: was "team_id"]
 2. Swap player context to owner's slot
 3. HandleObjCreateDeserialize          <--- LOCAL CREATION HAPPENS HERE
    |- Read class_id + object_id

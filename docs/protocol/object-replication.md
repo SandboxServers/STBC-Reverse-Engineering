@@ -4,7 +4,7 @@
 title: Object Replication (Opcodes 0x02 ObjCreate / 0x03 ObjCreateTeam)
 type: reference
 audience: re-engineer
-validated: 2026-05-28
+validated: 2026-05-29
 methodology: FUNCTION_DOC_WORKFLOW_V5
 binary:
   name: STBC.exe
@@ -34,18 +34,18 @@ evidence:
     completeness: 69.84
     confidence: high
     note: "Foundation #4 jump table at 0x0069F534 already v5-validated (see wire-format-spec.md and game-opcodes.md)."
-  - claim: "Receiver wire format read directly from the buffer: off 0 = opcode (consumed as the jump-table key), off 1 = i8 owner_player_slot (cVar3 = *(char *)(buf+1)), off 2 = i8 team_id when bWithTeam (local_10 = *(char *)(buf+2)). Stream payload starts at buf+iVar7 where iVar7 = 2 or 3."
+  - claim: "Receiver wire format read directly from the buffer: off 0 = opcode (consumed as the jump-table key), off 1 = i8 owner_player_slot (cVar3 = *(char *)(buf+1)), off 2 = i8 net_player_id when bWithTeam (local_10 = *(char *)(buf+2)). Stream payload starts at buf+iVar7 where iVar7 = 2 or 3."
     address: 0x0069f620
     function: MpgameHandleObjCreate
     completeness: 17.6
     confidence: high
-    note: "Receiver does NOT call FUN_006A19A0 — the owner-pointer-to-slot mapping happens on the sender side. See R1 in the NOTE block."
-  - claim: "Senders symmetric with receiver. NewPlayerInGameHandler at 0x006A1E70 (player-join cascade) and FUN_006A02A0 (RequestObj response) both write local_40c[0] = 2|3, local_40c[1] = owner_slot, local_40c[2] = team. owner_slot is computed by the sender as FUN_006A19A0(ship->owner_ptr); team byte is sourced from controller+0x2E4 (= int-index 0xB9)."
+    note: "Receiver does NOT call FUN_006A19A0 — the owner-pointer-to-slot mapping happens on the sender side. See R1 in the NOTE block. [v5-correction 2026-05-29 via gamemode-system-validation memo — byte 2 is NetPlayerID, not team_id; ship+0x2E4 is the owning player's NetID. Three independent anchors: GetShipFromPlayerID @ 0x006A1AA0, IsLocalPlayerShip @ 0x005AE140, ShipClass_GetNetPlayerID @ 0x0060B8C0.]"
+  - claim: "Senders symmetric with receiver. NewPlayerInGameHandler at 0x006A1E70 (player-join cascade) and FUN_006A02A0 (RequestObj response) both write local_40c[0] = 2|3, local_40c[1] = owner_slot, local_40c[2] = net_player_id. owner_slot is computed by the sender as FUN_006A19A0(ship->owner_ptr); net_player_id byte is sourced from controller+0x2E4 (= int-index 0xB9)."
     address: 0x006a1e70
     function: Handler_NewPlayerInGame
     completeness: 0.0
     confidence: high
-    note: "Receiver stores the team byte at piVar5[0xB9] (byte offset 0x2E4); sender reads from the same offset. Wire format is direction-symmetric."
+    note: "Receiver stores the NetPlayerID byte at piVar5[0xB9] (byte offset 0x2E4); sender reads from the same offset. Wire format is direction-symmetric. [v5-correction 2026-05-29: field semantic relabeled from team_id to NetPlayerID per gamemode-system-validation memo; the offset, width, and parser are unchanged.]"
   - claim: "FUN_005A1F50 dispatch chain decodes the per-class payload: opens SWIG TGBufferStream over (buf+iVar7, len-iVar7), ReadInt32 for class species ID, ReadInt32 for object ID, runs FUN_00430730(0, classID) as a class-category 0x8002 pre-check, then instantiates via factory FUN_006F13E0(cls, id) and invokes object vtable+0x118 (Deserialize) and vtable+0x11C (PostDeserializeFixup)."
     address: 0x005a1f50
     function: FUN_005A1F50
@@ -85,6 +85,15 @@ evidence:
 > [objcreate-serialization.md](objcreate-serialization.md) — this doc remains the thin
 > handler-index summary it was meant to be. See
 > [docs/guides/v5-evidence-header.md](../guides/v5-evidence-header.md) for the standard.
+>
+> **Pass 2 correction (2026-05-29) — wire byte 2 is `NetPlayerID`, not `team_id`.**
+> When `bWithTeam == 1` (opcode `0x03`), the third wire byte is the owning player's
+> network ID truncated to a signed byte, stored at `ship+0x2E4`. Stock BC has no C++
+> team field; `ship+0x2E4` is consumed by `GetShipFromPlayerID @ 0x006A1AA0`,
+> `IsLocalPlayerShip @ 0x005AE140`, and the SWIG accessor `ShipClass_GetNetPlayerID
+> @ 0x0060B8C0`. Wire size and parser are unchanged; only the field semantic
+> changes. Source: `.claude/agent-memory/game-archaeology-specialist/gamemode-system-validation-20260529.md`
+> ("Major doc correction" section).
 
 ## Handler: MpgameHandleObjCreate (0x0069F620)
 
@@ -114,9 +123,11 @@ Byte 1: owner_player_slot (i8)
         — written by the sender as FUN_006A19A0(ship->owner_ptr)
         — receiver reads as *(char *)(buf+1)
 [If bWithTeam (opcode 0x03):]
-  Byte 2: team_id (i8)
-          — sender writes from controller+0x2E4
+  Byte 2: net_player_id (i8)                                  [v5-correction 2026-05-29]
+          — sender writes from controller+0x2E4 (= owning player's NetID)
           — receiver stores at piVar5[0xB9] (= byte offset 0x2E4)
+          — prior label "team_id" was wrong; field is NetPlayerID
+            per gamemode-system-validation memo
 
 Remaining bytes (starting at off 2 or off 3):
   Per-class payload — see "Sender vs Receiver Symmetry" below
@@ -142,7 +153,8 @@ Sender pipeline (both senders share the layout):
 WriteByte(opcode)                              ; 0x02 or 0x03
 WriteByte(FUN_006A19A0(ship->owner_ptr))       ; owner_player_slot
 if (bWithTeam)
-    WriteByte(controller[0x2E4])               ; team_id
+    WriteByte(controller[0x2E4])               ; net_player_id
+                                               ; [v5-correction 2026-05-29: was team_id]
 ship->vtable[+0x10C](buf+iVar7, 0x400-iVar7)   ; SerializeForObjCreate
 ```
 
@@ -151,7 +163,9 @@ Receiver pipeline (`MpgameHandleObjCreate` -> `FUN_005A1F50`):
 ```
 cVar3 = *(char *)(buf + 1)                     ; owner_player_slot
 if (bWithTeam)
-    local_10 = *(char *)(buf + 2)              ; team_id (int-promoted)
+    local_10 = *(char *)(buf + 2)              ; net_player_id (int-promoted)
+                                               ; [v5-correction 2026-05-29: was team_id;
+                                               ;  stored at ship+0x2E4 = NetPlayerID]
 
 FUN_005A1F50(buf + iVar7, len - iVar7):
     TGBufferStream_swig_OpenBuffer(stream, buf+iVar7, len-iVar7)

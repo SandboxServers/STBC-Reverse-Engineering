@@ -983,6 +983,79 @@ Offset  Size  Type    Field            Notes
 
 ---
 
+## Host-side wire emission of REPAIR_COMPLETED / REPAIR_CANNOT_BE_COMPLETED
+
+[v5-validated 2026-05-28] [Pass 1 refinement 2026-05-29]
+
+This section discharges any residual ambiguity about whether `ET_REPAIR_COMPLETED
+(0x00800074)` and `ET_REPAIR_CANNOT_BE_COMPLETED (0x00800075)` ever reach the wire as
+opcode 0x06 PythonEvent. **They do, on the host, under the host-only
+`DAT_0097FA8A != 0` gate.** Byte-anchored in `RepairSubsystem::Update` at the post sites
+listed below.
+
+### Emit sites (byte-anchored)
+
+`RepairSubsystem::Update` at `0x005652A0` posts three TGObjPtrEvent objects during the
+per-tick repair walk:
+
+| Post site | Event ID | Branch / gate | Wire result |
+|-----------|----------|---------------|-------------|
+| `0x00565447` | `0x00800074 REPAIR_COMPLETED` | Success path inside the team-bounded first pass: `currentCondition / maxCondition >= 1.0f` after `ShipSubsystem::Repair` applies the tick's repair amount | Caught by `HostEventHandler` → opcode 0x06 PythonEvent → `NoMe` group |
+| `0x005653A4` | `0x00800075 REPAIR_CANNOT_BE_COMPLETED` | In-queue failure path inside first pass: `currentCondition <= 0.0f` while the subsystem is in an active repair slot (the `continue` branch that does NOT consume a team slot) | Caught by `HostEventHandler` → opcode 0x06 PythonEvent → `NoMe` group |
+| `0x005654E0` | `0x00800075 REPAIR_CANNOT_BE_COMPLETED` | Post-queue scan failure path: second unbounded loop walks the queue beyond `NumRepairTeams` and emits for any additional destroyed entries (notify-only, no repair) | Caught by `HostEventHandler` → opcode 0x06 PythonEvent → `NoMe` group |
+
+### Subscription and emit chain
+
+The subscription that turns these local posts into wire packets is registered in
+`MultiplayerGame_Ctor @ 0x0069E590` via `FUN_006DB380(eventID, ..., "MultiplayerGame::HostEventHandler", ...)`:
+
+```
+FUN_006db380(&DAT_00800074, param_1, s_MultiplayerGame____HostEventHand_0095a158, 1, 1, DAT_0095adf8);
+FUN_006db380(&DAT_00800075, param_1, s_MultiplayerGame____HostEventHand_0095a158, 1, 1, DAT_0095adf8);
+```
+
+This block (and the sibling `0x008000DF AddToRepairList` registration) is gated on
+`DAT_0097FA8A != 0` (IS_MULTIPLAYER) — host-only, multiplayer-only. Single-player and
+client-side repair runs the same `RepairSubsystem::Update` but the host-only event
+subscription does not fire, so the post stays local.
+
+Wire chain on the host:
+
+```
+RepairSubsystem::Update PostEvent(TGObjPtrEvent)
+  -> TGEventManager dispatches to MultiplayerGame singleton via vtable
+  -> HostEventHandler virtual slot resolved to FUN_006A1150
+  -> serialize event via vtable[0x34] into TGBufferStream
+  -> prefix byte 0x06 (PythonEvent opcode)
+  -> wrap in TGMessage (0x40 bytes), set reliable flag
+  -> TGWinsockNetwork_SendTGMessageToGroup(this, "NoMe", pMessage)
+```
+
+The wire frame uses factory `0x010C (TGObjPtrEvent)` with a 21-byte payload as
+documented in [§ Path 1b](#path-1b-opcode-0x06-pythonevent--repair-completion--cannot-complete-as-tgobjptrevent) above.
+
+### Why this matters
+
+The earlier hypothesis "REPAIR_COMPLETED never wire-emitted, OpenBC can omit" is **wrong**.
+A clean-room OpenBC server that runs server-side repair simulation MUST emit these events
+on the wire as opcode 0x06 with factory 0x010C, targeted at the `NoMe` group, reliable.
+Without these emits, clients never learn when a queued repair finishes or when a queued
+subsystem dies mid-repair — their local repair-pane UI desyncs.
+
+### Client-side mirror behavior
+
+Clients also run `RepairSubsystem::Update` and the same post sites fire locally, but the
+subscription gate is host-only — `HostEventHandler` is not bound on client instances, so
+the local post is consumed by UI/scoring handlers without being relayed. **Important for
+OpenBC**: clients MUST NOT relay their own locally-emitted repair events back to the
+server. The server emits authoritatively.
+
+### Cross-reference
+
+Anchored in [.claude/agent-memory/game-archaeology-specialist/host-event-emission-catalog-20260529.md](../../.claude/agent-memory/game-archaeology-specialist/host-event-emission-catalog-20260529.md) § 4 ("Repair Completion Verdict (DEFINITIVE)").
+
+---
+
 ## Collision → Repair Chain
 
 The complete event chain from collision to repair queue entry:

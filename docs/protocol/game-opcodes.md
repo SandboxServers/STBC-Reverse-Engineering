@@ -4,7 +4,7 @@
 title: Game Opcodes (MultiplayerGame Jump Table)
 type: reference
 audience: re-engineer
-validated: 2026-05-28
+validated: 2026-05-29
 methodology: FUNCTION_DOC_WORKFLOW_V5
 binary:
   name: STBC.exe
@@ -130,6 +130,8 @@ evidence:
 > This doc is `status: partial`. All 41 jump-table entries at `0x0069F534` were verified byte-by-byte against the current Ghidra import on 2026-05-28; all handler addresses for active opcodes (0x02-0x2A minus dead 0x04/0x05 and routing-only 0x16) were spot-checked. Cross-anchored to the engine-family dispatcher-recovery work (MpgameHandleMessage at `0x0069F2A0`). One column-header clarification landed: the previous "Recv Event Code" was ambiguous because it conflated the **dispatcher PUSH override** with the **wire-payload event code** — renamed below and a footer paragraph distinguishes the four flavours of event code that exist along this path. Per-opcode wire formats are cross-linked to their leaf docs. Session-frequency counts are tagged `[cross-source]` because they come from packet-trace analysis, not Ghidra. See [docs/guides/v5-evidence-header.md](../guides/v5-evidence-header.md) for the evidence standard.
 >
 > Open documentation debt: opcode 0x18 (DeletePlayerAnim) has a handler address but no BC-side wire-format leaf doc; OpenBC has the clean-room spec — see `../OpenBC/docs/wire-formats/delete-player-anim-wire-format.md`.
+>
+> **Pass 2 correction (2026-05-29) — `ObjCreateTeam` (0x03) wire byte 2 is `NetPlayerID`, not `team_id`.** The byte is the owning player's network ID truncated to a signed byte, written to `ship+0x2E4`. Stock BC has no C++ team field; "teams" are pure Python state in Mission2.py. Wire size and parser are unchanged (still 1 signed byte), but the semantic relabel propagates through every doc that touched ObjCreateTeam. Source: `.claude/agent-memory/game-archaeology-specialist/gamemode-system-validation-20260529.md` ("Major doc correction" section). Cross-link: [objcreate-serialization.md](objcreate-serialization.md) NOTE block.
 
 ## Dispatch architecture
 
@@ -202,7 +204,7 @@ Reading order: opcode -> handler address (Ghidra symbol where available) -> jump
 | Opcode | Name | Handler | Thunk | Type / Direction | Leaf doc |
 |--------|------|---------|-------|------------------|----------|
 | 0x02 | ObjCreate | `FUN_0069F620` (arg2=0) | `0x0069F31E` | Non-team object creation (S->C) | [object-replication.md](object-replication.md), [objcreate-serialization.md](objcreate-serialization.md) |
-| 0x03 | ObjCreateTeam | `FUN_0069F620` (arg2=1) | `0x0069F334` | Ship creation with team (S->C) | [object-replication.md](object-replication.md), [objcreate-serialization.md](objcreate-serialization.md) |
+| 0x03 | ObjCreateTeam | `FUN_0069F620` (arg2=1) | `0x0069F334` | Player-owned ship creation with NetPlayerID byte (S->C) — name retained for historical compat; field is NetPlayerID not team [v5-correction 2026-05-29] | [object-replication.md](object-replication.md), [objcreate-serialization.md](objcreate-serialization.md) |
 | 0x04 | (dead) | DEFAULT | `0x0069F525` | Jump-table default; boot is at transport layer via TGBootPlayerMessage | — |
 | 0x05 | (dead) | DEFAULT | `0x0069F525` | Jump-table default | — |
 | 0x06 | PythonEvent | `FUN_0069F880` | `0x0069F3F1` | Primary event forwarding (~3432/session) [cross-source-2026-02-XX trace] | [pythonevent-wire-format.md](pythonevent-wire-format.md) |
@@ -225,14 +227,14 @@ Reading order: opcode -> handler address (Ghidra symbol where available) -> jump
 | 0x17 | DeletePlayerUI | `FUN_006A1360` | `0x0069F4A5` | Remove player from scoreboard | [delete-player-ui-wire-format.md](delete-player-ui-wire-format.md) |
 | 0x18 | DeletePlayerAnim | `FUN_006A1420` | `0x0069F4B9` | "Player joined/left" floating text (TGL lookup, crash risk) | (Open debt — see NOTE at top; mirror from [../../../OpenBC/docs/wire-formats/delete-player-anim-wire-format.md](../../../OpenBC/docs/wire-formats/delete-player-anim-wire-format.md)) |
 | 0x19 | TorpedoFire | `FUN_0069F930` | `0x0069F4CD` | Torpedo launch (897/session) [cross-source-2026-02-XX trace] | (see §0x19 below) |
-| 0x1A | BeamFire | `FUN_0069FBB0` | `0x0069F4E1` | Beam weapon hit | (see §0x1A below) |
+| 0x1A | BeamFire | `FUN_0069FBB0` | `0x0069F4E1` | Beam weapon hit; host relays client-input via `Forward` group [Pass 1 refinement 2026-05-29] | (see §0x1A below) |
 | 0x1B | TorpedoTypeChange | `FUN_0069FDA0` (PUSH 0x008000FD) | `0x0069F450` | Torpedo type switch | — |
 | 0x1C | StateUpdate | `FUN_0069FF50` | `0x0069F3DD` | Object state replication (8 dirty-flag formats) | [stateupdate.md](stateupdate.md) |
 | 0x1D | ObjNotFound | `FUN_006A0490` | `0x0069F4F5` | Object lookup failure | [objnotfound-requestobj-enterset-wire-format.md](objnotfound-requestobj-enterset-wire-format.md) |
 | 0x1E | RequestObj | `FUN_006A02A0` | `0x0069F51D` | Request object data | [objnotfound-requestobj-enterset-wire-format.md](objnotfound-requestobj-enterset-wire-format.md) |
 | 0x1F | EnterSet | `FUN_006A05E0` | `0x0069F509` | Enter game set (scene change) | [objnotfound-requestobj-enterset-wire-format.md](objnotfound-requestobj-enterset-wire-format.md) |
 | 0x20-0x28 | (NetFile) | DEFAULT (`0x0069F525`) | DEFAULT | Handled by NetFile dispatcher `FUN_006A3CD0`; non-contiguous (0x24/0x26/0x28 unused) | [checksum-opcodes.md](checksum-opcodes.md), [transport-layer.md](transport-layer.md) |
-| 0x29 | Explosion | `FUN_006A0080` (Handler_Explosion_0x29) | `0x0069F469` | Explosion damage (S->C only) | [cf16-explosion-encoding.md](cf16-explosion-encoding.md) |
+| 0x29 | Explosion | `FUN_006A0080` (Handler_Explosion_0x29) | `0x0069F469` | Explosion damage; **catch-up only (S→C)** — sender `FUN_00595C60` emits ONLY from RequestObj + NewPlayerInGame, not per-tick combat [Pass 1 refinement 2026-05-29] | [cf16-explosion-encoding.md](cf16-explosion-encoding.md) |
 | 0x2A | NewPlayerInGame | `NewPlayerInGameHandler @ 0x006A1E70` | `0x0069F30A` | Player join handshake | [delete-player-ui-wire-format.md](delete-player-ui-wire-format.md) |
 
 > Session-frequency counts annotated `[cross-source-2026-02-XX trace]` are derived from packet-trace analysis (primarily [../analysis/valentines-day-battle-analysis.md](../analysis/valentines-day-battle-analysis.md) and [../analysis/stock-trace-analysis.md](../analysis/stock-trace-analysis.md)). They are NOT directly observable in the binary; they are observational ground-truth pinned to a specific trace.
@@ -282,15 +284,18 @@ These carry serialized game objects (ships, torpedoes, asteroids, etc.).
 ```
 Offset  Size  Type    Field
 ------  ----  ----    -----
-0       1     u8      type_tag           2 = standard object, 3 = object with team
+0       1     u8      type_tag           2 = unowned/AI object, 3 = player-owned object
 1       1     u8      owner_player_slot  Which player owns this object
 [if type_tag == 3:]
-2       1     u8      team_id            Team assignment
+2       1     i8      net_player_id      Owning player's NetID (cast to signed byte).
+                                         Stored at ship+0x2E4. [v5-correction 2026-05-29
+                                         via gamemode-system-validation memo — prior label
+                                         "team_id" was wrong; field is NetPlayerID.]
 [end if]
 +0      var   data    serialized_object  vtable+0x10C serialization output
 ```
 
-The `type_tag` is determined by checking if the object has a "player controller" (`FUN_005AB670`) with `FUN_005AE140` returning true (team info available).
+The `type_tag` is determined by checking if the object has a "player controller" (`FUN_005AB670`) with `FUN_005AE140` returning true (player-owned ship — `IsLocalPlayerShip` on host returns `ship+0x2E4 != 0`, identifying any owned ship). When true, the host emits opcode `0x03` and appends the owner's NetPlayerID byte. AI ships have `ship+0x2E4 == 0` and are sent as `0x02`.
 
 The `serialized_object` data is produced by calling `obj->vtable[0x10C](buffer, maxlen)` which serializes the full game object state including:
 - Object type ID
@@ -465,6 +470,17 @@ Then calls FUN_005762b0 to start beam rendering.
 - Ships with 2 turrets send 2 BeamFire messages simultaneously (e.g., Klingon BoP)
 - `flags=0x02` observed for all beam types
 
+> [!NOTE]
+> **Pass 1 refinement (2026-05-29) — relay policy.** Stock host DOES relay opcode 0x1A
+> via the `Forward` group: the receive handler `FUN_0069FBB0` clones the message and
+> forwards to non-sender peers, then locally applies via `FUN_005762B0`. The host never
+> autonomously originates BeamFire from simulation (the auto-fire targeting at
+> `WeaponSystem::UpdateWeapons @ 0x00584930` does NOT emit a wire BeamFire — it only
+> sets subsystem state, which then replicates via opcode 0x1C StateUpdate). The host's
+> own beam fires (when the host is a player) call sender `FUN_00575480` directly.
+> See [tgmessage-routing.md](tgmessage-routing.md) per-opcode policy table and
+> [.claude/agent-memory/game-archaeology-specialist/host-event-emission-catalog-20260529.md](../../.claude/agent-memory/game-archaeology-specialist/host-event-emission-catalog-20260529.md) § 2.
+
 ## 0x1C - State Update (Bidirectional) [v5-validated 2026-05-28]
 
 **Handler**: `FUN_0069FF50` (84-byte body, entry `0x0069FF50` to `0x0069FFEB`)
@@ -542,6 +558,24 @@ Total: 14 bytes
 This pairs with the sender (`FUN_00595C60`) writing radius from `source+0x14` first and damage from `source+0x1C` second.
 
 Both radius and damage are CF16 (lossy). See [cf16-precision-analysis.md](cf16-precision-analysis.md) for precision limits and [cf16-explosion-encoding.md](cf16-explosion-encoding.md) for radius-before-damage field-order anchoring and mod compatibility implications.
+
+> [!NOTE]
+> **Pass 1 refinement (2026-05-29) — emission policy.** Stock host emits opcode 0x29
+> ONLY during catch-up replay paths, never as per-tick combat damage. The two callers
+> of sender `FUN_00595C60` are:
+>
+> 1. `RequestObjHandler @ 0x006A02A0` — sends all attached explosions to a peer
+>    requesting object state.
+> 2. `NewPlayerInGameHandler @ 0x006A1E70` — sends all attached explosions to a newly
+>    joined peer.
+>
+> Per-tick explosion damage replicates via opcode 0x1C StateUpdate (subsystem health
+> round-robin) and via opcode 0x06 PythonEvent (`ET_OBJECT_EXPLODING (0x0080004E)` from
+> `MultiplayerGame_ObjectExplodingHandler @ 0x006A1240`). A clean-room server that emits
+> opcode 0x29 from per-tick combat will over-emit; implement as a replay-on-join
+> emitter instead. Sent UNRELIABLE
+> (`TGWinsockNetwork_SendTGMessage` with flag=0). See
+> [.claude/agent-memory/game-archaeology-specialist/host-event-emission-catalog-20260529.md](../../.claude/agent-memory/game-archaeology-specialist/host-event-emission-catalog-20260529.md) § 3.
 
 ## 0x2A - New Player In Game [v5-validated 2026-05-28]
 

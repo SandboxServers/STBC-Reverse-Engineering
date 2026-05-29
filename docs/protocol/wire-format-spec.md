@@ -4,7 +4,7 @@
 title: STBC Multiplayer Wire Format Specification
 type: reference
 audience: re-engineer
-validated: 2026-05-28
+validated: 2026-05-29
 methodology: FUNCTION_DOC_WORKFLOW_V5
 binary:
   name: STBC.exe
@@ -175,7 +175,7 @@ The dispatcher was recovered as `MpgameHandleMessage` (engine-family v5 pass; se
 | Opcode | Name | Direction | Handler | Payload Summary |
 |--------|------|-----------|---------|-----------------|
 | 0x02 | ObjectCreate | S->C | FUN_0069f620 | type=2, ownerSlot, serializedObject |
-| 0x03 | ObjectCreateTeam | S->C | FUN_0069f620 | type=3, ownerSlot, teamId, serializedObject |
+| 0x03 | ObjectCreateTeam | S->C | FUN_0069f620 | type=3, ownerSlot, netPlayerID, serializedObject [v5-correction 2026-05-29: was "teamId"; byte 2 is owning player's NetPlayerID stored at ship+0x2E4 per gamemode-system-validation memo] |
 | 0x04 | (dead) | -- | DEFAULT | Jump table default; boot handled at transport layer |
 | 0x05 | (dead) | -- | DEFAULT | Jump table default |
 | 0x06 | PythonEvent | any | FUN_0069f880 | eventCode, eventPayload |
@@ -344,7 +344,14 @@ See [../analysis/subsystem-trace-analysis.md](../analysis/subsystem-trace-analys
 | 0x00893794 | PulseWeapon | Pulse | +2BC | 1 |
 | 0x00895340 | ShipRefNiNode | ShipRef | +2E0 | 1 (set separately) |
 
-### Named Slot Layout (ship+0x2B0 to ship+0x2E4)
+### Named Slot Layout (ship+0x2B0 to ship+0x2E0)
+
+> [v5-correction 2026-05-29 via gamemode-system-validation memo] The named-slot
+> range ends at `+0x2E0` (ShipRef). `ship+0x2E4` is **not** a named subsystem
+> slot — it is the **owning player's NetPlayerID** (signed byte, 0 = AI / no
+> owner). Consumed by `GetShipFromPlayerID @ 0x006A1AA0`, `IsLocalPlayerShip @
+> 0x005AE140`, and `ShipClass_GetNetPlayerID @ 0x0060B8C0`. The prior
+> heading inclusive-of-`+0x2E4` was misleading; corrected to `+0x2E0`.
 
 ```
 +2B0  Powered      0x0088A1F0   PoweredMaster / Power Reactor (class 0x813E)  *** meta-cascade 2026-05-28 (rev 2) ***

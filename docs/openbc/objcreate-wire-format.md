@@ -2,9 +2,21 @@
 
 Wire format specification for Star Trek: Bridge Commander's object creation messages, documented from network packet captures and the game's shipped Python scripting API.
 
+> [!IMPORTANT]
+> **Pass 2 correction (2026-05-29) — wire byte 2 is `NetPlayerID`, not `team_id`.**
+> When the opcode is `0x03`, the third wire byte is the **owning player's NetID
+> truncated to a signed byte**, written to `ship+0x2E4`. Stock BC has no C++ team
+> field; "teams" are pure Python state in Mission2.py. Three independent binary
+> anchors: `GetShipFromPlayerID @ 0x006A1AA0`, `IsLocalPlayerShip @ 0x005AE140`,
+> `ShipClass_GetNetPlayerID SWIG @ 0x0060B8C0`. Wire size, parser, and relay
+> semantics are unchanged; only the field label / consumer semantics change.
+> The historical opcode name `ObjCreateTeam` is retained for compatibility, but
+> the byte is NetPlayerID. Source: `.claude/agent-memory/game-archaeology-specialist/gamemode-system-validation-20260529.md`.
+> Inline corrections are tagged `[v5-correction 2026-05-29]` throughout this doc.
+
 ## Overview
 
-Opcodes 0x02 (ObjCreate) and 0x03 (ObjCreateTeam) are sent by the host to create game objects — ships, torpedoes, stations, and asteroids — on all connected clients. The only difference is that 0x03 includes a team assignment byte.
+Opcodes 0x02 (ObjCreate) and 0x03 (ObjCreateTeam) are sent by the host to create game objects — ships, torpedoes, stations, and asteroids — on all connected clients. The only difference is that 0x03 includes the owning player's NetPlayerID byte. `[v5-correction 2026-05-29: was "team assignment byte"]`
 
 These messages are relayed: when the host creates an object, it sends the message to every other connected peer.
 
@@ -22,7 +34,12 @@ Offset  Size  Type    Field
 If the opcode is 0x03, an additional byte follows:
 
 ```
-2       1     i8      team_id             Team assignment (e.g., 2 or 3)
+2       1     i8      net_player_id       Owning player's NetID (cast to signed byte).
+                                          Stored at ship+0x2E4.
+                                          [v5-correction 2026-05-29 via gamemode-system-validation
+                                           memo — prior label "team_id" was wrong; this byte is the
+                                           owning player's NetPlayerID, not a team-membership tag.
+                                           AI ships have ship+0x2E4 == 0 (no owner).]
 ```
 
 **Envelope size**: 2 bytes for opcode 0x02, 3 bytes for opcode 0x03.
@@ -231,7 +248,7 @@ When a peer receives an ObjCreate or ObjCreateTeam message, it:
 6. Deserializes the object body (species, position, orientation, etc.)
 7. For ships (class_id 0x8008): the species_type is used to load the correct ship model, hardpoints, and subsystem configuration via the `SpeciesToShip` scripting API
 8. For torpedoes (class_id 0x8009): the species_type loads the torpedo definition via `SpeciesToTorp`
-9. If team (opcode 0x03): assigns the team_id to the object
+9. If player-owned (opcode 0x03): writes the net_player_id byte to ship+0x2E4. `[v5-correction 2026-05-29: was "assigns the team_id to the object"]`
 10. If the host is processing: relays the message to all other connected peers (excluding the sender)
 11. For ships only: attaches a network position/velocity tracker for state synchronization
 
@@ -257,7 +274,7 @@ Field decode:
 |-------|-------|-------|
 | `03` | opcode | 0x03 (ObjCreateTeam) |
 | `00` | owner_player_slot | 0 (host) |
-| `02` | team_id | 2 |
+| `02` | net_player_id | 2 (player 2 owns this ship) `[v5-correction 2026-05-29: was "team_id"]` |
 | `08 80 00 00` | class_id | 0x00008008 (Ship) |
 | `FF FF FF 3F` | object_id | 0x3FFFFFFF (player 0 base) |
 | `01` | species_type | 1 (Akira) |
@@ -276,7 +293,7 @@ Field decode:
 |-------|-------|-------|
 | `03` | opcode | 0x03 (ObjCreateTeam) |
 | `00` | owner_player_slot | 0 (host) |
-| `02` | team_id | 2 |
+| `02` | net_player_id | 2 (player 2 owns this ship) `[v5-correction 2026-05-29: was "team_id"]` |
 | `08 80 00 00` | class_id | 0x00008008 (Ship) |
 | `FF FF FF 3F` | object_id | 0x3FFFFFFF (player 0 base) |
 | `05` | species_type | 5 (Sovereign) |

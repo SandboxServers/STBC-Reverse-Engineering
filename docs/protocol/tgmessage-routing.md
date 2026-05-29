@@ -147,6 +147,37 @@ for a clean-room behavioral specification (no addresses or decompiled code).
 > (21-min Cady/XFS01 session) are tagged `[cross-source-2026-02-24 trace]`. See
 > [v5-evidence-header.md](../guides/v5-evidence-header.md) for the standard.
 
+> [!NOTE]
+> **Pass 1 reshape (2026-05-29) — 2 per-opcode relay refinements.** Host-event-emission
+> catalog work (memo `host-event-emission-catalog-20260529`) refines the per-opcode relay
+> table below:
+>
+> - **0x1A BeamFire — RELAYED, not local-only.** The pre-Pass-1 row tagged 0x1A as
+>   "(no relay call observed - verify)". Pass 1 confirms `FUN_0069FBB0` (the BeamFire
+>   receive handler) forwards client-input BeamFire to the `Forward` group. The host
+>   never autonomously originates BeamFire from simulation — only relays client-input
+>   weapon fire — but the relay path is real. The host's own beam fires (when the host
+>   is a player) call sender `FUN_00575480` directly. The 0:0 audit ratio for 0x1A was a
+>   sampling artifact, not evidence of suppression.
+> - **0x29 Explosion — catch-up-only (S→C).** The pre-Pass-1 row tagged 0x29 as
+>   "(server-generated only, no client send observed)". Pass 1 sharpens this: the server
+>   emits 0x29 ONLY from `RequestObjHandler @ 0x006A02A0` and `NewPlayerInGameHandler @
+>   0x006A1E70` (both via `FUN_00595C60`). It is NOT emitted per-tick from combat
+>   simulation — per-tick damage replicates via opcode 0x1C StateUpdate (subsystem health
+>   round-robin) and opcode 0x06 PythonEvent (`OBJECT_EXPLODING` from
+>   `MultiplayerGame_ObjectExplodingHandler @ 0x006A1240`). The "S→C only" framing was
+>   directionally correct; the catch-up-only nuance was not previously documented.
+>
+> Pass 1 also confirms the host-side wire emission of `REPAIR_COMPLETED (0x800074)` and
+> `REPAIR_CANNOT_BE_COMPLETED (0x800075)` via `HostEventHandler @ 0x006A1150`, byte-anchored
+> to `RepairSubsystem::Update` post sites 0x00565447 / 0x005653A4 / 0x005654E0. The
+> earlier "How Clients Actually Receive PythonEvents" section already covers
+> HostEventHandler and ObjectExplodingHandler as the two server-side opcode-0x06 producers;
+> the byte anchors for repair lives in
+> [docs/gameplay/repair-system.md](../gameplay/repair-system.md).
+>
+> Source: [.claude/agent-memory/game-archaeology-specialist/host-event-emission-catalog-20260529.md](../../.claude/agent-memory/game-archaeology-specialist/host-event-emission-catalog-20260529.md).
+
 ---
 
 ## Executive Summary
@@ -375,10 +406,10 @@ the SendToGroup call.
 | 0x17 | DeletePlayerUI | FUN_006A1360 | NO | — (server-generated 7 S->C) |
 | 0x18 | DeletePlayerAnim | FUN_006A1420 | (no relay call observed - verify) | — |
 | 0x19 | TorpedoFire | FUN_0069F930 | YES - Forward (same Clone+SendToGroup pattern) | 110:110 |
-| 0x1A | BeamFire | FUN_0069FBB0 | (no relay call observed - verify) | 0:0 |
+| 0x1A | BeamFire | FUN_0069FBB0 | **YES - Forward** [Pass 1 refinement 2026-05-29] (relays client-input; host never originates from sim — sender side is `FUN_00575480`) | 0:0 (sampling artifact in the audit window) |
 | 0x1B | TorpTypeChange | FUN_0069FDA0 (push 0x008000FD) | YES - Forward | 1:1 |
 | 0x1C | StateUpdate | FUN_0069FF50 | YES - server also generates for all owned objects | 23994:45355 |
-| 0x29 | Explosion | FUN_006A0080 | (server-generated only, no client send observed) | 0 obs |
+| 0x29 | Explosion | FUN_006A0080 | **Catch-up only (S→C)** [Pass 1 refinement 2026-05-29] — `FUN_00595C60` emits ONLY from RequestObj (0x006A02A0) + NewPlayerInGame (0x006A1E70); not per-tick | 0 obs |
 | 0x2A | NewPlayerInGame | FUN_006A1E70 | NO - triggers join handshake locally | 4:0 |
 
 The ratio column tells you which handlers relay (~1:1) vs which absorb (`x:0`). The

@@ -642,6 +642,11 @@ if (DAT_0097FA89 != '\0') {                                  // host build
         bVar3 = false;                                       // NEVER mutate in SP-host
     } else if ((iVar2 != iVar4)
             && (*(int *)(iVar2 + 0x2E4) != 0)) {             // MP, foreign player-owned ship
+                                                             // [v5-clarification 2026-05-29:
+                                                             //  ship+0x2E4 = NetPlayerID; 0 = AI/no owner,
+                                                             //  nonzero = owned by some player. Anchor:
+                                                             //  IsLocalPlayerShip @ 0x005AE140 uses the
+                                                             //  same predicate.]
         bVar5 = false;
     }
 }

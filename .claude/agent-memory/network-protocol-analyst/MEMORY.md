@@ -1,5 +1,13 @@
 # Network Protocol Analyst - Memory
 
+## Trace Mining Verification (2026-05-29)
+- See [trace-mining-verification-20260529.md](trace-mining-verification-20260529.md) — answers 7 OpenBC OQs from existing traces
+- REPAIR: 0x101 form=17B msg body / 0x10C TGObjPtrEvent form=21B (opcode-incl) = 20B payload. 21-vs-20 = opcode counted or not.
+- Bundling: max msgCount=110 (datagram len=491, NOT 512-padded). Header `[dir:1][msgCount:1]` confirmed from bytes.
+- Relay matrix (3-player): combat 0x07/08/0A/19/1A/1B/11/12 RELAYED 1:2 to OTHERS (no sender echo); 0x06/29 server-gen; 0x15/0D/13 ABSORBED; 0x14 never on wire.
+- StateUpdate ~10.4Hz/ship/peer (median 96ms). Chat = broadcast to ALL incl sender (1:N, NOT 1:2).
+- NEW captures still needed: TEAM_DM (0x3F-41), mid-battle late-joiner (0x1E catch-up), isolated cloak, idle-ship force-resend (~0.5s? not 1.0s).
+
 ## Comprehensive Gap Analysis (2026-02-15)
 - See [gap-analysis-20260215.md](gap-analysis-20260215.md) for full report
 - 5 gaps: 1 High (DamageEventHandler missing), 2 Medium (time limit timer, 0x35 byte), 2 Low

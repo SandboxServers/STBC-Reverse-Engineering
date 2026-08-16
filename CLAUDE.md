@@ -290,6 +290,7 @@ Then opcode 0x01 (single byte).
 
 
 ### Analysis
+- [docs/analysis/stbc-reference-corpus-learnings.md](docs/analysis/stbc-reference-corpus-learnings.md) - Survey of the external `markward/stbc_reference` spec corpus: portable methodology (clean-room gate, answerability measurement, refuted-route ledger), SWIG type registry at 0x00900A94, and 9 action items for OpenBC
 - [docs/analysis/collision-trace-comparison.md](docs/analysis/collision-trace-comparison.md) - Stock dedi vs OpenBC: byte-level wire format comparison, 6 behavioral gaps
 - [docs/analysis/stock-trace-analysis.md](docs/analysis/stock-trace-analysis.md) - Ground truth from stock dedi traces: 10 findings, opcode frequencies
 - [docs/analysis/valentines-day-battle-analysis.md](docs/analysis/valentines-day-battle-analysis.md) - Comprehensive 33.5min 3-player stock trace: 59 deaths, full opcode table, parity checklist, authority summary

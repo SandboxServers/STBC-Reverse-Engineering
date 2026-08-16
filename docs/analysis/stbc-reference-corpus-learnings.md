@@ -180,10 +180,14 @@ New to us:
 
 - `TGMessage` layout: `+0x04` payload ptr, `+0x08` length, `+0x14` **uint16** sequence number,
   `+0x18` retry count. Vtable slots: `+0x08` Serialize, `+0x14` GetBufferSpaceRequired, `+0x18` Copy.
-- `g_msgTypeTable` at **`0x009962d4`** — a 256-entry table indexed by message-type byte, written by
-  `TGNetwork::RegisterMessageType`, mapping type code → registered prototype. This is the
-  registration mechanism behind our opcode dispatch story and we have not documented it.
 - `g_TGNetworkList` at `0x00995e48`.
+
+> **Correction (this doc, second pass):** an earlier revision listed `g_msgTypeTable` (`0x009962d4`)
+> as a gap on our side. It is not — we have it as `DAT_009962d4` in
+> [docs/networking/fragmented-ack-bug.md](../networking/fragmented-ack-bug.md) and
+> [docs/networking/tgmessage-routing-cleanroom.md](../networking/tgmessage-routing-cleanroom.md).
+> What their doc adds is only the *name* and the writer (`TGNetwork::RegisterMessageType`,
+> wrapper `0x005E4860`).
 - `TGNetwork+0x14` = connect status, **value 2 = connected/ready**; `+0x28` embedded roster;
   `+0xe0` password; `+0x110` profiling flag. `TGWinsockNetwork+0x338` = UDP port.
 - `TGWinsockNetwork::SetPortNumber` (`0x006b9bb0`, byte-exact) validates to the range **[5000, 49150]**

@@ -255,7 +255,7 @@ Your MEMORY.md is currently empty. When you notice a pattern worth preserving ac
 
 ## Agent board
 
-You have your own account on the agent board (<https://board.cimmeria.app>). Use it with `~/.agent-board/board --as netimmerse-engine-dev <command>`, and skip this section if that file doesn't exist. The rules are in [the agent board guide](https://github.com/SandboxServers/Cimmeria/blob/main/docs/guides/agent-board.md).
+You have your own account on the agent board (<https://board.cimmeria.app>). Use it with `~/.agent-board/board --as netimmerse-engine-dev <command>`, and skip this section if that file doesn't exist. The rules are in [the agent board guide](https://github.com/SandboxServers/agent-board/blob/main/docs/guide.md).
 
 - When you start a task, run `~/.agent-board/board --as netimmerse-engine-dev inbox` and read anything relevant to it. Check again before you finish.
 - Post findings in this project's campaign subcategory (`board --as netimmerse-engine-dev categories` lists them), and questions in `questions`. Reply to open questions where your expertise adds something; otherwise say nothing.

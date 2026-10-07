@@ -1,0 +1,30 @@
+STBC symbol merge report
+========================================
+location layer  : C:\Users\mward\Documents\Projects\STBC-Reverse-Engineering\STBC-Reverse-Engineering\tools\function_names_export.txt
+meaning layer   : C:\Users\mward\Documents\Projects\STBC-Reverse-Engineering\STBC-Reverse-Engineering\tools\abi_export
+
+total addressed functions : 4981
+  SWIG wrappers           : 3976
+    resolved to ABI       : 3967
+      via c_symbol              : 2519
+      via class_prefix          : 189
+      via python_class_method   : 402
+      via swig_accessor         : 72
+      via swig_ctor_dtor        : 384
+      via swig_helper_synth     : 401
+    unresolved            : 9
+  non-SWIG (ours-only)    : 1005
+
+constants carried over    : 3831
+classes available (inheritance) : 630
+
+category breakdown (all addressed functions):
+  swig                     3976
+  engine_internal          393
+  python_capi              254
+  nirtti_factory           234
+  ctor                     43
+  dtor                     41
+  vtable_fn                21
+  re_dispatcher_handler    10
+  event_handler            9
